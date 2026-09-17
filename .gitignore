@@ -33,3 +33,6 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Large local screenshot files
+frontend/images/[0-9]*.png
