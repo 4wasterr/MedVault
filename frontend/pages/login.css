@@ -1,0 +1,1071 @@
+/* ==========================================================================
+   MedVault - 1:1 Pixel-Accurate Login Stylesheet
+   Theme: Cyan (#00ADEF) with Soothing Blue Canvas & Animated Geometric Shapes
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --mv-cyan: #00ADEF;
+  --mv-cyan-hover: #0099d4;
+  --mv-cyan-light: #EBF7FD;
+  --mv-cyan-glow: rgba(0, 173, 239, 0.25);
+  --mv-bg-blue-start: #edf6fd;
+  --mv-bg-blue-mid: #e1f0fc;
+  --mv-bg-blue-end: #eaf4fc;
+  --mv-text-main: #1e293b;
+  --mv-text-muted: #8EA5B3;
+  --mv-text-sub: #596773;
+  --mv-white: #ffffff;
+  --mv-error-red: #ef4444;
+  --mv-font: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, html {
+  height: 100%;
+  width: 100%;
+  font-family: var(--mv-font);
+  background-color: var(--mv-bg-blue-start);
+  color: var(--mv-text-main);
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   Page Container & Split Layout
+   ========================================================================== */
+.medvault-login-page {
+  position: relative;
+  display: flex;
+  width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  background-color: var(--mv-bg-blue-start);
+}
+
+/* ==========================================================================
+   LEFT SECTION: Doctor & Patient Hero Showcase
+   ========================================================================== */
+.login-left-section {
+  position: relative;
+  flex: 1 1 50%;
+  max-width: 53%;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #dbeafe;
+}
+
+.left-bg-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 25%;
+  display: block;
+  transform: scale(1.02);
+  animation: subtleZoom 14s ease-in-out infinite alternate;
+}
+
+/* Gradients that match the reference 1:1 */
+.left-gradient-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: 
+    /* Bottom soft cyan gradient holding the white text */
+    linear-gradient(to top, rgba(0, 173, 239, 0.58) 0%, rgba(0, 173, 239, 0.26) 28%, rgba(0, 173, 239, 0.05) 55%, transparent 75%),
+    /* Right blend transitioning softly toward the soothing blue right side */
+    linear-gradient(to right, transparent 65%, rgba(225, 240, 252, 0.55) 92%, rgba(237, 246, 253, 0.95) 100%),
+    /* Ambient cyan glow */
+    radial-gradient(circle at 65% 75%, rgba(0, 195, 255, 0.28) 0%, transparent 60%);
+}
+
+.left-content-overlay {
+  position: absolute;
+  bottom: 56px;
+  left: 56px;
+  right: 48px;
+  z-index: 2;
+  animation: slideInHeroText 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.left-hero-text {
+  color: var(--mv-white);
+  font-size: clamp(1.5rem, 2.2vw, 2.1rem);
+  font-weight: 700;
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+  text-shadow: 0 3px 14px rgba(0, 45, 70, 0.25);
+}
+
+/* ==========================================================================
+   RIGHT SECTION: Eye-Friendly Blue Canvas with Animated Geometric Shapes
+   ========================================================================== */
+.login-right-section {
+  position: relative;
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Soft, soothing eye-friendly sky-blue gradient */
+  background: linear-gradient(135deg, var(--mv-bg-blue-start) 0%, var(--mv-bg-blue-mid) 50%, var(--mv-bg-blue-end) 100%);
+  padding: 32px 28px;
+  min-height: 100vh;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Geometric Background Elements Container
+   -------------------------------------------------------------------------- */
+.geometric-bg-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.geo-shape {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Ambient Glowing Orbs */
+.shape-glow-orb {
+  border-radius: 50%;
+  filter: blur(50px);
+  opacity: 0.65;
+}
+
+.glow-orb-1 {
+  width: 280px;
+  height: 280px;
+  top: -40px;
+  right: -50px;
+  background: radial-gradient(circle, rgba(0, 173, 239, 0.28) 0%, rgba(14, 165, 233, 0.08) 70%, transparent 100%);
+  animation: floatOrb 16s ease-in-out infinite alternate;
+}
+
+.glow-orb-2 {
+  width: 320px;
+  height: 320px;
+  bottom: -60px;
+  left: -40px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.25) 0%, rgba(2, 132, 199, 0.06) 70%, transparent 100%);
+  animation: floatOrb 18s ease-in-out 4s infinite alternate-reverse;
+}
+
+.glow-orb-3 {
+  width: 180px;
+  height: 180px;
+  top: 40%;
+  left: 15%;
+  background: radial-gradient(circle, rgba(186, 230, 253, 0.4) 0%, transparent 80%);
+  animation: pulseOrb 10s ease-in-out infinite;
+}
+
+/* Minimalist Medical Crosses */
+.shape-cross {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.45;
+  transition: opacity 0.3s ease;
+}
+
+.cross-top-left {
+  top: 10%;
+  left: 12%;
+  animation: rotateCrossSlow 38s linear infinite, floatCross 12s ease-in-out infinite alternate;
+}
+
+.cross-bottom-right {
+  bottom: 12%;
+  right: 14%;
+  opacity: 0.4;
+  animation: rotateCrossReverse 32s linear infinite, floatCross 14s ease-in-out 2s infinite alternate-reverse;
+}
+
+.cross-center-right {
+  top: 48%;
+  right: 6%;
+  opacity: 0.35;
+  animation: rotateCrossSlow 28s linear infinite, floatCross 10s ease-in-out 1s infinite alternate;
+}
+
+/* Minimalist Outlined Geometric Rings */
+.shape-ring {
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 173, 239, 0.22);
+}
+
+.ring-large {
+  width: 220px;
+  height: 220px;
+  top: 6%;
+  right: 8%;
+  border-width: 2px;
+  border-color: rgba(0, 173, 239, 0.16);
+  animation: floatRing 15s ease-in-out infinite alternate;
+}
+
+.ring-medium {
+  width: 130px;
+  height: 130px;
+  bottom: 15%;
+  left: 8%;
+  border-width: 1.5px;
+  border-style: dashed;
+  border-color: rgba(0, 173, 239, 0.24);
+  animation: spinRingDashed 45s linear infinite, floatRing 12s ease-in-out 3s infinite alternate;
+}
+
+.ring-small {
+  width: 44px;
+  height: 44px;
+  top: 30%;
+  right: 20%;
+  border-width: 2px;
+  border-color: rgba(0, 173, 239, 0.28);
+  animation: floatRing 9s ease-in-out 1s infinite alternate-reverse;
+}
+
+/* Small Minimalist Geometric Dots */
+.shape-dot {
+  border-radius: 50%;
+  background-color: var(--mv-cyan);
+}
+
+.dot-1 {
+  width: 8px;
+  height: 8px;
+  top: 22%;
+  left: 20%;
+  opacity: 0.35;
+  animation: pulseDot 6s ease-in-out infinite;
+}
+
+.dot-2 {
+  width: 6px;
+  height: 6px;
+  bottom: 26%;
+  right: 22%;
+  opacity: 0.4;
+  animation: pulseDot 5s ease-in-out 2s infinite;
+}
+
+.dot-3 {
+  width: 10px;
+  height: 10px;
+  top: 72%;
+  left: 24%;
+  opacity: 0.28;
+  animation: pulseDot 7s ease-in-out 1s infinite;
+}
+
+/* Minimalist Floating Pill Shape */
+.shape-pill {
+  border-radius: 9999px;
+  border: 1.5px solid rgba(0, 173, 239, 0.25);
+  background: rgba(235, 247, 253, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.pill-top-right {
+  width: 70px;
+  height: 28px;
+  top: 14%;
+  right: 24%;
+  transform: rotate(-25deg);
+  animation: floatPill 11s ease-in-out infinite alternate;
+}
+
+/* Minimalist Outlined Rhombus / Diamond */
+.shape-rhombus {
+  border: 1.5px solid rgba(0, 173, 239, 0.2);
+  border-radius: 4px;
+}
+
+.rhombus-bottom-left {
+  width: 32px;
+  height: 32px;
+  bottom: 8%;
+  left: 22%;
+  transform: rotate(45deg);
+  animation: floatRhombus 13s ease-in-out 2s infinite alternate;
+}
+
+/* Modern Geometric Dot Matrix Patterns */
+.shape-dot-matrix {
+  background-image: radial-gradient(rgba(0, 173, 239, 0.22) 1.5px, transparent 1.5px);
+  background-size: 14px 14px;
+  opacity: 0.6;
+}
+
+.matrix-top {
+  width: 98px;
+  height: 70px;
+  top: 4%;
+  left: 8%;
+  animation: fadeInMatrix 1.5s ease-out forwards;
+}
+
+.matrix-bottom {
+  width: 84px;
+  height: 84px;
+  bottom: 4%;
+  right: 6%;
+  animation: fadeInMatrix 1.5s ease-out 0.3s forwards;
+}
+
+/* ==========================================================================
+   CARD & FORM - Enhanced Contrast with Soft Elevation
+   ========================================================================== */
+.login-card-wrapper {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 470px;
+  display: flex;
+  justify-content: center;
+}
+
+.login-card {
+  width: 100%;
+  background: var(--mv-white);
+  border-radius: 40px;
+  padding: 48px 44px;
+  /* Comforting elevated shadow that separates smoothly from the blue canvas */
+  box-shadow: 
+    0 24px 60px rgba(0, 120, 180, 0.12),
+    0 4px 16px rgba(0, 60, 100, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-card:hover {
+  box-shadow: 
+    0 28px 70px rgba(0, 120, 180, 0.15),
+    0 6px 20px rgba(0, 60, 100, 0.05);
+}
+
+/* Card Header: Welcome to MedVault (+) */
+.card-header {
+  margin-bottom: 24px;
+}
+
+.welcome-title {
+  color: var(--mv-cyan);
+  font-size: 2.35rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.brand-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.brand-name {
+  color: var(--mv-cyan);
+  font-size: 2.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-cross-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease;
+}
+
+.brand-cross-icon:hover {
+  transform: rotate(90deg) scale(1.08);
+}
+
+.card-subtitle {
+  color: var(--mv-cyan);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 14px;
+  letter-spacing: -0.01em;
+}
+
+/* Form Styles */
+.medvault-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Pill-shaped Input Container */
+.input-pill-container {
+  display: flex;
+  align-items: center;
+  background-color: var(--mv-cyan-light);
+  border-radius: 9999px;
+  height: 52px;
+  padding: 0 20px;
+  border: 1.5px solid transparent;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.input-pill-container:focus-within {
+  border-color: var(--mv-cyan);
+  background-color: #f3fbff;
+  box-shadow: 0 0 0 3.5px var(--mv-cyan-glow);
+}
+
+.input-pill-container.input-error {
+  border-color: var(--mv-error-red);
+  background-color: #fff5f5;
+}
+
+.input-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.input-pill-container:focus-within .input-icon {
+  transform: scale(1.1);
+}
+
+.pill-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: var(--mv-font);
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--mv-text-main);
+  height: 100%;
+}
+
+.pill-input::placeholder {
+  color: var(--mv-text-muted);
+  font-weight: 400;
+}
+
+/* Password Eye Toggle */
+.eye-toggle-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin-left: 8px;
+  color: var(--mv-cyan);
+  border-radius: 50%;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.eye-toggle-btn:hover {
+  transform: scale(1.15);
+  opacity: 0.85;
+}
+
+/* Inline Validation Errors */
+.inline-error-text {
+  color: var(--mv-error-red);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-left: 20px;
+  margin-top: 2px;
+}
+
+/* Forgot Password Link (Left aligned) */
+.forgot-password-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: -4px;
+  margin-bottom: 8px;
+}
+
+.forgot-password-link {
+  background: none;
+  border: none;
+  color: var(--mv-cyan);
+  font-family: var(--mv-font);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.forgot-password-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Login Submit Button */
+.submit-btn-row {
+  margin-top: 4px;
+}
+
+.login-submit-btn {
+  width: 100%;
+  height: 52px;
+  border-radius: 9999px;
+  background-color: var(--mv-cyan);
+  color: var(--mv-white);
+  font-family: var(--mv-font);
+  font-size: 1.15rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 173, 239, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  letter-spacing: -0.01em;
+}
+
+.login-submit-btn:hover:not(:disabled) {
+  background-color: var(--mv-cyan-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(0, 173, 239, 0.42);
+}
+
+.login-submit-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 10px rgba(0, 173, 239, 0.25);
+}
+
+.login-submit-btn:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.btn-spinner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+}
+
+.spinner-ring {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: var(--mv-white);
+  border-radius: 50%;
+  animation: spinRing 0.7s linear infinite;
+}
+
+/* Footer: Already have an account? Sign up here */
+.signup-prompt-row {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 0.84rem;
+}
+
+.already-account-text {
+  color: var(--mv-text-sub);
+  font-weight: 500;
+}
+
+.signup-link {
+  background: none;
+  border: none;
+  color: var(--mv-cyan);
+  font-family: var(--mv-font);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: all 0.2s ease;
+}
+
+.signup-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   POST-LOGIN SUCCESS STATE (Smooth Slide-In Presentation)
+   ========================================================================== */
+.success-card {
+  text-align: center;
+  padding: 52px 40px;
+}
+
+.success-badge-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.success-title {
+  color: var(--mv-cyan);
+  font-size: 1.85rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.success-subtitle {
+  color: var(--mv-text-sub);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin-bottom: 28px;
+}
+
+.success-details-box {
+  background-color: var(--mv-cyan-light);
+  border-radius: 20px;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 28px;
+  text-align: left;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.detail-label {
+  color: var(--mv-text-muted);
+  font-weight: 600;
+}
+
+.detail-value {
+  color: var(--mv-text-main);
+  font-weight: 600;
+}
+
+.detail-value.status-active {
+  color: #059669;
+}
+
+.logout-btn {
+  background-color: #0284c7;
+}
+
+/* ==========================================================================
+   INTERACTIVE MODALS (Forgot Password / Sign Up)
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+
+.modal-sheet {
+  background: var(--mv-white);
+  border-radius: 28px;
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 28px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.modal-title {
+  color: var(--mv-cyan);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.6rem;
+  color: var(--mv-text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.modal-message {
+  color: var(--mv-text-sub);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  margin-top: 24px;
+}
+
+/* ==========================================================================
+   ANIMATIONS & SLIDE-IN EFFECTS
+   ========================================================================== */
+
+/* Accessing the webpage - Card Entrance */
+.animate-card-entrance {
+  animation: slideInFromRight 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Staggered Element Slide-in Delays */
+.animate-item-1 {
+  animation: slideInDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.animate-item-2 {
+  animation: slideInLeftElement 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+}
+
+.animate-item-3 {
+  animation: slideInLeftElement 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both;
+}
+
+.animate-item-4 {
+  animation: fadeIn 0.6s ease 0.48s both;
+}
+
+.animate-item-5 {
+  animation: slideInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.55s both;
+}
+
+.animate-item-6 {
+  animation: fadeIn 0.6s ease 0.65s both;
+}
+
+/* Post-Login Slide-In Animation */
+.animate-slide-in-success {
+  animation: slideInSuccess 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.2s both;
+}
+
+/* Input validation shake */
+.field-shake {
+  animation: shakeX 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease both;
+}
+
+.animate-slide-up {
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --------------------------------------------------------------------------
+   Geometric Animation Keyframes
+   -------------------------------------------------------------------------- */
+@keyframes rotateCrossSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rotateCrossReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes floatCross {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(180deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(360deg);
+  }
+}
+
+@keyframes floatRing {
+  0% {
+    transform: translateY(0px) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateY(-20px) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0px) scale(1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes spinRingDashed {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(25px, -30px) scale(1.08);
+  }
+  100% {
+    transform: translate(-20px, 15px) scale(0.95);
+  }
+}
+
+@keyframes pulseOrb {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.7;
+  }
+}
+
+@keyframes floatPill {
+  0% {
+    transform: translateY(0px) rotate(-25deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(-15deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(-25deg);
+  }
+}
+
+@keyframes floatRhombus {
+  0% {
+    transform: translateY(0px) rotate(45deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(60deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(45deg);
+  }
+}
+
+@keyframes fadeInMatrix {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+
+/* Page & Element Transitions */
+@keyframes slideInHeroText {
+  0% {
+    opacity: 0;
+    transform: translate3d(-40px, 30px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slideInFromRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(50px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slideInDown {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -25px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slideInLeftElement {
+  0% {
+    opacity: 0;
+    transform: translate3d(30px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slideInUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 25px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes slideInSuccess {
+  0% {
+    opacity: 0;
+    transform: translate3d(60px, 0, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
+  80% {
+    transform: scale(0.89);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shakeX {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes subtleZoom {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.05); }
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+@media (max-width: 960px) {
+  .medvault-login-page {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .login-left-section {
+    flex: none;
+    max-width: 100%;
+    height: 260px;
+  }
+
+  .left-content-overlay {
+    bottom: 24px;
+    left: 24px;
+    right: 24px;
+  }
+
+  .left-hero-text {
+    font-size: 1.3rem;
+  }
+
+  .login-right-section {
+    flex: 1;
+    padding: 24px 16px 40px;
+  }
+
+  .login-card {
+    border-radius: 30px;
+    padding: 36px 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .welcome-title, .brand-name {
+    font-size: 1.95rem;
+  }
+
+  .login-card {
+    padding: 30px 18px;
+  }
+}

@@ -1,0 +1,35 @@
+# Dependencies (Do NOT upload to GitHub - these are installed via npm install)
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Testing and coverage
+coverage/
+
+# Production build outputs
+dist/
+**/dist/
+build/
+**/build/
+
+# Local Environment & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor & OS files
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
