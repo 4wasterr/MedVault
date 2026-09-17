@@ -49,7 +49,7 @@ body, html {
 }
 
 /* ==========================================================================
-   LEFT SECTION: Doctor & Patient Hero Showcase
+   LEFT SECTION: Doctor & Medical Team Slideshow Showcase
    ========================================================================== */
 .login-left-section {
   position: relative;
@@ -57,17 +57,40 @@ body, html {
   max-width: 53%;
   height: 100vh;
   overflow: hidden;
-  background-color: #dbeafe;
+  background-color: #0c1a29;
 }
 
-.left-bg-image {
+.slideshow-slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1), visibility 1s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.slideshow-slide.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.slideshow-slide-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center 25%;
   display: block;
-  transform: scale(1.02);
-  animation: subtleZoom 14s ease-in-out infinite alternate;
+  transform: scale(1);
+  transition: transform 7s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.slideshow-slide.active .slideshow-slide-img {
+  transform: scale(1.05);
 }
 
 /* Gradients that match the reference 1:1 */
@@ -78,9 +101,10 @@ body, html {
   right: 0;
   bottom: 0;
   pointer-events: none;
+  z-index: 2;
   background: 
     /* Bottom soft cyan gradient holding the white text */
-    linear-gradient(to top, rgba(0, 173, 239, 0.58) 0%, rgba(0, 173, 239, 0.26) 28%, rgba(0, 173, 239, 0.05) 55%, transparent 75%),
+    linear-gradient(to top, rgba(0, 173, 239, 0.65) 0%, rgba(0, 173, 239, 0.3) 30%, rgba(0, 173, 239, 0.06) 55%, transparent 75%),
     /* Right blend transitioning softly toward the soothing blue right side */
     linear-gradient(to right, transparent 65%, rgba(225, 240, 252, 0.55) 92%, rgba(237, 246, 253, 0.95) 100%),
     /* Ambient cyan glow */
@@ -89,20 +113,146 @@ body, html {
 
 .left-content-overlay {
   position: absolute;
-  bottom: 56px;
+  bottom: 48px;
   left: 56px;
   right: 48px;
-  z-index: 2;
+  z-index: 3;
   animation: slideInHeroText 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .left-hero-text {
   color: var(--mv-white);
-  font-size: clamp(1.5rem, 2.2vw, 2.1rem);
+  font-size: clamp(1.45rem, 2.1vw, 2.05rem);
   font-weight: 700;
-  line-height: 1.32;
+  line-height: 1.34;
   letter-spacing: -0.015em;
-  text-shadow: 0 3px 14px rgba(0, 45, 70, 0.25);
+  text-shadow: 0 3px 14px rgba(0, 45, 70, 0.35);
+  min-height: 2.7em;
+}
+
+/* Slideshow Controls Bar (Capsule Pill) */
+.slideshow-controls-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 4px 10px 4px 6px;
+  background: rgba(8, 26, 44, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  width: fit-content;
+}
+
+/* Slideshow Pill Indicators (Dots) */
+.slideshow-indicators {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+}
+
+.slide-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.45);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-dot:hover {
+  background: rgba(255, 255, 255, 0.88);
+  transform: scale(1.15);
+}
+
+.slide-dot.active {
+  width: 28px;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+}
+
+/* Minimalist Pause / Play Button */
+.slideshow-pause-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.slideshow-pause-btn:hover {
+  background: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.slideshow-pause-btn.is-paused {
+  background: rgba(0, 173, 239, 0.75);
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 10px rgba(0, 173, 239, 0.65);
+}
+
+.slideshow-pause-btn.is-paused svg {
+  margin-left: 1.5px; /* visually center play triangle */
+}
+
+/* When paused, halt zoom animation for a completely static, distraction-free view */
+.login-left-section.is-slideshow-paused .slideshow-slide-img {
+  transform: scale(1) !important;
+  transition: none !important;
+}
+
+/* Subtle Navigation Arrows on Hover */
+.slide-arrow-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.25s ease;
+}
+
+.login-left-section:hover .slide-arrow-btn {
+  opacity: 1;
+}
+
+.slide-arrow-prev {
+  left: 24px;
+}
+
+.slide-arrow-next {
+  right: 24px;
+}
+
+.slide-arrow-btn:hover {
+  background: rgba(0, 173, 239, 0.75);
+  border-color: #00ADEF;
+  transform: translateY(-50%) scale(1.08);
 }
 
 /* ==========================================================================

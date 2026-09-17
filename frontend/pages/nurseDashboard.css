@@ -1,0 +1,1538 @@
+/* ==========================================================================
+   MedVault - Nurse Dashboard Stylesheet (1:1 Exact Original Reference Layout)
+   - Perfectly Centered Web Application Frame (Balanced Left & Right Margins)
+   - Symmetrical, Zero Lopsided Dead Space
+   - Left-Docked Frame Sidebar (Squircle Buttons - 1:1 with Reference)
+   - Bar Graph Segmented Toggle (Weekly, Quarterly, Annually in Blue Shades)
+   - Clean Solid Glare-Free Medical Background
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --nd-cyan: #00ADEF;
+  --nd-cyan-hover: #009ad6;
+  --nd-cyan-light: #EBF7FD;
+  --nd-blue: #00ADEF;
+  --nd-bg-1: #f4f7fb;
+  --nd-bg-2: #f4f7fb;
+  --nd-bg-3: #f4f7fb;
+  --nd-white: #ffffff;
+  --nd-card-shadow: 0 6px 24px rgba(0, 60, 110, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --nd-card-shadow-hover: 0 10px 30px rgba(0, 60, 110, 0.09), 0 2px 6px rgba(0, 0, 0, 0.03);
+  --nd-title: #111827;
+  --nd-subtitle: #6FB5CB;
+  --nd-label-gray: #475569;
+  --nd-text-dark: #1E293B;
+  --nd-border-line: #EEF2F6;
+  --nd-font: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: var(--nd-font);
+  color: var(--nd-title);
+  background-color: var(--nd-bg-1);
+}
+
+/* ==========================================================================
+   Screen Container (Horizontally & Vertically Centered Across Viewport)
+   ========================================================================== */
+.nd-screen-container {
+  width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: var(--nd-bg-1);
+  padding: clamp(14px, 2vh, 28px) clamp(16px, 2.2vw, 40px);
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* ==========================================================================
+   Centered Dashboard Frame (Wide Fill on Monitors, Balanced Margins)
+   ========================================================================== */
+.nd-dashboard-frame {
+  width: 100%;
+  max-width: 1820px;
+  display: flex;
+  align-items: stretch;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   FAR LEFT SIDEBAR (Within Frame, Squircles, Aligned with Workspace Bounds)
+   ========================================================================== */
+.nd-sidebar {
+  width: 100px;
+  min-width: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  z-index: 10;
+  flex-shrink: 0;
+  margin-right: 30px;
+}
+
+/* Top Red Medical Cross */
+.nd-sidebar-logo {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+  filter: drop-shadow(0 4px 12px rgba(255, 77, 77, 0.25));
+}
+
+.nd-sidebar-logo:hover {
+  transform: scale(1.08);
+}
+
+/* Stack of Individual Floating Squircle Nav Tiles (1:1 with Pic 2) */
+.nd-sidebar-nav {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+  margin: auto 0;
+}
+
+/* SQUIRCLE: Individual Floating Square with rounded edges (1:1 with Pic 2) */
+.nav-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #00ADEF;
+  box-shadow: 0 8px 20px rgba(0, 60, 110, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.nav-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(0, 60, 110, 0.13), 0 3px 8px rgba(0, 0, 0, 0.04);
+}
+
+.nav-btn.active {
+  background-color: var(--nd-cyan);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 173, 239, 0.42), 0 2px 6px rgba(0, 173, 239, 0.2);
+}
+
+/* Bottom Floating Power Button (Squircle - Matches Nav Tiles) */
+.nd-sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.power-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 22px;
+  background: var(--nd-white);
+  border: none;
+  box-shadow: 0 8px 20px rgba(0, 60, 110, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.power-btn:hover {
+  background-color: #fef2f2;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.2);
+}
+
+.power-btn:hover svg {
+  stroke: #EF4444;
+}
+
+/* ==========================================================================
+   MAIN WORKSPACE (Fills Frame with Balanced Margins)
+   ========================================================================== */
+.nd-workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  box-sizing: border-box;
+}
+
+/* --------------------------------------------------------------------------
+   Top Header (Bold, Large, 1:1 with OG Design)
+   -------------------------------------------------------------------------- */
+.nd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+  width: 100%;
+}
+
+.header-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-nurse-text {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--nd-subtitle);
+  letter-spacing: -0.01em;
+}
+
+.dashboard-main-title {
+  font-size: 2.9rem;
+  font-weight: 400;
+  color: var(--nd-title);
+  letter-spacing: -0.025em;
+  margin-top: 2px;
+  line-height: 1.15;
+}
+
+.header-right-tools {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* Search Pill Input */
+.search-pill-container {
+  display: flex;
+  align-items: center;
+  background: var(--nd-white);
+  border-radius: 9999px;
+  height: 52px;
+  width: 400px;
+  padding: 0 20px;
+  box-shadow: 0 4px 16px rgba(0, 60, 110, 0.05);
+  transition: all 0.2s ease;
+}
+
+.search-pill-container:focus-within {
+  box-shadow: 0 0 0 3px rgba(0, 173, 239, 0.22);
+}
+
+.search-glass-icon {
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.search-pill-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: var(--nd-font);
+  font-size: 0.98rem;
+  color: var(--nd-text-dark);
+}
+
+/* Header Buttons */
+.header-icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.header-icon-btn:hover {
+  transform: scale(1.1);
+}
+
+.avatar-circle-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--nd-white);
+  border: none;
+  box-shadow: 0 4px 16px rgba(0, 60, 110, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--nd-cyan);
+  transition: all 0.2s ease;
+}
+
+.avatar-circle-btn:hover {
+  transform: scale(1.06);
+}
+
+.notif-wrapper, .avatar-wrapper {
+  position: relative;
+}
+
+.notif-dropdown, .avatar-dropdown {
+  position: absolute;
+  top: 56px;
+  right: 0;
+  width: 310px;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 16px 40px rgba(0, 50, 90, 0.12);
+  z-index: 50;
+  border: 1px solid #f1f5f9;
+}
+
+.dropdown-title {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--nd-title);
+  margin-bottom: 10px;
+}
+
+.notif-row {
+  font-size: 0.88rem;
+  color: #475569;
+  padding: 8px 0;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.avatar-nurse-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.avatar-duty-tag {
+  font-size: 0.84rem;
+  color: #059669;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+.menu-signout-btn {
+  margin-top: 14px;
+  width: 100%;
+  padding: 10px;
+  background: #fef2f2;
+  color: #EF4444;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   ROW 1: 2x2 KPI CARDS (Left 55%) & ACTIVITY BAR CHART (Right 45%)
+   ========================================================================== */
+.nd-row-top {
+  display: grid;
+  grid-template-columns: 1.22fr 1fr;
+  gap: 26px;
+  align-items: stretch;
+  width: 100%;
+}
+
+/* 2x2 KPI Cards Grid */
+.kpi-quad-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 20px;
+}
+
+.kpi-card {
+  background: var(--nd-white);
+  border-radius: 26px;
+  padding: 24px 28px;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: var(--nd-card-shadow);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nd-card-shadow-hover);
+}
+
+.kpi-card.kpi-active {
+  border-color: var(--nd-cyan);
+  box-shadow: 0 0 0 2px rgba(0, 173, 239, 0.3);
+}
+
+.kpi-texts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.kpi-heading {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--nd-label-gray);
+  margin-bottom: 6px;
+}
+
+.kpi-digit {
+  font-size: 3rem;
+  font-weight: 400;
+  color: var(--nd-title);
+  line-height: 1;
+}
+
+.kpi-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Activity Bar Chart Card with Top Buttons (Weekly, Quarterly, Annually) */
+.nd-chart-card {
+  background: var(--nd-white);
+  border-radius: 26px;
+  padding: 22px 30px 18px;
+  box-shadow: var(--nd-card-shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 284px;
+}
+
+/* Top Range Toggle Pill (Weekly / Quarterly / Annually - Blue Shades) */
+.chart-card-top-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.chart-range-pill {
+  display: inline-flex;
+  align-items: center;
+  background: #EBF5FA;
+  border-radius: 9999px;
+  padding: 4px 6px;
+  gap: 4px;
+}
+
+.range-tab-btn {
+  border: none;
+  background: transparent;
+  color: #5B7A94;
+  font-family: var(--nd-font);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.range-tab-btn:hover {
+  color: #00ADEF;
+}
+
+/* Active Pill: Solid white pill, bold blue shade (#00ADEF) */
+.range-tab-btn.active {
+  background: #ffffff;
+  color: #00ADEF;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 173, 239, 0.18);
+}
+
+.chart-wrapper-exact {
+  display: flex;
+  height: 205px;
+  gap: 16px;
+}
+
+.exact-y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  color: #94A3B8;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding-bottom: 24px;
+  min-width: 26px;
+}
+
+.exact-chart-canvas {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-horizontal-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  pointer-events: none;
+}
+
+.h-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: var(--nd-border-line);
+}
+
+.bars-flex-container {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding-bottom: 24px;
+  z-index: 2;
+}
+
+.exact-bar-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  width: 48px;
+}
+
+.bar-vertical-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* 1:1 Solid Cyan Pill Bars */
+.exact-cyan-bar {
+  width: 42px;
+  border-radius: 9999px;
+  background-color: var(--nd-cyan);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.exact-cyan-bar:hover {
+  background-color: #009ad6;
+  transform: scaleX(1.08);
+}
+
+.exact-cyan-bar::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.85);
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+.exact-cyan-bar:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.day-x-label {
+  position: absolute;
+  bottom: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #64748B;
+}
+
+/* ==========================================================================
+   ROW 2: APPOINTMENT TABLES (Left 56% & Right 44%)
+   ========================================================================== */
+.nd-row-tables {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 28px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.nd-table-card {
+  background: var(--nd-white);
+  border-radius: 26px;
+  padding: 24px 30px 18px;
+  box-shadow: var(--nd-card-shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 320px;
+}
+
+.card-table-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--nd-title);
+  letter-spacing: -0.01em;
+  margin-bottom: 16px;
+}
+
+.table-flow-container {
+  width: 100%;
+}
+
+.exact-nd-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.exact-nd-table th {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #94A3B8;
+  padding: 11px 8px;
+  border: none;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.exact-nd-table td {
+  padding: 13px 8px;
+  font-size: 0.98rem;
+  font-weight: 500;
+  color: var(--nd-text-dark);
+  border: none;
+  border-bottom: 1px solid #F8FAFC;
+}
+
+.clickable-table-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.clickable-table-row:hover {
+  background-color: #f1f8fc;
+}
+
+/* Pagination: < ( 1 ) > */
+.exact-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pagination-caret {
+  font-size: 1.25rem;
+  color: #94A3B8;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 6px;
+}
+
+.pagination-caret.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pagination-circle-active {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: var(--nd-cyan);
+  color: #ffffff;
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   ROW 3: 3 PROMINENT ACTION CARDS (Generous, Upscaled Proportions)
+   ========================================================================== */
+.nd-row-actions {
+  display: flex;
+  gap: 24px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.exact-action-card {
+  width: 275px;
+  height: 92px;
+  background: var(--nd-white);
+  border-radius: 22px;
+  padding: 16px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: var(--nd-card-shadow);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.exact-action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--nd-card-shadow-hover);
+}
+
+.action-label-stack {
+  display: flex;
+  flex-direction: column;
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: var(--nd-title);
+  line-height: 1.22;
+}
+
+.plus-symbol {
+  font-size: 2.7rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.purple-plus {
+  color: #A855F7;
+}
+
+.cyan-plus {
+  color: var(--nd-cyan);
+}
+
+.clipboard-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   CLEAN MODALS
+   ========================================================================= */
+.modal-backdrop-clean {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+
+.modal-dialog-clean {
+  background: #ffffff;
+  border-radius: 26px;
+  padding: 32px 30px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
+}
+
+.modal-dialog-clean.logout-modal-clean {
+  max-width: 380px;
+  text-align: center;
+}
+
+.logout-ring-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #fef2f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+}
+
+.modal-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-top h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--nd-title);
+}
+
+.close-x {
+  background: transparent;
+  border: none;
+  font-size: 1.6rem;
+  color: #94A3B8;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modal-fields-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.field-block label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.field-block input, .field-block select {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid #CBD5E1;
+  font-family: var(--nd-font);
+  font-size: 0.92rem;
+  color: var(--nd-text-dark);
+  outline: none;
+}
+
+.field-block input:focus, .field-block select:focus {
+  border-color: var(--nd-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 173, 239, 0.15);
+}
+
+.field-block-row {
+  display: flex;
+  gap: 14px;
+}
+
+.modal-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.modal-btn-ghost {
+  background: #f1f5f9;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #475569;
+  cursor: pointer;
+}
+
+.modal-btn-primary {
+  background: var(--nd-cyan);
+  color: #ffffff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.modal-btn-primary:hover {
+  background-color: var(--nd-cyan-hover);
+}
+
+.modal-btn-danger {
+  background: #EF4444;
+  color: #ffffff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.modal-btn-danger:hover {
+  background: #dc2626;
+}
+
+/* Patient Roster Stack */
+.patient-roster-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border-radius: 12px;
+}
+
+.roster-initial {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--nd-cyan-light);
+  color: var(--nd-cyan);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.roster-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.86rem;
+}
+
+.roster-info span {
+  font-size: 0.78rem;
+  color: #64748B;
+}
+
+.roster-time-tag {
+  font-size: 0.82rem;
+  color: #94A3B8;
+  font-weight: 600;
+}
+
+/* Snapshot Box */
+.snapshot-top-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 16px;
+}
+
+.snapshot-avatar-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--nd-cyan);
+  color: #ffffff;
+  font-size: 1.3rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vitals-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.v-card {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94A3B8;
+}
+
+.v-num {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--nd-title);
+}
+
+/* Animations */
+.animate-fade {
+  animation: fadeIn 0.25s ease forwards;
+}
+
+.animate-zoom {
+  animation: zoomIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pop-in {
+  animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-grow-bar {
+  animation: growBar 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes growBar {
+  from { transform: scaleY(0); transform-origin: bottom; }
+  to { transform: scaleY(1); transform-origin: bottom; }
+}
+
+/* ==========================================================================
+   MULTI-TIER RESPONSIVE SYSTEM (Automatic Adaptation for Monitor vs Laptop)
+   ========================================================================== */
+
+/* Tier 1: Standard Laptop Displays (1281px - 1560px, e.g. 1080p @ 125% scaling & 1440x900) */
+@media (max-width: 1560px) {
+  .nd-dashboard-frame {
+    max-width: 100%;
+  }
+  .nd-sidebar {
+    width: 84px;
+    min-width: 84px;
+    margin-right: 20px;
+  }
+  .nd-sidebar-nav {
+    width: auto;
+    padding: 0;
+    gap: 8px;
+  }
+  .nav-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 17px;
+  }
+  .power-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 17px;
+  }
+  .nd-workspace {
+    gap: 18px;
+  }
+  .dashboard-main-title {
+    font-size: 2.25rem;
+  }
+  .welcome-nurse-text {
+    font-size: 0.98rem;
+  }
+  .search-pill-container {
+    width: 300px;
+    height: 44px;
+  }
+  .avatar-circle-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.2rem;
+  }
+  .kpi-card {
+    min-height: 106px;
+    padding: 16px 20px;
+    border-radius: 20px;
+  }
+  .kpi-digit {
+    font-size: 2.35rem;
+  }
+  .kpi-heading {
+    font-size: 0.86rem;
+  }
+  .nd-chart-card {
+    min-height: 235px;
+    padding: 16px 22px 12px;
+    border-radius: 20px;
+  }
+  .chart-wrapper-exact {
+    height: 160px;
+    gap: 10px;
+  }
+  .exact-cyan-bar {
+    width: 32px;
+  }
+  .nd-table-card {
+    min-height: 270px;
+    padding: 18px 22px 12px;
+    border-radius: 20px;
+  }
+  .card-table-title {
+    font-size: 1.18rem;
+    margin-bottom: 12px;
+  }
+  .exact-nd-table td {
+    padding: 10px 8px;
+    font-size: 0.9rem;
+  }
+  .exact-action-card {
+    width: 215px;
+    height: 76px;
+    border-radius: 18px;
+    padding: 12px 18px;
+  }
+  .action-label-stack {
+    font-size: 1.02rem;
+  }
+  .plus-symbol {
+    font-size: 2.3rem;
+  }
+}
+
+/* Tier 2: Compact Laptop Displays (1025px - 1280px, e.g. 1366x768 and 1080p @ 150%) */
+@media (max-width: 1280px) {
+  .nd-screen-container {
+    padding: 10px 14px;
+  }
+  .nd-sidebar {
+    width: 72px;
+    min-width: 72px;
+    margin-right: 14px;
+    padding: 4px 0;
+  }
+  .nd-sidebar-logo svg {
+    width: 38px;
+    height: 38px;
+  }
+  .nd-sidebar-nav {
+    width: auto;
+    padding: 0;
+    gap: 7px;
+    border-radius: 0;
+  }
+  .nav-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 15px;
+  }
+  .power-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 15px;
+  }
+  .power-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .nd-workspace {
+    gap: 14px;
+  }
+  .dashboard-main-title {
+    font-size: 1.95rem;
+  }
+  .welcome-nurse-text {
+    font-size: 0.9rem;
+  }
+  .search-pill-container {
+    width: 240px;
+    height: 38px;
+    padding: 0 12px;
+  }
+  .avatar-circle-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 1.05rem;
+  }
+  .nd-row-top {
+    gap: 14px;
+  }
+  .kpi-quad-grid {
+    gap: 10px;
+  }
+  .kpi-card {
+    min-height: 88px;
+    padding: 12px 16px;
+    border-radius: 16px;
+  }
+  .kpi-digit {
+    font-size: 2rem;
+  }
+  .kpi-heading {
+    font-size: 0.8rem;
+  }
+  .kpi-symbol svg {
+    width: 24px;
+    height: 24px;
+  }
+  .nd-chart-card {
+    min-height: 200px;
+    padding: 14px 18px 10px;
+    border-radius: 18px;
+  }
+  .chart-range-pill {
+    padding: 3px 4px;
+  }
+  .range-tab-btn {
+    padding: 3px 10px;
+    font-size: 0.78rem;
+  }
+  .chart-wrapper-exact {
+    height: 135px;
+    gap: 8px;
+  }
+  .exact-cyan-bar {
+    width: 26px;
+  }
+  .day-x-label {
+    font-size: 0.75rem;
+  }
+  .exact-y-axis {
+    font-size: 0.72rem;
+    padding-bottom: 18px;
+  }
+  .nd-row-tables {
+    gap: 14px;
+  }
+  .nd-table-card {
+    min-height: 230px;
+    padding: 14px 18px 10px;
+    border-radius: 18px;
+  }
+  .card-table-title {
+    font-size: 1.08rem;
+    margin-bottom: 8px;
+  }
+  .exact-nd-table th {
+    font-size: 0.8rem;
+    padding: 6px 5px;
+  }
+  .exact-nd-table td {
+    padding: 7px 5px;
+    font-size: 0.84rem;
+  }
+  .exact-pagination {
+    margin-top: 6px;
+  }
+  .nd-row-actions {
+    gap: 12px;
+  }
+  .exact-action-card {
+    width: 180px;
+    height: 66px;
+    border-radius: 16px;
+    padding: 10px 14px;
+  }
+  .action-label-stack {
+    font-size: 0.9rem;
+  }
+  .plus-symbol {
+    font-size: 2rem;
+  }
+  .clipboard-icon-wrap svg {
+    width: 24px;
+    height: 28px;
+  }
+}
+
+/* Tier 3A: Laptop Height <= 860px (Standard 1080p @ 125% Windows Scaling) */
+@media (max-height: 860px) {
+  .nd-screen-container {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .nd-workspace {
+    gap: 14px;
+  }
+  .dashboard-main-title {
+    font-size: 2.15rem;
+  }
+  .welcome-nurse-text {
+    font-size: 0.95rem;
+  }
+  .kpi-card {
+    min-height: 90px;
+    padding: 12px 18px;
+  }
+  .kpi-digit {
+    font-size: 2.15rem;
+  }
+  .nd-chart-card {
+    min-height: 205px;
+    padding: 12px 18px 8px;
+  }
+  .chart-wrapper-exact {
+    height: 135px;
+  }
+  .nd-table-card {
+    min-height: 225px;
+    padding: 14px 18px 8px;
+  }
+  .card-table-title {
+    margin-bottom: 10px;
+  }
+  .exact-nd-table th {
+    padding: 7px 6px;
+  }
+  .exact-nd-table td {
+    padding: 7px 6px;
+    font-size: 0.88rem;
+  }
+  .exact-pagination {
+    margin-top: 6px;
+  }
+  .exact-action-card {
+    height: 68px;
+    padding: 10px 16px;
+  }
+}
+
+/* Tier 3B: Standard Laptop Height <= 740px (1366x768 & Scaled Laptops) */
+@media (max-height: 740px) {
+  .nd-screen-container {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .nd-sidebar {
+    padding: 2px 0;
+  }
+  .nd-sidebar-nav {
+    padding: 0;
+    gap: 6px;
+    width: auto;
+  }
+  .nav-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+  }
+  .power-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+  }
+  .nd-workspace {
+    gap: 10px;
+  }
+  .dashboard-main-title {
+    font-size: 1.82rem;
+  }
+  .welcome-nurse-text {
+    font-size: 0.86rem;
+  }
+  .search-pill-container {
+    height: 36px;
+  }
+  .avatar-circle-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .kpi-quad-grid {
+    gap: 8px;
+  }
+  .kpi-card {
+    min-height: 78px;
+    padding: 8px 14px;
+    border-radius: 15px;
+  }
+  .kpi-digit {
+    font-size: 1.85rem;
+  }
+  .kpi-heading {
+    font-size: 0.78rem;
+  }
+  .nd-chart-card {
+    min-height: 172px;
+    padding: 10px 16px 6px;
+    border-radius: 16px;
+  }
+  .chart-wrapper-exact {
+    height: 110px;
+  }
+  .exact-cyan-bar {
+    width: 25px;
+  }
+  .day-x-label {
+    font-size: 0.74rem;
+  }
+  .exact-y-axis {
+    font-size: 0.72rem;
+    padding-bottom: 16px;
+  }
+  .nd-table-card {
+    min-height: 195px;
+    padding: 10px 16px 6px;
+    border-radius: 16px;
+  }
+  .card-table-title {
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+  }
+  .exact-nd-table th {
+    padding: 5px 4px;
+    font-size: 0.78rem;
+  }
+  .exact-nd-table td {
+    padding: 5px 4px;
+    font-size: 0.82rem;
+  }
+  .exact-pagination {
+    margin-top: 4px;
+  }
+  .exact-action-card {
+    height: 58px;
+    padding: 8px 14px;
+    border-radius: 15px;
+  }
+  .action-label-stack {
+    font-size: 0.86rem;
+  }
+  .plus-symbol {
+    font-size: 1.85rem;
+  }
+}
+
+/* Tier 3C: Ultra-Short Laptop Viewports <= 640px (1080p @ 150% with Toolbars) */
+@media (max-height: 640px) {
+  .nd-screen-container {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .nd-workspace {
+    gap: 7px;
+  }
+  .dashboard-main-title {
+    font-size: 1.6rem;
+  }
+  .welcome-nurse-text {
+    font-size: 0.8rem;
+  }
+  .kpi-quad-grid {
+    gap: 6px;
+  }
+  .kpi-card {
+    min-height: 66px;
+    padding: 6px 12px;
+    border-radius: 12px;
+  }
+  .kpi-digit {
+    font-size: 1.6rem;
+  }
+  .nd-chart-card {
+    min-height: 148px;
+    padding: 8px 12px 4px;
+    border-radius: 14px;
+  }
+  .chart-wrapper-exact {
+    height: 90px;
+  }
+  .exact-cyan-bar {
+    width: 22px;
+  }
+  .nd-table-card {
+    min-height: 172px;
+    padding: 8px 12px 4px;
+    border-radius: 14px;
+  }
+  .card-table-title {
+    font-size: 0.98rem;
+    margin-bottom: 4px;
+  }
+  .exact-nd-table th {
+    padding: 4px 4px;
+    font-size: 0.74rem;
+  }
+  .exact-nd-table td {
+    padding: 4px 4px;
+    font-size: 0.78rem;
+  }
+  .exact-pagination {
+    margin-top: 2px;
+  }
+  .exact-action-card {
+    height: 50px;
+    padding: 6px 12px;
+    border-radius: 12px;
+  }
+  .action-label-stack {
+    font-size: 0.8rem;
+  }
+  .plus-symbol {
+    font-size: 1.6rem;
+  }
+}
+
+/* Tier 4: Mobile & Small Tablets */
+@media (max-width: 1024px) {
+  .nd-screen-container {
+    padding: 16px;
+    align-items: flex-start;
+  }
+  .nd-dashboard-frame {
+    flex-direction: column;
+  }
+  .nd-sidebar {
+    flex-direction: row;
+    width: 100%;
+    min-height: auto;
+    height: auto;
+    padding: 0;
+    margin-right: 0;
+    margin-bottom: 16px;
+    justify-content: space-between;
+  }
+  .nd-sidebar-nav {
+    flex-direction: row;
+    width: auto;
+    margin: 0;
+  }
+  .nd-row-top, .nd-row-tables {
+    grid-template-columns: 1fr;
+  }
+  .nd-row-actions {
+    flex-wrap: wrap;
+  }
+}
+

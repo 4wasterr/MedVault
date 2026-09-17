@@ -1,8 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './login.css';
 import doctorImg from './doctor.png';
+import slideClipboard from './slide_clipboard.png';
+import slideNurses from './slide_nurses.png';
+import slideXray from './slide_xray.png';
+import slideSurgery from './slide_surgery.png';
 
-export default function Login() {
+const SLIDES = [
+  {
+    src: doctorImg,
+    alt: 'MedVault Doctor and Senior Patient',
+    position: 'center 15%',
+    tagline: (
+      <>
+        Keeping your waiting room smart, secure,
+        <br />
+        and synchronized.
+      </>
+    ),
+  },
+  {
+    src: slideClipboard,
+    alt: 'Nurse Reviewing Clinical Records',
+    position: 'center 20%',
+    tagline: (
+      <>
+        Accurate clinical charting and patient care,
+        <br />
+        simplified at every step.
+      </>
+    ),
+  },
+  {
+    src: slideNurses,
+    alt: 'Nursing Staff Coordination',
+    position: 'center 15%',
+    tagline: (
+      <>
+        Seamless coordination between nurses, doctors,
+        <br />
+        and hospital departments.
+      </>
+    ),
+  },
+  {
+    src: slideXray,
+    alt: 'Physicians Reviewing Radiology Diagnostic Scans',
+    position: 'center 20%',
+    tagline: (
+      <>
+        Instant diagnostic insights and verified vitals
+        <br />
+        at your fingertips.
+      </>
+    ),
+  },
+  {
+    src: slideSurgery,
+    alt: 'Surgical Team Operating Room Procedure',
+    position: 'center 28%',
+    tagline: (
+      <>
+        Precision healthcare workflow from triage
+        <br />
+        to surgical recovery.
+      </>
+    ),
+  },
+];
+
+export default function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -11,6 +78,44 @@ export default function Login() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [modalType, setModalType] = useState(null); // 'forgot' | 'signup' | null
   const [shakeField, setShakeField] = useState(null);
+
+  // Slideshow State with persistence
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isAutoPlayPaused, setIsAutoPlayPaused] = useState(() => {
+    return localStorage.getItem('medvault_slideshow_paused') === 'true';
+  });
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    if (isAutoPlayPaused || isHovered) return;
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [isAutoPlayPaused, isHovered]);
+
+  const togglePlayPause = (e) => {
+    if (e) e.stopPropagation();
+    setIsAutoPlayPaused((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('medvault_slideshow_paused', String(next));
+      } catch (err) {
+        // ignore storage error
+      }
+      return next;
+    });
+  };
+
+  const goToPrevSlide = (e) => {
+    e.stopPropagation();
+    setCurrentSlide((prev) => (prev - 1 + SLIDES.length) % SLIDES.length);
+  };
+
+  const goToNextSlide = (e) => {
+    e.stopPropagation();
+    setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
+  };
 
   // Simple client-side validations
   const validateForm = () => {
@@ -56,11 +161,18 @@ export default function Login() {
     setIsSubmitting(true);
     setErrors({ username: '', password: '', general: '' });
 
-    // Simulate authentication delay then trigger smooth transition
+    // Simulate authentication delay then retain the Welcome Back animation
     setTimeout(() => {
       setIsSubmitting(false);
       setIsLoggedIn(true);
-    }, 900);
+
+      // If parent App provided onLoginSuccess, retain the Welcome animation for 1.4s then transition
+      if (onLoginSuccess) {
+        setTimeout(() => {
+          onLoginSuccess(username || 'Nurse');
+        }, 1400);
+      }
+    }, 850);
   };
 
   const handleLogout = () => {
@@ -71,20 +183,100 @@ export default function Login() {
 
   return (
     <div className="medvault-login-page">
-      {/* LEFT SECTION: Hero Image & Branding Overlay */}
-      <div className="login-left-section">
-        <img
-          src={doctorImg}
-          alt="MedVault Doctor and Patient"
-          className="left-bg-image"
-        />
+      {/* LEFT SECTION: Hero Image Slideshow & Branding Overlay */}
+      <div
+        className={`login-left-section ${isAutoPlayPaused ? 'is-slideshow-paused' : ''}`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        role="region"
+        aria-label="Medical slideshow"
+      >
+        {SLIDES.map((slide, idx) => (
+          <div
+            key={idx}
+            className={`slideshow-slide ${idx === currentSlide ? 'active' : ''}`}
+            aria-hidden={idx !== currentSlide}
+          >
+            <img
+              src={slide.src}
+              alt={slide.alt}
+              className="slideshow-slide-img"
+              style={{ objectPosition: slide.position || 'center 20%' }}
+            />
+          </div>
+        ))}
+
+        {/* Previous / Next Arrow Controls */}
+        <button
+          type="button"
+          className="slide-arrow-btn slide-arrow-prev"
+          onClick={goToPrevSlide}
+          aria-label="Previous Slide"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="slide-arrow-btn slide-arrow-next"
+          onClick={goToNextSlide}
+          aria-label="Next Slide"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+
+        {/* Gradient Overlays */}
         <div className="left-gradient-overlay"></div>
+
+        {/* Content & Tagline Overlay with Indicator Pills & Minimalist Pause Button */}
         <div className="left-content-overlay">
           <h2 className="left-hero-text">
-            Keeping your waiting room smart, secure,
-            <br />
-            and synchronized.
+            {SLIDES[currentSlide].tagline}
           </h2>
+
+          {/* Minimalist Controls Bar */}
+          <div className="slideshow-controls-bar">
+            {/* Slideshow Indicator Dots */}
+            <div className="slideshow-indicators" role="tablist" aria-label="Slide dots">
+              {SLIDES.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  role="tab"
+                  aria-selected={idx === currentSlide}
+                  className={`slide-dot ${idx === currentSlide ? 'active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentSlide(idx);
+                  }}
+                  aria-label={`Go to slide ${idx + 1}`}
+                />
+              ))}
+            </div>
+
+            {/* Minimalist Pause / Play Button */}
+            <button
+              type="button"
+              className={`slideshow-pause-btn ${isAutoPlayPaused ? 'is-paused' : ''}`}
+              onClick={togglePlayPause}
+              aria-label={isAutoPlayPaused ? 'Resume slideshow auto-play' : 'Pause slideshow auto-play'}
+              title={isAutoPlayPaused ? 'Resume slideshow' : 'Pause slideshow'}
+            >
+              {isAutoPlayPaused ? (
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <polygon points="6,4 20,12 6,20" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <rect x="5.5" y="4" width="3.5" height="16" rx="1.2" />
+                  <rect x="15" y="4" width="3.5" height="16" rx="1.2" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -280,7 +472,7 @@ export default function Login() {
             </div>
           </div>
         ) : (
-          /* Post-Login Slide-In Dashboard Transition */
+          /* Post-Login Slide-In Dashboard Transition (Welcome Back Animation) */
           <div className="login-card-wrapper animate-slide-in-success">
             <div className="login-card success-card">
               <div className="success-badge-icon animate-bounce-in">
@@ -295,15 +487,15 @@ export default function Login() {
                   />
                 </svg>
               </div>
-              <h2 className="success-title">Welcome, {username || 'Doctor'}!</h2>
+              <h2 className="success-title">Welcome Back, {username || 'Nurse'}!</h2>
               <p className="success-subtitle">
-                Access granted to your MedVault clinical workspace.
+                Authenticating session... Loading Nurse Clinical Dashboard.
               </p>
 
               <div className="success-details-box">
                 <div className="detail-item">
-                  <span className="detail-label">Status</span>
-                  <span className="detail-value status-active">Online • Synchronized</span>
+                  <span className="detail-label">Station</span>
+                  <span className="detail-value status-active">Nurse Station B • Synchronized</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">Security</span>
@@ -311,13 +503,24 @@ export default function Login() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="login-submit-btn logout-btn"
-                onClick={handleLogout}
-              >
-                Log Out / Switch Account
-              </button>
+              {onLoginSuccess ? (
+                <button
+                  type="button"
+                  className="login-submit-btn"
+                  style={{ marginTop: '8px' }}
+                  onClick={() => onLoginSuccess(username || 'Nurse')}
+                >
+                  Enter Dashboard Now →
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="login-submit-btn logout-btn"
+                  onClick={handleLogout}
+                >
+                  Log Out / Switch Account
+                </button>
+              )}
             </div>
           </div>
         )}
