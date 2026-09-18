@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
-import './nurseDashboard.css';
+import './receptionistDashboard.css';
+import './patientsModuleReceptionist.css';
 
-export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
-  const [activeNav, setActiveNav] = useState('home'); // 'home' | 'add' | 'records' | 'calendar'
+export default function ReceptionistDashboard({
+  onLogout,
+  receptionistName = 'Receptionist',
+  onNavigate,
+  patients,
+  setPatients,
+}) {
+  const [activeNav, setActiveNav] = useState('home'); // 'home' | 'patients' | 'records'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -15,6 +22,20 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
     setActiveModal(null);
     setActiveNav('home');
   };
+
+  // Pic 3 Register Form State
+  const [registerFormData, setRegisterFormData] = useState({
+    firstName: '',
+    sex: '',
+    middleName: '',
+    contactNumber: '',
+    lastName: '',
+    address: '',
+    emergFirstName: '',
+    emergContactNumber: '',
+    emergMiddleName: '',
+    emergLastName: '',
+  });
 
   // Range Toggle State: 'Weekly' | 'Quarterly' | 'Annually'
   const [chartRange, setChartRange] = useState('Weekly');
@@ -81,29 +102,59 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
 
   const handleRegisterPatient = (e) => {
     e.preventDefault();
-    if (!newPatient.name.trim()) return;
+    const fullName = `${registerFormData.firstName} ${registerFormData.middleName ? registerFormData.middleName + ' ' : ''}${registerFormData.lastName}`.trim();
+    if (!fullName) return;
 
     const created = {
       id: Date.now(),
-      time: newPatient.time || '2:00 pm',
-      patient: newPatient.name,
-      type: newPatient.type,
-      doctor: newPatient.doctor,
+      time: '2:00 pm',
+      patient: fullName,
+      type: 'Consultation',
+      doctor: 'Dr. Santos',
       status: 'Waiting',
       bp: '120/80',
       hr: '74 bpm',
     };
 
     setTodayAppointments((prev) => [created, ...prev]);
+
+    if (setPatients) {
+      const nextNum = (patients ? patients.length : 4) + 1;
+      const newPatientObj = {
+        id: `PTNT-${String(nextNum).padStart(3, '0')}`,
+        name: fullName,
+        age: 28,
+        status: 'Waiting',
+        sex: registerFormData.sex || 'Male',
+        contact: registerFormData.contactNumber || 'N/A',
+        address: registerFormData.address || 'N/A',
+        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergLastName}`.trim() || 'N/A',
+        emergencyContact: registerFormData.emergContactNumber || 'N/A',
+        doctor: 'Dr. Santos',
+      };
+      setPatients((prev) => [newPatientObj, ...prev]);
+    }
+
     setActiveModal(null);
-    setNewPatient({ name: '', age: '', contact: '', doctor: 'Dr. Santos', type: 'Consultation', time: '1:30 pm' });
+    setRegisterFormData({
+      firstName: '',
+      sex: '',
+      middleName: '',
+      contactNumber: '',
+      lastName: '',
+      address: '',
+      emergFirstName: '',
+      emergContactNumber: '',
+      emergMiddleName: '',
+      emergLastName: '',
+    });
   };
 
   return (
     <div className="nd-screen-container">
       <div className="nd-dashboard-frame">
         {/* =========================================================================
-            FAR LEFT SIDEBAR (Rounded Square Buttons / Squircles - 1:1 with 2nd Pic)
+            FAR LEFT SIDEBAR (Matches Pic 2 1:1)
             ========================================================================= */}
         <aside className="nd-sidebar">
         {/* Top Medical Red Cross */}
@@ -114,13 +165,16 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
           </svg>
         </div>
 
-        {/* Floating Capsule Menu (Squircle Buttons) */}
+        {/* Floating Capsule Menu (Squircle Buttons - 3 buttons matching Pic 2) */}
         <nav className="nd-sidebar-nav">
           {/* 1. Home Button (Squircle) */}
           <button
             type="button"
             className={`nav-btn ${activeNav === 'home' ? 'active' : ''}`}
-            onClick={() => setActiveNav('home')}
+            onClick={() => {
+              setActiveNav('home');
+              if (onNavigate) onNavigate('dashboard');
+            }}
             title="Dashboard"
             aria-label="Dashboard"
           >
@@ -129,22 +183,22 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
             </svg>
           </button>
 
-          {/* 2. Add Patient Button (Squircle) */}
+          {/* 2. Patients Module Button (Squircle - navigates to Patients Module) */}
           <button
             type="button"
-            className={`nav-btn ${activeNav === 'add' ? 'active' : ''}`}
+            className={`nav-btn ${activeNav === 'patients' ? 'active' : ''}`}
             onClick={() => {
-              setActiveNav('add');
-              setActiveModal('register');
+              setActiveNav('patients');
+              if (onNavigate) onNavigate('patients');
             }}
-            title="Register Patient"
-            aria-label="Register Patient"
+            title="Patients Module"
+            aria-label="Patients Module"
           >
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-              <circle cx="10" cy="8" r="4" fill={activeNav === 'add' ? '#ffffff' : '#00ADEF'} />
-              <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6v1H2v-1z" fill={activeNav === 'add' ? '#ffffff' : '#00ADEF'} />
-              <circle cx="18" cy="17" r="4.5" fill={activeNav === 'add' ? '#ffffff' : '#00ADEF'} />
-              <path d="M18 15v4M16 17h4" stroke={activeNav === 'add' ? '#00ADEF' : '#ffffff'} strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="10" cy="8" r="4" fill={activeNav === 'patients' ? '#ffffff' : '#00ADEF'} />
+              <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6v1H2v-1z" fill={activeNav === 'patients' ? '#ffffff' : '#00ADEF'} />
+              <circle cx="18" cy="17" r="4.5" fill={activeNav === 'patients' ? '#ffffff' : '#00ADEF'} />
+              <path d="M18 15v4M16 17h4" stroke={activeNav === 'patients' ? '#00ADEF' : '#ffffff'} strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
 
@@ -165,26 +219,6 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
               <path d="M7 10h5M7 13h5M7 16h3" stroke={activeNav === 'records' ? '#00ADEF' : '#ffffff'} strokeWidth="1.6" strokeLinecap="round" />
               <circle cx="17.5" cy="16.5" r="3.5" fill={activeNav === 'records' ? '#00ADEF' : '#ffffff'} stroke={activeNav === 'records' ? '#ffffff' : '#00ADEF'} strokeWidth="2" />
               <line x1="20" y1="19" x2="22.5" y2="21.5" stroke={activeNav === 'records' ? '#ffffff' : '#00ADEF'} strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-          </button>
-
-          {/* 4. Calendar with Checkmark Button (Squircle) */}
-          <button
-            type="button"
-            className={`nav-btn ${activeNav === 'calendar' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveNav('calendar');
-              setActiveModal('appointment');
-            }}
-            title="Appointments"
-            aria-label="Appointments"
-          >
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-              <rect x="3" y="5" width="18" height="16" rx="3" fill={activeNav === 'calendar' ? '#ffffff' : '#00ADEF'} />
-              <line x1="7" y1="2.5" x2="7" y2="6.5" stroke={activeNav === 'calendar' ? '#ffffff' : '#00ADEF'} strokeWidth="2.4" strokeLinecap="round" />
-              <line x1="17" y1="2.5" x2="17" y2="6.5" stroke={activeNav === 'calendar' ? '#ffffff' : '#00ADEF'} strokeWidth="2.4" strokeLinecap="round" />
-              <line x1="3" y1="9.5" x2="21" y2="9.5" stroke={activeNav === 'calendar' ? '#00ADEF' : '#ffffff'} strokeWidth="1.6" />
-              <path d="M8 15l3 3 5.5-5.5" stroke={activeNav === 'calendar' ? '#00ADEF' : '#ffffff'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </nav>
@@ -561,7 +595,7 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
           <button
             type="button"
             className="exact-action-card"
-            onClick={() => setActiveModal('patientList')}
+            onClick={() => onNavigate ? onNavigate('patients') : setActiveModal('patientList')}
           >
             <div className="action-label-stack">
               <span>Patient List</span>
@@ -585,74 +619,186 @@ export default function NurseDashboard({ onLogout, nurseName = 'Nurse' }) {
           INTERACTIVE MODALS
           ========================================================================= */}
 
-      {/* 1. Register Patient Modal */}
+      {/* 1. Register Patient Modal (Pic 3 1:1 Match) */}
       {activeModal === 'register' && (
-        <div className="modal-backdrop-clean animate-fade" onClick={closeModal}>
-          <div className="modal-dialog-clean animate-zoom" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <h3>Register New Patient</h3>
-              <button type="button" className="close-x" onClick={closeModal}>×</button>
-            </div>
-            <form onSubmit={handleRegisterPatient} className="modal-fields-stack">
-              <div className="field-block">
-                <label>Patient Full Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Maria Santos"
-                  value={newPatient.name}
-                  onChange={(e) => setNewPatient({ ...newPatient, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="field-block-row">
-                <div className="field-block">
-                  <label>Age</label>
+        <div className="pm-modal-backdrop" onClick={closeModal}>
+          <div className="pm-modal-card" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="pm-modal-close-btn"
+              onClick={closeModal}
+              aria-label="Close modal"
+            >
+              ✕
+            </button>
+
+            <h2 className="pm-modal-title">Register Patient</h2>
+
+            <form onSubmit={handleRegisterPatient} noValidate>
+              {/* SECTION 1: Personal Information */}
+              <h3 className="pm-form-section-title">Personal Information</h3>
+
+              <div className="pm-form-grid-2">
+                {/* Row 1: First Name * & Sex* */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    First Name <span className="req">*</span>
+                  </label>
                   <input
-                    type="number"
-                    placeholder="28"
-                    value={newPatient.age}
-                    onChange={(e) => setNewPatient({ ...newPatient, age: e.target.value })}
+                    type="text"
+                    value={registerFormData.firstName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, firstName: e.target.value })}
+                    placeholder="Enter first name"
+                    className="pm-form-input"
+                    required
                   />
                 </div>
-                <div className="field-block">
-                  <label>Contact Number</label>
+
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    Sex<span className="req">*</span>
+                  </label>
+                  <select
+                    value={registerFormData.sex}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, sex: e.target.value })}
+                    className="pm-form-select"
+                    required
+                  >
+                    <option value="">Select</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Row 2: Middle Name (Optional) & Contact Number */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    Middle Name <span className="optional">(Optional)</span>
+                  </label>
                   <input
-                    type="tel"
-                    placeholder="0917-xxx-xxxx"
-                    value={newPatient.contact}
-                    onChange={(e) => setNewPatient({ ...newPatient, contact: e.target.value })}
+                    type="text"
+                    value={registerFormData.middleName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, middleName: e.target.value })}
+                    placeholder="Enter middle name"
+                    className="pm-form-input"
+                  />
+                </div>
+
+                <div className="pm-form-field">
+                  <label className="pm-field-label">Contact Number</label>
+                  <input
+                    type="text"
+                    value={registerFormData.contactNumber}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, contactNumber: e.target.value })}
+                    placeholder="Enter Contact Number"
+                    className="pm-form-input"
+                  />
+                </div>
+
+                {/* Row 3: Last Name * */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    Last Name <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFormData.lastName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, lastName: e.target.value })}
+                    placeholder="Enter last name"
+                    className="pm-form-input"
+                    required
+                  />
+                </div>
+
+                {/* Row 4: Address * (Full width) */}
+                <div className="pm-form-field full-width">
+                  <label className="pm-field-label">
+                    Address <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFormData.address}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, address: e.target.value })}
+                    placeholder="Enter Address"
+                    className="pm-form-input"
+                    required
                   />
                 </div>
               </div>
-              <div className="field-block-row">
-                <div className="field-block">
-                  <label>Doctor</label>
-                  <select
-                    value={newPatient.doctor}
-                    onChange={(e) => setNewPatient({ ...newPatient, doctor: e.target.value })}
-                  >
-                    <option value="Dr. Santos">Dr. Santos</option>
-                    <option value="Dr. Reyes">Dr. Reyes</option>
-                    <option value="Dr. Cruz">Dr. Cruz</option>
-                    <option value="Dr. Rebucayo">Dr. Rebucayo</option>
-                  </select>
+
+              {/* SECTION 2: Emergency Contact Information */}
+              <h3 className="pm-form-section-title">Emergency Contact Information</h3>
+
+              <div className="pm-form-grid-2">
+                {/* Row 1: First Name * & Contact Number */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    First Name <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFormData.emergFirstName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergFirstName: e.target.value })}
+                    placeholder="Enter first name"
+                    className="pm-form-input"
+                  />
                 </div>
-                <div className="field-block">
-                  <label>Type</label>
-                  <select
-                    value={newPatient.type}
-                    onChange={(e) => setNewPatient({ ...newPatient, type: e.target.value })}
-                  >
-                    <option value="Consultation">Consultation</option>
-                    <option value="Follow-up">Follow-up</option>
-                    <option value="Check-up">Check-up</option>
-                    <option value="In Progress">In Progress</option>
-                  </select>
+
+                <div className="pm-form-field">
+                  <label className="pm-field-label">Contact Number</label>
+                  <input
+                    type="text"
+                    value={registerFormData.emergContactNumber}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergContactNumber: e.target.value })}
+                    placeholder="Enter Contact Number"
+                    className="pm-form-input"
+                  />
+                </div>
+
+                {/* Row 2: Middle Name (Optional) */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    Middle Name <span className="optional">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFormData.emergMiddleName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergMiddleName: e.target.value })}
+                    placeholder="Enter middle name"
+                    className="pm-form-input"
+                  />
+                </div>
+
+                <div></div>
+
+                {/* Row 3: Last Name * */}
+                <div className="pm-form-field">
+                  <label className="pm-field-label">
+                    Last Name <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFormData.emergLastName}
+                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergLastName: e.target.value })}
+                    placeholder="Enter last name"
+                    className="pm-form-input"
+                  />
                 </div>
               </div>
-              <div className="modal-btn-row">
-                <button type="button" className="modal-btn-ghost" onClick={closeModal}>Cancel</button>
-                <button type="submit" className="modal-btn-primary">Register Patient</button>
+
+              {/* Modal Footer Actions */}
+              <div className="pm-modal-footer">
+                <button
+                  type="button"
+                  className="pm-btn-cancel"
+                  onClick={closeModal}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="pm-btn-save">
+                  Save
+                </button>
               </div>
             </form>
           </div>
