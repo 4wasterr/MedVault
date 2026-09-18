@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
 
 export default function PatientsModuleReceptionist({
@@ -72,6 +73,8 @@ export default function PatientsModuleReceptionist({
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showRecordsModal, setShowRecordsModal] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   // Register Form State (Pic 3 Exact Match)
@@ -129,7 +132,7 @@ export default function PatientsModuleReceptionist({
     const newPatientObj = {
       id: formattedId,
       name: fullName,
-      age: 28, // Default age or prompt
+      age: 28,
       status: 'Waiting',
       sex: formData.sex,
       contact: formData.contactNumber || 'N/A',
@@ -175,240 +178,283 @@ export default function PatientsModuleReceptionist({
   });
 
   return (
-    <div className="pm-page-container">
-      {/* =========================================================================
-          LEFT SIDEBAR (1:1 with Pic 2)
-          ========================================================================= */}
-      <aside className="pm-sidebar">
-        {/* Brand Red Cross */}
-        <div className="pm-sidebar-brand">
-          <div className="pm-brand-cross-box" title="MedVault Care">
-            <svg viewBox="0 0 24 24" width="34" height="34" fill="#FF5252">
-              <path d="M19 10.5h-5.5V5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v5.5H5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5h5.5V19c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-5.5H19c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5z" />
+    <div className="nd-screen-container">
+      <div className="nd-dashboard-frame">
+        {/* =========================================================================
+            LEFT SIDEBAR (1:1 with media_1789733201291.png & Pic 2)
+            ========================================================================= */}
+        <aside className="nd-sidebar">
+          {/* Top Medical Red Cross */}
+          <div
+            className="nd-sidebar-logo"
+            title="MedVault Care"
+            onClick={() => onNavigate && onNavigate('dashboard')}
+          >
+            <svg viewBox="0 0 46 46" width="46" height="46" fill="none">
+              <rect x="17" y="3" width="12" height="40" rx="6" fill="#FF4D4D" />
+              <rect x="3" y="17" width="40" height="12" rx="6" fill="#FF4D4D" />
             </svg>
           </div>
-        </div>
 
-        {/* 3-Button Pill Navigation (Matches Pic 2) */}
-        <nav className="pm-nav-pill-container" aria-label="Main Navigation">
-          {/* 1. Home / Dashboard */}
-          <button
-            type="button"
-            className="pm-nav-btn"
-            onClick={() => onNavigate && onNavigate('dashboard')}
-            title="Dashboard"
-            aria-label="Dashboard"
-          >
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
-              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-            </svg>
-          </button>
-
-          {/* 2. Patients Module (ACTIVE) */}
-          <button
-            type="button"
-            className="pm-nav-btn active"
-            title="Patients Module"
-            aria-label="Patients Module"
-          >
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-              <circle cx="10" cy="8" r="4" fill="#ffffff" />
-              <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6v1H2v-1z" fill="#ffffff" />
-              <circle cx="18" cy="17" r="4.5" fill="#ffffff" />
-              <path d="M18 15v4M16 17h4" stroke="#00ADEF" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
-
-          {/* 3. Clinical Checklist / Records */}
-          <button
-            type="button"
-            className="pm-nav-btn"
-            onClick={() => onNavigate && onNavigate('dashboard')}
-            title="Records & Checklist"
-            aria-label="Records & Checklist"
-          >
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-              <rect x="4" y="5" width="13" height="16" rx="2" fill="#00ADEF" />
-              <rect x="7" y="3" width="7" height="3" rx="1.5" fill="#00ADEF" />
-              <path d="M7 10h5M7 13h5M7 16h3" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
-              <circle cx="17.5" cy="16.5" r="3.5" fill="#ffffff" stroke="#00ADEF" strokeWidth="2" />
-              <line x1="20" y1="19" x2="22.5" y2="21.5" stroke="#00ADEF" strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </nav>
-
-        {/* Bottom Floating Power Button */}
-        <div className="pm-sidebar-footer">
-          <button
-            type="button"
-            className="pm-power-btn"
-            onClick={() => setShowLogoutConfirm(true)}
-            title="Sign Out"
-            aria-label="Sign Out"
-          >
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#00ADEF" strokeWidth="2.6" strokeLinecap="round">
-              <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-              <line x1="12" y1="2" x2="12" y2="12" />
-            </svg>
-          </button>
-        </div>
-      </aside>
-
-      {/* =========================================================================
-          MAIN WORKSPACE (1:1 with Pic 2)
-          ========================================================================= */}
-      <main className="pm-workspace">
-        {/* TOP HEADER */}
-        <header className="pm-header">
-          <h1 className="pm-main-title">Patients Module</h1>
-
-          <div className="pm-header-tools">
-            {/* Search Pill */}
-            <div className="pm-search-pill-container">
-              <svg className="pm-search-glass-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#00ADEF" strokeWidth="2.5" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          {/* Floating Capsule Menu (Active = Patients Module!) */}
+          <nav className="nd-sidebar-nav">
+            {/* 1. Home / Dashboard */}
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => onNavigate && onNavigate('dashboard')}
+              title="Dashboard"
+              aria-label="Dashboard"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="#00ADEF">
+                <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
               </svg>
-              <input
-                type="text"
-                placeholder=""
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pm-search-pill-input"
-                aria-label="Search patients"
-              />
+            </button>
+
+            {/* 2. Patients Module (ACTIVE with cyan filled circle & white icon) */}
+            <button
+              type="button"
+              className="nav-btn active"
+              title="Patients Module"
+              aria-label="Patients Module"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+                <circle cx="10" cy="8" r="3.6" fill="#ffffff" />
+                <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6v1H2v-1z" fill="#ffffff" />
+                <circle cx="18" cy="16.5" r="4.2" fill="#ffffff" />
+                <path d="M18 14.5v4M16 16.5h4" stroke="#00ADEF" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {/* 3. Clinical Checklist / Records */}
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => setShowRecordsModal(true)}
+              title="Patient Checklist"
+              aria-label="Patient Checklist"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+                <rect x="4" y="5" width="13" height="16" rx="2" fill="#00ADEF" />
+                <rect x="7" y="3" width="7" height="3" rx="1.5" fill="#00ADEF" />
+                <path d="M7 10h5M7 13h5M7 16h3" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+                <circle cx="17.5" cy="16.5" r="3.5" fill="#ffffff" stroke="#00ADEF" strokeWidth="2" />
+                <line x1="20" y1="19" x2="22.5" y2="21.5" stroke="#00ADEF" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            </button>
+          </nav>
+
+          {/* Bottom Floating Power Button (Squircle) */}
+          <div className="nd-sidebar-footer">
+            <button
+              type="button"
+              className="power-btn"
+              onClick={() => setShowLogoutConfirm(true)}
+              title="Sign Out"
+              aria-label="Sign Out"
+            >
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#00ADEF" strokeWidth="2.6" strokeLinecap="round">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                <line x1="12" y1="2" x2="12" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </aside>
+
+        {/* =========================================================================
+            MAIN WORKSPACE (Uniform Layout with Dashboard - Zero Dead Space)
+            ========================================================================= */}
+        <main className="pm-workspace">
+          {/* TOP HEADER */}
+          <header className="pm-header">
+            <div className="header-titles">
+              <h1 className="pm-main-title">Patients Module</h1>
             </div>
 
-            {/* Status Filter Pill Dropdown */}
-            <div className="pm-filter-select-wrapper">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="pm-status-select"
-                aria-label="Filter by status"
-              >
-                <option value="All">Status</option>
-                <option value="Waiting">Waiting</option>
-                <option value="In Room">In Room</option>
-                <option value="Done">Done</option>
-              </select>
-              <span className="pm-select-caret">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 12 15 18 9" />
+            <div className="header-right-tools">
+              {/* Search Pill Input */}
+              <div className="search-pill-container pm-search-pill">
+                <svg className="search-glass-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#00ADEF" strokeWidth="2.5" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
-              </span>
+                <input
+                  type="text"
+                  placeholder=""
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="search-pill-input"
+                  aria-label="Search patients"
+                />
+              </div>
+
+              {/* Status Filter Pill Dropdown */}
+              <div className="pm-status-pill-container">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="pm-status-pill-select"
+                  aria-label="Filter by status"
+                >
+                  <option value="All">Status</option>
+                  <option value="Waiting">Waiting</option>
+                  <option value="In Room">In Room</option>
+                  <option value="Done">Done</option>
+                </select>
+                <span className="pm-status-pill-caret">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#00ADEF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* + Register a Patient Button (1:1 with Pic 2) */}
+              <button
+                type="button"
+                className="pm-register-btn"
+                onClick={() => setShowRegisterModal(true)}
+                title="Register a new patient"
+              >
+                + Register a Patient
+              </button>
+
+              {/* Notification Bell */}
+              <div className="notif-wrapper">
+                <button
+                  type="button"
+                  className="header-icon-btn"
+                  onClick={() => {
+                    setShowNotifications(!showNotifications);
+                    setShowProfileMenu(false);
+                  }}
+                  title="Notifications"
+                  aria-label="Notifications"
+                >
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="#00ADEF">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                  </svg>
+                </button>
+
+                {showNotifications && (
+                  <div className="notif-dropdown animate-pop-in">
+                    <div className="dropdown-title">Clinical Notifications</div>
+                    <div className="notif-row">
+                      <strong>Abigail Yatco</strong> finished consultation with Dr. Rebucayo.
+                    </div>
+                    <div className="notif-row">
+                      <strong>Ken Ty</strong> check-in confirmed for 9:45 am.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Avatar Pill */}
+              <div className="avatar-wrapper">
+                <button
+                  type="button"
+                  className="avatar-circle-btn"
+                  onClick={() => {
+                    setShowProfileMenu(!showProfileMenu);
+                    setShowNotifications(false);
+                  }}
+                  title="Receptionist"
+                  aria-label="Profile"
+                >
+                  <span>A</span>
+                </button>
+
+                {showProfileMenu && (
+                  <div className="avatar-dropdown animate-pop-in">
+                    <div className="avatar-nurse-name">Receptionist</div>
+                    <div className="avatar-duty-tag">● On Duty</div>
+                    <button
+                      type="button"
+                      className="menu-signout-btn"
+                      onClick={() => setShowLogoutConfirm(true)}
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
+          </header>
 
-            {/* + Register a Patient Button */}
-            <button
-              type="button"
-              className="pm-register-btn"
-              onClick={() => setShowRegisterModal(true)}
-              title="Register a new patient"
-            >
-              + Register a Patient
-            </button>
+          {/* MAIN CARD: Patient Information Table (1:1 with Pic 2) */}
+          <section className="pm-main-card">
+            <h2 className="pm-card-title">Patient Information</h2>
 
-            {/* Notification Bell */}
-            <button
-              type="button"
-              className="pm-header-icon-btn"
-              onClick={() => setShowNotifications(!showNotifications)}
-              title="Notifications"
-              aria-label="Notifications"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="#00ADEF">
-                <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
-              </svg>
-              <span className="pm-notif-badge"></span>
-            </button>
-
-            {/* Avatar Pill */}
-            <div className="pm-header-avatar" title="Receptionist Account">
-              <span>A</span>
-            </div>
-          </div>
-        </header>
-
-        {/* MAIN CARD: Patient Information Table */}
-        <section className="pm-main-card">
-          <h2 className="pm-card-title">Patient Information</h2>
-
-          <div className="pm-table-wrapper">
-            <table className="pm-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '20%' }}>Patient ID</th>
-                  <th style={{ width: '28%' }}>Patient</th>
-                  <th className="center-align" style={{ width: '12%' }}>Age</th>
-                  <th className="center-align" style={{ width: '20%' }}>Status</th>
-                  <th className="center-align" style={{ width: '20%' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPatients.length > 0 ? (
-                  filteredPatients.map((patient) => (
-                    <tr key={patient.id}>
-                      <td className="pm-patient-id">{patient.id}</td>
-                      <td className="pm-patient-name">{patient.name}</td>
-                      <td className="center-align">{patient.age}</td>
-                      <td className="center-align">
-                        <span
-                          className={`pm-status-badge ${
-                            patient.status.toLowerCase() === 'waiting'
-                              ? 'pm-status-waiting'
-                              : patient.status.toLowerCase() === 'in room'
-                              ? 'pm-status-in-room'
-                              : 'pm-status-done'
-                          }`}
-                        >
-                          {patient.status}
-                        </span>
-                      </td>
-                      <td className="center-align">
-                        <button
-                          type="button"
-                          className="pm-action-btn"
-                          onClick={() => setSelectedPatient(patient)}
-                          title={`View details for ${patient.name}`}
-                        >
-                          View Info
-                        </button>
+            <div className="pm-table-wrapper">
+              <table className="pm-table">
+                <colgroup>
+                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '24%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '21%' }} />
+                  <col style={{ width: '21%' }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="pm-th-left">Patient ID</th>
+                    <th className="pm-th-left">Patient</th>
+                    <th className="pm-th-center">Age</th>
+                    <th className="pm-th-center">Status</th>
+                    <th className="pm-th-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPatients.length > 0 ? (
+                    filteredPatients.map((patient) => (
+                      <tr key={patient.id}>
+                        <td className="pm-td-left pm-patient-id">{patient.id}</td>
+                        <td className="pm-td-left pm-patient-name">{patient.name}</td>
+                        <td className="pm-td-center pm-patient-age">{patient.age}</td>
+                        <td className="pm-td-center pm-patient-status">{patient.status}</td>
+                        <td className="pm-td-center">
+                          <button
+                            type="button"
+                            className="pm-action-btn"
+                            onClick={() => setSelectedPatient(patient)}
+                            title={`View details for ${patient.name}`}
+                          >
+                            View Info
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="5" className="pm-empty-row">
+                        No patients found matching your search or filter.
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="5" className="pm-empty-row">
-                      No patients found matching your search or filter.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          {/* Pagination: < ( 1 ) > */}
-          <div className="pm-pagination-bar">
-            <button type="button" className="pm-pagination-caret" disabled aria-label="Previous page">
-              ‹
-            </button>
-            <button type="button" className="pm-pagination-num" aria-label="Page 1">
-              1
-            </button>
-            <button type="button" className="pm-pagination-caret" disabled aria-label="Next page">
-              ›
-            </button>
-          </div>
-        </section>
-      </main>
+            {/* Pagination: < ( 1 ) > (Exact Pic 2 layout) */}
+            <div className="pm-pagination-bar">
+              <button type="button" className="pm-pagination-caret" disabled aria-label="Previous page">
+                ‹
+              </button>
+              <button type="button" className="pm-pagination-num active" aria-label="Page 1">
+                1
+              </button>
+              <button type="button" className="pm-pagination-caret" disabled aria-label="Next page">
+                ›
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
 
       {/* =========================================================================
           PIC 3: REGISTER PATIENT MODAL (1:1 Match)
           ========================================================================= */}
       {showRegisterModal && (
-        <div className="pm-modal-backdrop" onClick={() => setShowRegisterModal(false)}>
-          <div className="pm-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="pm-modal-backdrop animate-fade" onClick={() => setShowRegisterModal(false)}>
+          <div className="pm-modal-card animate-zoom" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className="pm-modal-close-btn"
@@ -487,7 +533,7 @@ export default function PatientsModuleReceptionist({
                     name="contactNumber"
                     value={formData.contactNumber}
                     onChange={handleInputChange}
-                    placeholder="Enter Contact Number"
+                    placeholder="Enter contact number"
                     className="pm-form-input"
                   />
                 </div>
@@ -510,6 +556,8 @@ export default function PatientsModuleReceptionist({
                     <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>{formErrors.lastName}</span>
                   )}
                 </div>
+
+                <div></div>
 
                 {/* Row 4: Address * (Full width) */}
                 <div className="pm-form-field full-width">
@@ -614,11 +662,11 @@ export default function PatientsModuleReceptionist({
       )}
 
       {/* =========================================================================
-          PATIENT DETAIL MODAL (View Info Action)
+          PATIENT DETAIL / VITALS SNAPSHOT MODAL (View Info Action)
           ========================================================================= */}
       {selectedPatient && (
-        <div className="pm-modal-backdrop" onClick={() => setSelectedPatient(null)}>
-          <div className="pm-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="pm-modal-backdrop animate-fade" onClick={() => setSelectedPatient(null)}>
+          <div className="pm-modal-card animate-zoom" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className="pm-modal-close-btn"
@@ -633,11 +681,13 @@ export default function PatientsModuleReceptionist({
             <div className="pm-detail-info-grid">
               <div className="pm-detail-item">
                 <span className="pm-detail-label">Patient ID</span>
-                <span className="pm-detail-val" style={{ color: '#00ADEF' }}>{selectedPatient.id}</span>
+                <span className="pm-detail-val" style={{ color: '#00ADEF', fontWeight: 700 }}>
+                  {selectedPatient.id}
+                </span>
               </div>
               <div className="pm-detail-item">
                 <span className="pm-detail-label">Full Name</span>
-                <span className="pm-detail-val">{selectedPatient.name}</span>
+                <span className="pm-detail-val" style={{ fontWeight: 600 }}>{selectedPatient.name}</span>
               </div>
               <div className="pm-detail-item">
                 <span className="pm-detail-label">Age / Sex</span>
@@ -646,14 +696,16 @@ export default function PatientsModuleReceptionist({
               <div className="pm-detail-item">
                 <span className="pm-detail-label">Current Status</span>
                 <span
-                  className={`pm-status-badge ${
-                    selectedPatient.status.toLowerCase() === 'waiting'
-                      ? 'pm-status-waiting'
-                      : selectedPatient.status.toLowerCase() === 'in room'
-                      ? 'pm-status-in-room'
-                      : 'pm-status-done'
-                  }`}
-                  style={{ width: 'fit-content' }}
+                  className="pm-detail-val"
+                  style={{
+                    color:
+                      selectedPatient.status.toLowerCase() === 'waiting'
+                        ? '#00ADEF'
+                        : selectedPatient.status.toLowerCase() === 'in room'
+                        ? '#8B5CF6'
+                        : '#10B981',
+                    fontWeight: 600,
+                  }}
                 >
                   {selectedPatient.status}
                 </span>
@@ -679,8 +731,8 @@ export default function PatientsModuleReceptionist({
             </div>
 
             {/* Quick Status Update */}
-            <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '0.86rem', fontWeight: 600, color: '#475569' }}>Change Status:</span>
+            <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#475569' }}>Change Status:</span>
               {['Waiting', 'In Room', 'Done'].map((st) => (
                 <button
                   key={st}
@@ -698,7 +750,7 @@ export default function PatientsModuleReceptionist({
                     border: '1.5px solid #00ADEF',
                     background: selectedPatient.status === st ? '#00ADEF' : '#ffffff',
                     color: selectedPatient.status === st ? '#ffffff' : '#00ADEF',
-                    fontSize: '0.8rem',
+                    fontSize: '0.82rem',
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -723,39 +775,61 @@ export default function PatientsModuleReceptionist({
       )}
 
       {/* =========================================================================
+          CHECKLIST / ROSTER MODAL
+          ========================================================================= */}
+      {showRecordsModal && (
+        <div className="modal-backdrop-clean animate-fade" onClick={() => setShowRecordsModal(false)}>
+          <div className="modal-dialog-clean animate-zoom" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <h3>Patient List Roster</h3>
+              <button type="button" className="close-x" onClick={() => setShowRecordsModal(false)}>×</button>
+            </div>
+            <div className="patient-roster-stack">
+              {patients.map((item, idx) => {
+                const displayName = item.name || item.patient || 'Patient';
+                return (
+                  <div key={idx} className="roster-row">
+                    <div className="roster-initial">{displayName.charAt(0)}</div>
+                    <div className="roster-info">
+                      <strong>{displayName}</strong>
+                      <span>{item.status} • {item.doctor || 'Dr. Santos'}</span>
+                    </div>
+                    <span className="roster-time-tag">{item.id}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
           SIGN OUT CONFIRMATION MODAL
           ========================================================================= */}
       {showLogoutConfirm && (
-        <div className="pm-modal-backdrop" onClick={() => setShowLogoutConfirm(false)}>
-          <div className="pm-modal-card" style={{ maxWidth: '420px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <div className="modal-backdrop-clean animate-fade" onClick={() => setShowLogoutConfirm(false)}>
+          <div className="modal-dialog-clean logout-modal-clean animate-zoom" onClick={(e) => e.stopPropagation()}>
+            <div className="logout-ring-icon">
+              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round">
                 <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
                 <line x1="12" y1="2" x2="12" y2="12" />
               </svg>
             </div>
-            <h3 style={{ fontSize: '1.3rem', fontWeight: 700, margin: '0 0 8px 0' }}>Sign Out</h3>
-            <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 24px 0' }}>
-              Are you sure you want to sign out of your session?
+            <h3 style={{ margin: '10px 0 4px', fontSize: '1.25rem' }}>Sign Out of MedVault?</h3>
+            <p style={{ margin: 0, fontSize: '0.88rem', color: '#64748B' }}>
+              You will return directly to the login portal.
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+            <div className="modal-btn-row" style={{ justifyContent: 'center', marginTop: '20px' }}>
+              <button type="button" className="modal-btn-ghost" onClick={() => setShowLogoutConfirm(false)}>Stay</button>
               <button
                 type="button"
-                className="pm-btn-cancel"
-                onClick={() => setShowLogoutConfirm(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="pm-btn-save"
-                style={{ background: '#ef4444' }}
+                className="modal-btn-danger"
                 onClick={() => {
                   setShowLogoutConfirm(false);
                   if (onLogout) onLogout();
                 }}
               >
-                Yes, Sign Out
+                Sign Out
               </button>
             </div>
           </div>
@@ -764,7 +838,7 @@ export default function PatientsModuleReceptionist({
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="pm-toast">
+        <div className="pm-toast animate-pop-in">
           <span className="pm-toast-icon">✓</span>
           <span>{toastMessage}</span>
         </div>
@@ -772,4 +846,3 @@ export default function PatientsModuleReceptionist({
     </div>
   );
 }
-

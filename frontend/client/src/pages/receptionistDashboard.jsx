@@ -9,6 +9,7 @@ export default function ReceptionistDashboard({
   patients,
   setPatients,
 }) {
+  const nurseName = receptionistName || 'Receptionist';
   const [activeNav, setActiveNav] = useState('home'); // 'home' | 'patients' | 'records'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -853,16 +854,19 @@ export default function ReceptionistDashboard({
               <button type="button" className="close-x" onClick={closeModal}>×</button>
             </div>
             <div className="patient-roster-stack">
-              {[...todayAppointments, ...upcomingAppointments].map((item, idx) => (
-                <div key={idx} className="roster-row">
-                  <div className="roster-initial">{item.patient.charAt(0)}</div>
-                  <div className="roster-info">
-                    <strong>{item.patient}</strong>
-                    <span>{item.type} • {item.doctor}</span>
+              {[...todayAppointments, ...upcomingAppointments].map((item, idx) => {
+                const displayName = item.patient || item.name || 'Patient';
+                return (
+                  <div key={idx} className="roster-row">
+                    <div className="roster-initial">{displayName.charAt(0)}</div>
+                    <div className="roster-info">
+                      <strong>{displayName}</strong>
+                      <span>{item.type || 'Consultation'} • {item.doctor || 'Dr. Santos'}</span>
+                    </div>
+                    <span className="roster-time-tag">{item.time}</span>
                   </div>
-                  <span className="roster-time-tag">{item.time}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -878,10 +882,16 @@ export default function ReceptionistDashboard({
             </div>
             <div className="patient-snapshot-box">
               <div className="snapshot-top-row">
-                <div className="snapshot-avatar-circle">{selectedPatient.patient.charAt(0)}</div>
+                <div className="snapshot-avatar-circle">
+                  {(selectedPatient.patient || selectedPatient.name || 'P').charAt(0)}
+                </div>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '1.15rem' }}>{selectedPatient.patient}</h4>
-                  <span style={{ fontSize: '0.85rem', color: '#64748B' }}>{selectedPatient.type} with {selectedPatient.doctor}</span>
+                  <h4 style={{ margin: 0, fontSize: '1.15rem' }}>
+                    {selectedPatient.patient || selectedPatient.name || 'Patient'}
+                  </h4>
+                  <span style={{ fontSize: '0.85rem', color: '#64748B' }}>
+                    {selectedPatient.type || 'Consultation'} with {selectedPatient.doctor || 'Dr. Santos'}
+                  </span>
                 </div>
               </div>
               <div className="vitals-two-col">

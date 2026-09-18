@@ -82,7 +82,11 @@ export default function Login({ onLoginSuccess }) {
   // Slideshow State with persistence
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isAutoPlayPaused, setIsAutoPlayPaused] = useState(() => {
-    return localStorage.getItem('medvault_slideshow_paused') === 'true';
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('medvault_slideshow_paused') === 'true';
+    } catch {
+      return false;
+    }
   });
   const [isHovered, setIsHovered] = useState(false);
 
