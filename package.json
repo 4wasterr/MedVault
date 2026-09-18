@@ -1,11 +1,10 @@
 {
-  "name": "medvault-workspace",
+  "name": "medvault",
   "version": "1.0.0",
   "private": true,
   "description": "MedVault Healthcare Management System",
   "scripts": {
-    "dev": "npm run dev --prefix frontend/client",
-    "dev:all": "npm run dev --prefix frontend",
+    "dev": "npm run dev --prefix frontend",
     "client": "npm run dev --prefix frontend/client",
     "server": "npm run dev --prefix frontend/server",
     "build": "npm run build --prefix frontend/client"
