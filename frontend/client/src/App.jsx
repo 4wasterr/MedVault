@@ -2,6 +2,7 @@ import React, { useState, Component } from 'react';
 import Login from './pages/login';
 import ReceptionistDashboard from './pages/receptionistDashboard';
 import PatientsModuleReceptionist from './pages/patientsModuleReceptionist';
+import Appointment from './pages/appointment';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -62,6 +63,7 @@ export default function App() {
       if (typeof window !== 'undefined' && window.location) {
         const params = new URLSearchParams(window.location.search);
         if (params.get('view') === 'patients') return 'patients';
+        if (params.get('view') === 'appointments') return 'appointments';
       }
       return 'dashboard';
     } catch {
@@ -73,51 +75,75 @@ export default function App() {
   const [patients, setPatients] = useState([
     {
       id: 'PTNT-001',
-      name: 'Juan Martinez',
+      name: 'Juan Dela Cruz',
       age: 34,
-      status: 'Waiting',
       sex: 'Male',
-      contact: '0917-123-4567',
-      address: '123 Rizal St., Sampaloc, Manila',
-      emergencyName: 'Maria Martinez',
-      emergencyContact: '0917-987-6543',
-      doctor: 'Dr. Santos',
+      birthday: 'Jan 10, 1991',
+      contact: '0991-123-1245',
+      address: '143 Jose St., Malabon City',
+      emergencyName: 'Maria Dela Cruz',
+      emergencyContact: '0991-123-1245',
+      doctor: 'Dr. Cruz',
+      type: 'Checkup',
+      status: 'Waiting',
+      date: 'September 16, 2026',
+      vitals: { bp: '120/80', hr: '72', temp: '36.5', respRate: '18', spo2: '98', weight: '68', height: '172' },
+      medical: { allergies: 'Penicillin, Peanuts', history: 'Hypertension (diagnosed 2022)', diagnosis: 'Mild Essential Hypertension', medications: 'Amlodipine 5mg OD', treatment: 'Lifestyle modification, low sodium diet', notes: 'Follow-up in 2 weeks for BP check' },
+      appointments: [ { date: 'Sep 15, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' }, { date: 'Sep 25, 2026', doctor: 'Dr. Reyes', type: 'Follow-up', status: 'Scheduled' } ]
     },
     {
       id: 'PTNT-002',
-      name: 'Ken Ty',
-      age: 16,
-      status: 'In Room',
-      sex: 'Male',
-      contact: '0918-234-5678',
-      address: '456 Taft Ave., Pasay City',
-      emergencyName: 'Susan Ty',
-      emergencyContact: '0918-876-5432',
-      doctor: 'Dr. Reyes',
-    },
-    {
-      id: 'PTNT-003',
       name: 'Allen Tracy',
       age: 21,
-      status: 'Done',
       sex: 'Female',
+      birthday: 'Aug 24, 2005',
       contact: '0919-345-6789',
       address: '789 Quezon Ave., Quezon City',
       emergencyName: 'Robert Tracy',
       emergencyContact: '0919-765-4321',
-      doctor: 'Dr. Cruz',
+      doctor: 'Dr. Rebuyaco',
+      type: 'Follow up',
+      status: 'In Room',
+      date: 'September 15, 2026',
+      vitals: { bp: '110/70', hr: '68', temp: '36.8', respRate: '16', spo2: '99', weight: '54', height: '162' },
+      medical: { allergies: 'None reported', history: 'Mild seasonal allergic rhinitis', diagnosis: 'Acute Rhinitis (Resolving)', medications: 'Cetirizine 10mg PRN', treatment: 'Oral hydration, rest', notes: 'Symptoms improved significantly' },
+      appointments: [ { date: 'Sep 02, 2026', doctor: 'Dr. Rebuyaco', type: 'Checkup', status: 'Done' }, { date: 'Sep 15, 2026', doctor: 'Dr. Rebuyaco', type: 'Follow up', status: 'Done' } ]
+    },
+    {
+      id: 'PTNT-003',
+      name: 'Richiebelle Del Rosario',
+      age: 16,
+      sex: 'Female',
+      birthday: 'May 14, 2010',
+      contact: '0918-234-5678',
+      address: '456 Taft Ave., Pasay City',
+      emergencyName: 'Susan Del Rosario',
+      emergencyContact: '0918-876-5432',
+      doctor: 'Dr. Santos',
+      type: 'Consultation',
+      status: 'Done',
+      date: 'September 13, 2026',
+      vitals: { bp: '118/75', hr: '76', temp: '37.1', respRate: '18', spo2: '98', weight: '49', height: '158' },
+      medical: { allergies: 'Aspirin', history: 'Childhood Asthma', diagnosis: 'Upper Respiratory Tract Infection', medications: 'Salbutamol inhaler PRN, Paracetamol 500mg', treatment: 'Inhalation therapy as needed', notes: 'Clear chest sounds on auscultation' },
+      appointments: [ { date: 'Sep 13, 2026', doctor: 'Dr. Santos', type: 'Consultation', status: 'Done' } ]
     },
     {
       id: 'PTNT-004',
-      name: 'Abigail Yatco',
-      age: 35,
-      status: 'Waiting',
-      sex: 'Female',
+      name: 'John Smith',
+      age: 19,
+      sex: 'Male',
+      birthday: 'Nov 03, 2007',
       contact: '0920-456-7890',
       address: '321 Shaw Blvd., Mandaluyong City',
-      emergencyName: 'Carlos Yatco',
+      emergencyName: 'Carlos Smith',
       emergencyContact: '0920-654-3210',
-      doctor: 'Dr. Rebucayo',
+      doctor: 'Dr. Reyes',
+      type: 'Checkup',
+      status: 'Waiting',
+      date: 'September 13, 2026',
+      vitals: { bp: '115/75', hr: '70', temp: '36.6', respRate: '16', spo2: '99', weight: '65', height: '175' },
+      medical: { allergies: 'None', history: 'None', diagnosis: 'Routine General Wellness Exam', medications: 'Multivitamins OD', treatment: 'Maintain balanced diet and exercise', notes: 'Fit and healthy' },
+      appointments: [ { date: 'Sep 13, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' } ]
     },
   ]);
 
@@ -138,6 +164,13 @@ export default function App() {
         <Login onLoginSuccess={handleLogin} />
       ) : currentView === 'patients' ? (
         <PatientsModuleReceptionist
+          onNavigate={setCurrentView}
+          onLogout={handleLogout}
+          patients={patients}
+          setPatients={setPatients}
+        />
+      ) : currentView === 'appointments' ? (
+        <Appointment
           onNavigate={setCurrentView}
           onLogout={handleLogout}
           patients={patients}

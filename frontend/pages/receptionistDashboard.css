@@ -86,6 +86,11 @@ html, body, #root {
   z-index: 10;
   flex-shrink: 0;
   margin-right: 30px;
+  position: sticky;
+  top: clamp(28px, 4vh, 48px);
+  height: calc(100vh - clamp(56px, 8vh, 96px));
+  min-height: 560px;
+  box-sizing: border-box;
 }
 
 /* Top Red Medical Cross */
@@ -95,7 +100,6 @@ html, body, #root {
   align-items: center;
   justify-content: center;
   transition: transform 0.2s ease;
-  filter: drop-shadow(0 4px 12px rgba(255, 77, 77, 0.25));
 }
 
 .nd-sidebar-logo:hover {
@@ -127,7 +131,7 @@ html, body, #root {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.15s ease, color 0.15s ease;
   color: #00ADEF;
   box-shadow: none;
   padding: 0;
@@ -135,14 +139,20 @@ html, body, #root {
 
 .nav-btn:hover {
   background-color: #f0f9ff;
-  transform: scale(1.06);
+  color: #00ADEF;
 }
 
 .nav-btn.active {
-  background-color: var(--nd-cyan);
-  color: #ffffff;
+  background-color: var(--nd-cyan) !important;
+  color: #ffffff !important;
   border-radius: 50%;
-  box-shadow: 0 4px 14px rgba(0, 173, 239, 0.42);
+  box-shadow: none;
+}
+
+.nav-btn.active:hover {
+  background-color: var(--nd-cyan) !important;
+  color: #ffffff !important;
+  transform: none !important;
 }
 
 /* Bottom Floating Power Button (Squircle - Matches 1:1 with Reference) */
@@ -169,7 +179,7 @@ html, body, #root {
 .power-btn:hover {
   background-color: #fef2f2;
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.2);
+  box-shadow: 0 8px 20px rgba(0, 60, 110, 0.12);
 }
 
 .power-btn:hover svg {
@@ -471,8 +481,8 @@ html, body, #root {
 .range-tab-btn.active {
   background: #ffffff;
   color: #00ADEF;
-  font-weight: 700;
-  box-shadow: 0 2px 8px rgba(0, 173, 239, 0.18);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .chart-wrapper-exact {

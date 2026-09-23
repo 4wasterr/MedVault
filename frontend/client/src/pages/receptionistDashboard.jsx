@@ -203,23 +203,23 @@ export default function ReceptionistDashboard({
             </svg>
           </button>
 
-          {/* 3. Clinical Checklist / Records Button (Squircle) */}
+          {/* 3. Appointments Module Button */}
           <button
             type="button"
-            className={`nav-btn ${activeNav === 'records' ? 'active' : ''}`}
+            className={`nav-btn ${activeNav === 'appointments' ? 'active' : ''}`}
             onClick={() => {
-              setActiveNav('records');
-              setActiveModal('patientList');
+              setActiveNav('appointments');
+              if (onNavigate) onNavigate('appointments');
             }}
-            title="Patient Checklist"
-            aria-label="Patient Checklist"
+            title="Appointments Module"
+            aria-label="Appointments Module"
           >
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
-              <rect x="4" y="5" width="13" height="16" rx="2" fill={activeNav === 'records' ? '#ffffff' : '#00ADEF'} />
-              <rect x="7" y="3" width="7" height="3" rx="1.5" fill={activeNav === 'records' ? '#ffffff' : '#00ADEF'} />
-              <path d="M7 10h5M7 13h5M7 16h3" stroke={activeNav === 'records' ? '#00ADEF' : '#ffffff'} strokeWidth="1.6" strokeLinecap="round" />
-              <circle cx="17.5" cy="16.5" r="3.5" fill={activeNav === 'records' ? '#00ADEF' : '#ffffff'} stroke={activeNav === 'records' ? '#ffffff' : '#00ADEF'} strokeWidth="2" />
-              <line x1="20" y1="19" x2="22.5" y2="21.5" stroke={activeNav === 'records' ? '#ffffff' : '#00ADEF'} strokeWidth="2.5" strokeLinecap="round" />
+              <rect x="4" y="5" width="13" height="16" rx="2" fill={activeNav === 'appointments' ? '#ffffff' : '#00ADEF'} />
+              <rect x="7" y="3" width="7" height="3" rx="1.5" fill={activeNav === 'appointments' ? '#ffffff' : '#00ADEF'} />
+              <path d="M7 10h5M7 13h5M7 16h3" stroke={activeNav === 'appointments' ? '#00ADEF' : '#ffffff'} strokeWidth="1.6" strokeLinecap="round" />
+              <circle cx="17.5" cy="16.5" r="3.5" fill={activeNav === 'appointments' ? '#00ADEF' : '#ffffff'} stroke={activeNav === 'appointments' ? '#ffffff' : '#00ADEF'} strokeWidth="2" />
+              <line x1="20" y1="19" x2="22.5" y2="21.5" stroke={activeNav === 'appointments' ? '#ffffff' : '#00ADEF'} strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </button>
         </nav>
