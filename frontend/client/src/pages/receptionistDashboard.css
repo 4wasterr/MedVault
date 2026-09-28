@@ -214,7 +214,7 @@ html, body, #root {
   flex-direction: column;
 }
 
-.welcome-nurse-text {
+.welcome-nurse-text, .welcome-receptionist-text {
   font-size: 1.15rem;
   font-weight: 600;
   color: var(--nd-subtitle);
@@ -223,7 +223,7 @@ html, body, #root {
 
 .dashboard-main-title {
   font-size: 2.9rem;
-  font-weight: 400;
+  font-weight: 700;
   color: var(--nd-title);
   letter-spacing: -0.025em;
   margin-top: 2px;
@@ -1082,7 +1082,7 @@ html, body, #root {
   .dashboard-main-title {
     font-size: 2.25rem;
   }
-  .welcome-nurse-text {
+  .welcome-nurse-text, .welcome-receptionist-text {
     font-size: 0.98rem;
   }
   .search-pill-container {
@@ -1185,7 +1185,7 @@ html, body, #root {
   .dashboard-main-title {
     font-size: 1.95rem;
   }
-  .welcome-nurse-text {
+  .welcome-nurse-text, .welcome-receptionist-text {
     font-size: 0.9rem;
   }
   .search-pill-container {
@@ -1301,7 +1301,7 @@ html, body, #root {
   .dashboard-main-title {
     font-size: 2.15rem;
   }
-  .welcome-nurse-text {
+  .welcome-nurse-text, .welcome-receptionist-text {
     font-size: 0.95rem;
   }
   .kpi-card {
@@ -1371,7 +1371,7 @@ html, body, #root {
   .dashboard-main-title {
     font-size: 1.82rem;
   }
-  .welcome-nurse-text {
+  .welcome-nurse-text, .welcome-receptionist-text {
     font-size: 0.86rem;
   }
   .search-pill-container {
@@ -1458,7 +1458,7 @@ html, body, #root {
   .dashboard-main-title {
     font-size: 1.6rem;
   }
-  .welcome-nurse-text {
+  .welcome-nurse-text, .welcome-receptionist-text {
     font-size: 0.8rem;
   }
   .kpi-quad-grid {

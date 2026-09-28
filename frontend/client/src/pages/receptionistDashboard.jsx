@@ -248,7 +248,7 @@ export default function ReceptionistDashboard({
         {/* TOP HEADER */}
         <header className="nd-header">
           <div className="header-titles">
-            <span className="welcome-nurse-text">Welcome Back, Nurse</span>
+            <span className="welcome-receptionist-text">Welcome Back, Receptionist</span>
             <h1 className="dashboard-main-title">Dashboard</h1>
           </div>
 

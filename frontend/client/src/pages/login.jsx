@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import './login.css';
-import doctorImg from './doctor.png';
-import slideClipboard from './slide_clipboard.png';
-import slideNurses from './slide_nurses.png';
-import slideXray from './slide_xray.png';
-import slideSurgery from './slide_surgery.png';
+import doctorImg from './images/doctor.png';
+import slideClipboard from './images/slide_clipboard.png';
+import slideNurses from './images/slide_nurses.png';
+import slideXray from './images/slide_xray.png';
+import slideSurgery from './images/slide_surgery.png';
 
 const SLIDES = [
   {
