@@ -1,190 +1,283 @@
-import React, { useState, Component } from 'react';
-import Login from './pages/login';
-import ReceptionistDashboard from './pages/receptionistDashboard';
-import PatientsModuleReceptionist from './pages/patientsModuleReceptionist';
-import Appointment from './pages/appointment';
+import React, { Component, useEffect, useRef, useState } from 'react';
+import Login from '../../pages/receptionist/login';
+import ReceptionistDashboard from '../../pages/receptionist/receptionistDashboard';
+import PatientsModuleReceptionist from '../../pages/receptionist/patientsModuleReceptionist';
+import Appointment from '../../pages/receptionist/appointment';
+import MedSecDashboard from '../../pages/medical secretary/MedSecDashboard';
+import MedSecPatientRecords from '../../pages/medical secretary/MedSecPatientRecords';
+import MedSecAppointment from '../../pages/medical secretary/MedSecAppointment';
+import MedSecDoctorSchedules from '../../pages/medical secretary/MedSecDoctorSchedules';
+import AdminDashboard from '../../pages/super admin/AdminDashboard';
+import { api, applyChanges, changesBetween, emptyState } from './sharedState';
 
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { error: null };
   }
 
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
+  static getDerivedStateFromError(error) { return { error }; }
 
-  componentDidCatch(error, errorInfo) {
-    console.error('MedVault App Render Error:', error, errorInfo);
-  }
+  componentDidCatch(error, info) { console.error('MedVault render error:', error, info); }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: '40px', fontFamily: 'system-ui, sans-serif', textAlign: 'center', background: '#F8FAFC', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <h2 style={{ color: '#0F172A', marginBottom: '12px' }}>Something went wrong loading this view</h2>
-          <p style={{ color: '#64748B', maxWidth: '500px', marginBottom: '20px' }}>
-            A temporary render error occurred. Click below to refresh and reset the view.
-          </p>
-          <pre style={{ color: '#EF4444', background: '#FFFFFF', padding: '16px', borderRadius: '8px', border: '1px solid #E2E8F0', maxWidth: '600px', textAlign: 'left', overflow: 'auto', marginBottom: '20px' }}>
-            {String(this.state.error?.message || this.state.error)}
-          </pre>
-          <button
-            onClick={() => {
-              localStorage.removeItem('medvault_user');
-              window.location.href = '/';
-            }}
-            style={{ padding: '10px 24px', background: '#00ADEF', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-          >
-            Reload MedVault
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
+    if (!this.state.error) return this.props.children;
+    return <div style={{ padding: 40, fontFamily: 'system-ui' }}>
+      <h2>Unable to display this page</h2>
+      <p>{this.state.error.message}</p>
+      <button type="button" onClick={() => window.location.reload()}>Reload MedVault</button>
+    </div>;
   }
 }
 
+const initialView = () => {
+  const view = new URLSearchParams(window.location.search).get('view');
+  return ['patients', 'appointments', 'schedules', 'users', 'doctors'].includes(view) ? view : 'dashboard';
+};
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      if (typeof window !== 'undefined' && window.location) {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('view') === 'login') return null;
-      }
-      return (typeof localStorage !== 'undefined' && localStorage.getItem('medvault_user')) || 'Receptionist';
-    } catch {
-      return 'Receptionist';
-    }
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUsername, setCurrentUsername] = useState(null);
+  const userRef = useRef(null);
+  const [booting, setBooting] = useState(true);
+  const [startupError, setStartupError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
+  const [legacyAvailable, setLegacyAvailable] = useState(() => {
+    try { return ['medvault_patients', 'medvault_appointments', 'medvault_schedules'].some((key) => localStorage.getItem(key)); }
+    catch { return false; }
   });
+  const [importingLegacy, setImportingLegacy] = useState(false);
+  const [currentView, setCurrentView] = useState(initialView);
+  const [patientTarget, setPatientTarget] = useState({ id: null, tab: 'personal' });
+  const [records, setRecords] = useState(emptyState);
+  const recordsRef = useRef(records);
+  const syncedRef = useRef(records);
+  const savingRef = useRef(false);
+  const flushRef = useRef(null);
+  const retryRef = useRef(null);
 
-  const [currentView, setCurrentView] = useState(() => {
-    try {
-      if (typeof window !== 'undefined' && window.location) {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('view') === 'patients') return 'patients';
-        if (params.get('view') === 'appointments') return 'appointments';
-      }
-      return 'dashboard';
-    } catch {
-      return 'dashboard';
-    }
-  });
-
-  // Shared Patients State between Dashboard and Patients Module
-  const [patients, setPatients] = useState([
-    {
-      id: 'PTNT-001',
-      name: 'Juan Dela Cruz',
-      age: 34,
-      sex: 'Male',
-      birthday: 'Jan 10, 1991',
-      contact: '0991-123-1245',
-      address: '143 Jose St., Malabon City',
-      emergencyName: 'Maria Dela Cruz',
-      emergencyContact: '0991-123-1245',
-      doctor: 'Dr. Cruz',
-      type: 'Checkup',
-      status: 'Waiting',
-      date: 'September 16, 2026',
-      vitals: { bp: '120/80', hr: '72', temp: '36.5', respRate: '18', spo2: '98', weight: '68', height: '172' },
-      medical: { allergies: 'Penicillin, Peanuts', history: 'Hypertension (diagnosed 2022)', diagnosis: 'Mild Essential Hypertension', medications: 'Amlodipine 5mg OD', treatment: 'Lifestyle modification, low sodium diet', notes: 'Follow-up in 2 weeks for BP check' },
-      appointments: [ { date: 'Sep 15, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' }, { date: 'Sep 25, 2026', doctor: 'Dr. Reyes', type: 'Follow-up', status: 'Scheduled' } ]
-    },
-    {
-      id: 'PTNT-002',
-      name: 'Allen Tracy',
-      age: 21,
-      sex: 'Female',
-      birthday: 'Aug 24, 2005',
-      contact: '0919-345-6789',
-      address: '789 Quezon Ave., Quezon City',
-      emergencyName: 'Robert Tracy',
-      emergencyContact: '0919-765-4321',
-      doctor: 'Dr. Rebuyaco',
-      type: 'Follow up',
-      status: 'In Room',
-      date: 'September 15, 2026',
-      vitals: { bp: '110/70', hr: '68', temp: '36.8', respRate: '16', spo2: '99', weight: '54', height: '162' },
-      medical: { allergies: 'None reported', history: 'Mild seasonal allergic rhinitis', diagnosis: 'Acute Rhinitis (Resolving)', medications: 'Cetirizine 10mg PRN', treatment: 'Oral hydration, rest', notes: 'Symptoms improved significantly' },
-      appointments: [ { date: 'Sep 02, 2026', doctor: 'Dr. Rebuyaco', type: 'Checkup', status: 'Done' }, { date: 'Sep 15, 2026', doctor: 'Dr. Rebuyaco', type: 'Follow up', status: 'Done' } ]
-    },
-    {
-      id: 'PTNT-003',
-      name: 'Richiebelle Del Rosario',
-      age: 16,
-      sex: 'Female',
-      birthday: 'May 14, 2010',
-      contact: '0918-234-5678',
-      address: '456 Taft Ave., Pasay City',
-      emergencyName: 'Susan Del Rosario',
-      emergencyContact: '0918-876-5432',
-      doctor: 'Dr. Santos',
-      type: 'Consultation',
-      status: 'Done',
-      date: 'September 13, 2026',
-      vitals: { bp: '118/75', hr: '76', temp: '37.1', respRate: '18', spo2: '98', weight: '49', height: '158' },
-      medical: { allergies: 'Aspirin', history: 'Childhood Asthma', diagnosis: 'Upper Respiratory Tract Infection', medications: 'Salbutamol inhaler PRN, Paracetamol 500mg', treatment: 'Inhalation therapy as needed', notes: 'Clear chest sounds on auscultation' },
-      appointments: [ { date: 'Sep 13, 2026', doctor: 'Dr. Santos', type: 'Consultation', status: 'Done' } ]
-    },
-    {
-      id: 'PTNT-004',
-      name: 'John Smith',
-      age: 19,
-      sex: 'Male',
-      birthday: 'Nov 03, 2007',
-      contact: '0920-456-7890',
-      address: '321 Shaw Blvd., Mandaluyong City',
-      emergencyName: 'Carlos Smith',
-      emergencyContact: '0920-654-3210',
-      doctor: 'Dr. Reyes',
-      type: 'Checkup',
-      status: 'Waiting',
-      date: 'September 13, 2026',
-      vitals: { bp: '115/75', hr: '70', temp: '36.6', respRate: '16', spo2: '99', weight: '65', height: '175' },
-      medical: { allergies: 'None', history: 'None', diagnosis: 'Routine General Wellness Exam', medications: 'Multivitamins OD', treatment: 'Maintain balanced diet and exercise', notes: 'Fit and healthy' },
-      appointments: [ { date: 'Sep 13, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' } ]
-    },
-  ]);
-
-  const handleLogin = (user) => {
-    localStorage.setItem('medvault_user', user);
-    setCurrentUser(user);
-    setCurrentView('dashboard');
+  const installState = (state) => {
+    syncedRef.current = state;
+    recordsRef.current = state;
+    setRecords(state);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('medvault_user');
+  const flush = async () => {
+    if (savingRef.current || !userRef.current) return;
+    const base = syncedRef.current;
+    const submitted = recordsRef.current;
+    const changes = changesBetween(base, submitted);
+    if (!changes.length) return;
+    savingRef.current = true;
+    let retry = false;
+    try {
+      const serverState = await api('changes', { method: 'POST', body: JSON.stringify({ changes }) });
+      if (!userRef.current) return;
+      const newerChanges = changesBetween(submitted, recordsRef.current);
+      syncedRef.current = serverState;
+      const merged = applyChanges(serverState, newerChanges);
+      recordsRef.current = merged;
+      setRecords(merged);
+      setSyncMessage('');
+    } catch (error) {
+      if (error.status === 401) {
+        userRef.current = null;
+        setCurrentUser(null);
+        setCurrentUsername(null);
+        setSyncMessage('Your session expired. Sign in again.');
+      } else if (error.status === 409 && error.state) {
+        installState(error.state);
+        setSyncMessage('Another staff member changed a record. The latest version is shown; review and save your edit again.');
+      } else if (error.status) {
+        try { installState(await api('state')); } catch { retry = true; }
+        setSyncMessage(error.message);
+      } else {
+        setSyncMessage('Connection lost. Changes are pending and will be retried.');
+        retry = true;
+      }
+    } finally {
+      savingRef.current = false;
+      if (retry) {
+        clearTimeout(retryRef.current);
+        retryRef.current = setTimeout(() => flushRef.current?.(), 4000);
+      } else if (changesBetween(syncedRef.current, recordsRef.current).length) {
+        queueMicrotask(() => flushRef.current?.());
+      }
+    }
+  };
+  useEffect(() => { flushRef.current = flush; });
+
+  const updateCollection = (collection, updater) => {
+    const previous = recordsRef.current;
+    const value = typeof updater === 'function' ? updater(previous[collection]) : updater;
+    if (value === previous[collection]) return;
+    const next = { ...previous, [collection]: value };
+    recordsRef.current = next;
+    setRecords(next);
+    queueMicrotask(() => flushRef.current?.());
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const session = await api('session');
+        const state = session.role === 'Super Admin' ? emptyState() : await api('state');
+        if (cancelled) return;
+        userRef.current = session.role;
+        setCurrentUser(session.role);
+        setCurrentUsername(session.username);
+        installState(state);
+        setStartupError('');
+      } catch (error) {
+        if (cancelled) return;
+        if (error.status !== 401) setStartupError('Cannot reach the MedVault server. Start the server and reload this page.');
+      } finally {
+        if (!cancelled) setBooting(false);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(retryRef.current); };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || currentUser === 'Super Admin' || booting) return undefined;
+    const poll = setInterval(async () => {
+      if (savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) return;
+      try {
+        const state = await api('state');
+        if (!savingRef.current && !changesBetween(syncedRef.current, recordsRef.current).length) installState(state);
+      } catch (error) {
+        if (error.status === 401) {
+          userRef.current = null;
+          setCurrentUser(null);
+          setCurrentUsername(null);
+          setSyncMessage('Your session expired. Sign in again.');
+        }
+      }
+    }, 4000);
+    return () => clearInterval(poll);
+  }, [currentUser, booting]);
+
+  useEffect(() => {
+    const onBack = () => {
+      setCurrentView(initialView());
+      setPatientTarget({ id: null, tab: 'personal' });
+    };
+    window.addEventListener('popstate', onBack);
+    return () => window.removeEventListener('popstate', onBack);
+  }, []);
+
+  const handleNavigate = (view, target) => {
+    if (view === 'patients') setPatientTarget(target?.patientId
+      ? { id: target.patientId, tab: target.tab || 'personal' }
+      : { id: null, tab: 'personal' });
+    setCurrentView(view);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', view);
+    window.history.pushState({ view }, '', url);
+  };
+
+  const handleLogin = async (role, username) => {
+    setBooting(true);
+    try {
+      const state = role === 'Super Admin' ? emptyState() : await api('state');
+      userRef.current = role;
+      setCurrentUser(role);
+      setCurrentUsername(username);
+      installState(state);
+      setSyncMessage('');
+      handleNavigate('dashboard');
+    } catch (error) {
+      setStartupError(error.message);
+    } finally {
+      setBooting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    const deadline = Date.now() + 10_000;
+    while ((savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) && Date.now() < deadline) {
+      if (!savingRef.current) await flushRef.current?.();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) {
+      setSyncMessage('Changes are still pending. Stay signed in until they finish saving.');
+      return;
+    }
+    try {
+      await api('logout', { method: 'POST' });
+    } catch (error) {
+      if (error.status !== 401) { setSyncMessage('Unable to sign out while the server is unavailable.'); return; }
+    }
+    userRef.current = null;
     setCurrentUser(null);
+    setCurrentUsername(null);
+    installState(emptyState());
+    setCurrentView('dashboard');
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'login');
+    window.history.replaceState({}, '', url);
   };
 
-  return (
-    <ErrorBoundary>
-      {!currentUser ? (
-        <Login onLoginSuccess={handleLogin} />
-      ) : currentView === 'patients' ? (
-        <PatientsModuleReceptionist
-          onNavigate={setCurrentView}
-          onLogout={handleLogout}
-          patients={patients}
-          setPatients={setPatients}
-        />
-      ) : currentView === 'appointments' ? (
-        <Appointment
-          onNavigate={setCurrentView}
-          onLogout={handleLogout}
-          patients={patients}
-          setPatients={setPatients}
-        />
-      ) : (
-        <ReceptionistDashboard
-          receptionistName={currentUser}
-          onNavigate={setCurrentView}
-          onLogout={handleLogout}
-          patients={patients}
-          setPatients={setPatients}
-        />
-      )}
-    </ErrorBoundary>
-  );
+  const importBrowserRecords = async () => {
+    setImportingLegacy(true);
+    try {
+      const read = (key, fallback) => {
+        const saved = localStorage.getItem(key);
+        return saved ? JSON.parse(saved) : fallback;
+      };
+      const imported = await api('import-legacy', { method: 'POST', body: JSON.stringify({
+        patients: read('medvault_patients', recordsRef.current.patients),
+        appointments: read('medvault_appointments', recordsRef.current.appointments),
+        schedules: read('medvault_schedules', recordsRef.current.schedules),
+      }) });
+      installState(imported);
+      for (const key of ['medvault_patients', 'medvault_appointments', 'medvault_schedules']) localStorage.removeItem(key);
+      setLegacyAvailable(false);
+      setSyncMessage('Browser records imported into the shared server.');
+    } catch (error) {
+      setSyncMessage(error.message || 'Unable to import browser records.');
+    } finally {
+      setImportingLegacy(false);
+    }
+  };
+
+  const isMedicalSecretary = currentUser === 'Medical Secretary';
+  const Dashboard = isMedicalSecretary ? MedSecDashboard : ReceptionistDashboard;
+  const PatientRecords = isMedicalSecretary ? MedSecPatientRecords : PatientsModuleReceptionist;
+  const Appointments = isMedicalSecretary ? MedSecAppointment : Appointment;
+  const sharedProps = {
+    onNavigate: handleNavigate, onLogout: handleLogout,
+    patients: records.patients, appointments: records.appointments, schedules: records.schedules, doctors: records.doctors,
+    username: currentUsername,
+    setPatients: (updater) => updateCollection('patients', updater),
+    setAppointments: (updater) => updateCollection('appointments', updater),
+    setSchedules: (updater) => updateCollection('schedules', updater),
+  };
+
+  if (booting) return <div className="medvault-loading" role="status">Loading MedVault…</div>;
+  if (startupError) return <div className="medvault-loading" role="alert">
+    <p>{startupError}</p><button type="button" onClick={() => window.location.reload()}>Retry</button>
+  </div>;
+
+  return <ErrorBoundary>
+    {isMedicalSecretary && legacyAvailable && <div className="medvault-import-alert" role="status">
+      <span>Records from the previous browser-only version are available here. Importing replaces untouched demo data on the server.</span>
+      <button type="button" disabled={importingLegacy} onClick={importBrowserRecords}>
+        {importingLegacy ? 'Importing…' : 'Import Browser Records'}
+      </button>
+      <button type="button" onClick={() => setLegacyAvailable(false)} aria-label="Dismiss import option">×</button>
+    </div>}
+    {syncMessage && <div className="medvault-sync-alert" role="alert">{syncMessage}
+      <button type="button" onClick={() => setSyncMessage('')} aria-label="Dismiss message">×</button>
+    </div>}
+    {!currentUser ? <Login onLoginSuccess={handleLogin} />
+      : currentUser === 'Super Admin' ? <AdminDashboard view={['users', 'doctors'].includes(currentView) ? currentView : 'dashboard'} onNavigate={handleNavigate} onLogout={handleLogout} />
+      : isMedicalSecretary && currentView === 'schedules' ? <MedSecDoctorSchedules {...sharedProps} />
+        : currentView === 'patients' ? <PatientRecords {...sharedProps}
+          key={isMedicalSecretary ? `${patientTarget.id || 'list'}-${patientTarget.tab}` : 'reception'}
+          selectedPatientId={patientTarget.id} initialTab={patientTarget.tab} />
+          : currentView === 'appointments' ? <Appointments {...sharedProps} />
+            : <Dashboard {...sharedProps} receptionistName={currentUser} />}
+  </ErrorBoundary>;
 }

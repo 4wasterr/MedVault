@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
+import { createRecordId, todayISO } from '../medical secretary/medsecData';
 
 export default function PatientsModuleReceptionist({
   onNavigate,
   onLogout,
   patients: propPatients,
   setPatients: propSetPatients,
+  role = 'Receptionist',
 }) {
   // Rich Default Patients with complete Personal Info, Vitals, Medical Info & Appointment History
   const defaultPatients = [
@@ -167,6 +169,14 @@ export default function PatientsModuleReceptionist({
   // Edit Mode state for Personal Info
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  useEffect(() => {
+    if (!selectedPatient || isEditing) return undefined;
+    const latest = patients.find((patient) => patient.id === selectedPatient.id);
+    if (!latest || JSON.stringify(latest) === JSON.stringify(selectedPatient)) return undefined;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) { setSelectedPatient(latest); setEditFormData({ ...latest }); } });
+    return () => { cancelled = true; };
+  }, [patients, selectedPatient, isEditing]);
 
   // Search, Status Filter, Doctor Filter, and Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -228,6 +238,9 @@ export default function PatientsModuleReceptionist({
   const handleSaveEdit = (e) => {
     if (e) e.preventDefault();
     if (!selectedPatient) return;
+    if (JSON.stringify(patients.find((patient) => patient.id === selectedPatient.id) || null) !== JSON.stringify(selectedPatient)) {
+      showToast('This patient changed in another session. Reopen the record before saving.'); return;
+    }
     const updated = {
       ...selectedPatient,
       ...editFormData,
@@ -253,45 +266,26 @@ export default function PatientsModuleReceptionist({
       return;
     }
 
-    const nextNum = patients.length + 1;
-    const formattedId = `PTNT-${String(nextNum).padStart(3, '0')}`;
+    const formattedId = createRecordId('PTNT');
     const fullName = `${registerForm.firstName} ${registerForm.middleName ? registerForm.middleName + ' ' : ''}${registerForm.lastName}`.trim();
     const emergFullName = `${registerForm.emergFirstName} ${registerForm.emergLastName}`.trim();
 
     const newPatientObj = {
       id: formattedId,
       name: fullName,
-      age: 28,
-      sex: registerForm.sex || 'Male',
-      birthday: 'Jan 01, 1998',
-      contact: registerForm.contactNumber || '0917-000-0000',
+      age: '',
+      sex: registerForm.sex || '',
+      birthday: '',
+      contact: registerForm.contactNumber || '',
       address: registerForm.address,
-      emergencyName: emergFullName || 'Emergency Contact',
-      emergencyContact: registerForm.emergContactNumber || 'N/A',
-      doctor: 'Dr. Santos',
+      emergencyName: emergFullName || '',
+      emergencyContact: registerForm.emergContactNumber || '',
+      doctor: '',
       type: registerForm.type || 'Checkup',
       status: 'Waiting',
-      date: 'September 19, 2026',
-      vitals: {
-        bp: '120/80',
-        hr: '72',
-        temp: '36.5',
-        respRate: '18',
-        spo2: '98',
-        weight: '65',
-        height: '170',
-      },
-      medical: {
-        allergies: 'None reported',
-        history: 'No significant past illness',
-        diagnosis: 'New Patient Intake Examination',
-        medications: 'None',
-        treatment: 'Comprehensive physical evaluation',
-        notes: 'Vital signs within normal limits',
-      },
-      appointments: [
-        { date: 'Sep 19, 2026', doctor: 'Dr. Santos', type: registerForm.type || 'Checkup', status: 'Scheduled' },
-      ],
+      date: todayISO(),
+      createdAt: new Date().toISOString(),
+      vitals: {}, medical: {}, appointments: [],
     };
 
     setPatients((prev) => [newPatientObj, ...prev]);
@@ -389,8 +383,8 @@ export default function PatientsModuleReceptionist({
             <button
               type="button"
               className="nav-btn active"
-              title="Patients Module"
-              aria-label="Patients Module"
+              title={role === 'Medical Secretary' ? 'Patient Records' : 'Patients Module'}
+              aria-label={role === 'Medical Secretary' ? 'Patient Records' : 'Patients Module'}
             >
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
                 <circle cx="10" cy="8" r="4" fill="#ffffff" />
@@ -442,7 +436,7 @@ export default function PatientsModuleReceptionist({
           {/* TOP HEADER */}
           <header className="pm-header">
             <div className="pm-header-titles">
-              <h1 className="pm-main-title">Patients Module</h1>
+              <h1 className="pm-main-title">{role === 'Medical Secretary' ? 'Patient Records' : 'Patients Module'}</h1>
               <p className="pm-main-subtitle">Manage and track patient's statuses and info</p>
             </div>
 
@@ -486,15 +480,15 @@ export default function PatientsModuleReceptionist({
                     setShowProfileMenu(!showProfileMenu);
                     setShowNotifications(false);
                   }}
-                  title="Receptionist"
+                  title={role}
                   aria-label="Profile"
                 >
-                  <span>A</span>
+                  <span>{role === 'Medical Secretary' ? 'M' : 'A'}</span>
                 </button>
 
                 {showProfileMenu && (
                   <div className="avatar-dropdown animate-pop-in">
-                    <div className="avatar-nurse-name">Receptionist</div>
+                    <div className="avatar-nurse-name">{role}</div>
                     <div className="avatar-duty-tag">● On Duty</div>
                     <button
                       type="button"

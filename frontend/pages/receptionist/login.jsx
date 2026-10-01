@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './login.css';
 import doctorImg from './images/doctor.png';
 import slideClipboard from './images/slide_clipboard.png';
 import slideNurses from './images/slide_nurses.png';
 import slideXray from './images/slide_xray.png';
 import slideSurgery from './images/slide_surgery.png';
+import { api } from '../../client/src/sharedState';
+import Signup from './Signup';
 
 const SLIDES = [
   {
@@ -69,14 +71,196 @@ const SLIDES = [
   },
 ];
 
+const makeDemoCode = () => String(Math.floor(10000 + Math.random() * 90000));
+
+function RecoveryIcon({ name }) {
+  if (name === 'mail') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="14" rx="3" /><path d="m4 7 8 6 8-6" />
+  </svg>;
+  if (name === 'lock') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <rect x="5" y="10" width="14" height="11" rx="2.5" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
+  </svg>;
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <path d="M2.5 12s3.5-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.5" />
+  </svg>;
+}
+
+function ForgotPasswordFlow({ onClose }) {
+  const [step, setStep] = useState('email');
+  const [email, setEmail] = useState('');
+  const [demoCode, setDemoCode] = useState('');
+  const [digits, setDigits] = useState(['', '', '', '', '']);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError] = useState('');
+  const digitRefs = useRef([]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const sendCode = (event) => {
+    event.preventDefault();
+    setDemoCode(makeDemoCode());
+    setDigits(['', '', '', '', '']);
+    setError('');
+    setStep('verify');
+    requestAnimationFrame(() => digitRefs.current[0]?.focus());
+  };
+
+  const updateDigit = (index, value) => {
+    const digit = value.replace(/\D/g, '').slice(-1);
+    setDigits((current) => current.map((item, itemIndex) => itemIndex === index ? digit : item));
+    setError('');
+    if (digit && index < 4) digitRefs.current[index + 1]?.focus();
+  };
+
+  const pasteCode = (event) => {
+    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 5);
+    if (!pasted) return;
+    event.preventDefault();
+    setDigits(Array.from({ length: 5 }, (_, index) => pasted[index] || ''));
+    setError('');
+    digitRefs.current[Math.min(pasted.length, 4)]?.focus();
+  };
+
+  const verifyCode = (event) => {
+    event.preventDefault();
+    if (digits.join('') !== demoCode) {
+      setError('Enter the five-digit demo code shown below.');
+      return;
+    }
+    setError('');
+    setStep('password');
+  };
+
+  const resendCode = () => {
+    setDemoCode(makeDemoCode());
+    setDigits(['', '', '', '', '']);
+    setError('');
+    digitRefs.current[0]?.focus();
+  };
+
+  const finishPreview = (event) => {
+    event.preventDefault();
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      setError('Use at least 8 characters, including a letter and a number.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setNewPassword('');
+    setConfirmPassword('');
+    setError('');
+    setStep('complete');
+  };
+
+  const goBack = () => {
+    setError('');
+    if (step === 'email' || step === 'complete') onClose();
+    else setStep(step === 'password' ? 'verify' : 'email');
+  };
+
+  const title = {
+    email: 'Forgot Password',
+    verify: 'Verify your account',
+    password: 'Create New Password',
+    complete: 'Preview Complete',
+  }[step];
+
+  return <div className="recovery-backdrop animate-fade-in" role="presentation" onMouseDown={(event) => {
+    if (event.target === event.currentTarget) onClose();
+  }}>
+    <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+      <div className="recovery-topline"><span>9:30 PM</span><span aria-hidden="true">● ᴡɪғɪ ▰</span></div>
+      <div className="recovery-nav">
+        <button type="button" className="recovery-back" onClick={goBack} aria-label={step === 'email' ? 'Back to login' : 'Previous step'}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" /></svg>
+        </button>
+        <span className="recovery-brand"><span aria-hidden="true">✚</span> MedVault</span>
+      </div>
+      <div className="recovery-content" key={step}>
+        <h2 id="recovery-title">{title}</h2>
+        {step === 'email' && <>
+          <p className="recovery-subtitle">Reset your password to access MedVault.</p>
+          <form onSubmit={sendCode}>
+            <label className="recovery-label" htmlFor="recovery-email">Email</label>
+            <div className="recovery-input-wrap"><RecoveryIcon name="mail" />
+              <input id="recovery-email" type="email" required autoComplete="email" autoFocus placeholder="Enter your email"
+                value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+            <button className="recovery-primary" type="submit">Send Code</button>
+          </form>
+        </>}
+        {step === 'verify' && <>
+          <p className="recovery-subtitle">Enter the 5-digit code for <strong>{email}</strong>.</p>
+          <form onSubmit={verifyCode}>
+            <div className="recovery-otp" role="group" aria-label="Five-digit verification code">
+              {digits.map((digit, index) => <input key={index} ref={(node) => { digitRefs.current[index] = node; }}
+                aria-label={`Digit ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                maxLength={1} value={digit} onChange={(event) => updateDigit(index, event.target.value)}
+                onPaste={pasteCode} onKeyDown={(event) => {
+                  if (event.key === 'Backspace' && !digit && index > 0) digitRefs.current[index - 1]?.focus();
+                  if (event.key === 'ArrowLeft' && index > 0) digitRefs.current[index - 1]?.focus();
+                  if (event.key === 'ArrowRight' && index < 4) digitRefs.current[index + 1]?.focus();
+                }} />)}
+            </div>
+            <button className="recovery-primary" type="submit">Verification</button>
+          </form>
+          <p className="recovery-resend">Didn't receive code? <button type="button" onClick={resendCode}>Resend Now</button></p>
+          <p className="recovery-demo-code" role="status">Demo code: <strong>{demoCode}</strong> · No email was sent</p>
+        </>}
+        {step === 'password' && <>
+          <p className="recovery-subtitle">Set a strong password to secure access.</p>
+          <form onSubmit={finishPreview}>
+            <label className="recovery-label" htmlFor="recovery-password">Password</label>
+            <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
+              <input id="recovery-password" type={showNewPassword ? 'text' : 'password'} required autoComplete="new-password"
+                placeholder="Enter your password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setError(''); }} />
+              <button type="button" className="recovery-eye" onClick={() => setShowNewPassword((visible) => !visible)}
+                aria-label={showNewPassword ? 'Hide password' : 'Show password'}><RecoveryIcon name="eye" /></button>
+            </div>
+            <label className="recovery-label" htmlFor="recovery-confirm">Confirm Password</label>
+            <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
+              <input id="recovery-confirm" type={showConfirmPassword ? 'text' : 'password'} required autoComplete="new-password"
+                placeholder="Confirm your password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setError(''); }} />
+              <button type="button" className="recovery-eye" onClick={() => setShowConfirmPassword((visible) => !visible)}
+                aria-label={showConfirmPassword ? 'Hide confirmation' : 'Show confirmation'}><RecoveryIcon name="eye" /></button>
+            </div>
+            <button className="recovery-primary" type="submit">Reset Password</button>
+          </form>
+        </>}
+        {step === 'complete' && <div className="recovery-complete">
+          <span className="recovery-complete-icon" aria-hidden="true">✓</span>
+          <p>This preview is complete. Your account password has not changed because password recovery is not connected to the server yet.</p>
+          <button className="recovery-primary" type="button" onClick={onClose}>Back to Login</button>
+        </div>}
+        {error && <p className="recovery-error" role="alert">{error}</p>}
+        {step !== 'complete' && <p className="recovery-demo-note">UI demo only · Password changes are not saved</p>}
+      </div>
+    </section>
+  </div>;
+}
+
 export default function Login({ onLoginSuccess }) {
+  const [authPage, setAuthPage] = useState(() => new URLSearchParams(window.location.search).get('view') === 'signup' ? 'signup' : 'login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({ username: '', password: '', general: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [modalType, setModalType] = useState(null); // 'forgot' | 'signup' | null
+  const [authenticatedRole, setAuthenticatedRole] = useState(null);
+  const [modalType, setModalType] = useState(null); // 'forgot' | null
   const [shakeField, setShakeField] = useState(null);
 
   // Slideshow State with persistence
@@ -89,6 +273,19 @@ export default function Login({ onLoginSuccess }) {
     }
   });
   const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    const syncPage = () => setAuthPage(new URLSearchParams(window.location.search).get('view') === 'signup' ? 'signup' : 'login');
+    window.addEventListener('popstate', syncPage);
+    return () => window.removeEventListener('popstate', syncPage);
+  }, []);
+
+  const showAuthPage = (page) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', page);
+    window.history.pushState({ view: page }, '', url);
+    setAuthPage(page);
+  };
 
   useEffect(() => {
     if (isAutoPlayPaused || isHovered) return;
@@ -104,7 +301,7 @@ export default function Login({ onLoginSuccess }) {
       const next = !prev;
       try {
         localStorage.setItem('medvault_slideshow_paused', String(next));
-      } catch (err) {
+      } catch {
         // ignore storage error
       }
       return next;
@@ -155,7 +352,7 @@ export default function Login({ onLoginSuccess }) {
     return isValid;
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -165,22 +362,25 @@ export default function Login({ onLoginSuccess }) {
     setIsSubmitting(true);
     setErrors({ username: '', password: '', general: '' });
 
-    // Simulate authentication delay then retain the Welcome Back animation
-    setTimeout(() => {
+    try {
+      const { role, username: signedInUsername } = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
       setIsSubmitting(false);
       setIsLoggedIn(true);
-
-      // If parent App provided onLoginSuccess, retain the Welcome animation for 1.4s then transition
+      setAuthenticatedRole(role);
       if (onLoginSuccess) {
         setTimeout(() => {
-          onLoginSuccess(username || 'Nurse');
+          onLoginSuccess(role, signedInUsername);
         }, 1400);
       }
-    }, 850);
+    } catch (error) {
+      setIsSubmitting(false);
+      setErrors({ username: '', password: '', general: error.message });
+    }
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setAuthenticatedRole(null);
     setPassword('');
     setErrors({ username: '', password: '', general: '' });
   };
@@ -285,7 +485,7 @@ export default function Login({ onLoginSuccess }) {
       </div>
 
       {/* RIGHT SECTION: Login Form & Authenticated View */}
-      <div className="login-right-section">
+      <div className={`login-right-section ${authPage === 'signup' ? 'signup-right-section' : ''}`}>
         {/* Minimalist Blue Geometric Animated Background */}
         <div className="geometric-bg-container" aria-hidden="true">
           {/* Ambient Glowing Orbs */}
@@ -330,7 +530,7 @@ export default function Login({ onLoginSuccess }) {
           <div className="geo-shape shape-dot-matrix matrix-bottom"></div>
         </div>
 
-        {!isLoggedIn ? (
+        {authPage === 'signup' ? <Signup onBack={() => showAuthPage('login')} /> : !isLoggedIn ? (
           <div className="login-card-wrapper animate-card-entrance">
             <div className="login-card">
               {/* Header / Brand Title */}
@@ -463,11 +663,11 @@ export default function Login({ onLoginSuccess }) {
 
                 {/* Footer Link: Sign Up */}
                 <div className="signup-prompt-row animate-item-6">
-                  <span className="already-account-text">Already have an account? </span>
+                  <span className="dont-have-account-text">Don't have an account? </span>
                   <button
                     type="button"
                     className="signup-link"
-                    onClick={() => setModalType('signup')}
+                    onClick={() => showAuthPage('signup')}
                   >
                     Sign up here
                   </button>
@@ -493,17 +693,17 @@ export default function Login({ onLoginSuccess }) {
               </div>
               <h2 className="success-title">Welcome Back, {username || 'Nurse'}!</h2>
               <p className="success-subtitle">
-                Authenticating session... Loading Nurse Clinical Dashboard.
+                Loading the {authenticatedRole} dashboard.
               </p>
 
               <div className="success-details-box">
                 <div className="detail-item">
                   <span className="detail-label">Station</span>
-                  <span className="detail-value status-active">Nurse Station B • Synchronized</span>
+                  <span className="detail-value status-active">{authenticatedRole} • Active</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">Security</span>
-                  <span className="detail-value">HIPAA Verified 256-Bit SSL</span>
+                  <span className="detail-value">Demo account</span>
                 </div>
               </div>
 
@@ -512,7 +712,7 @@ export default function Login({ onLoginSuccess }) {
                   type="button"
                   className="login-submit-btn"
                   style={{ marginTop: '8px' }}
-                  onClick={() => onLoginSuccess(username || 'Nurse')}
+                  onClick={() => onLoginSuccess(authenticatedRole)}
                 >
                   Enter Dashboard Now →
                 </button>
@@ -530,58 +730,7 @@ export default function Login({ onLoginSuccess }) {
         )}
       </div>
 
-      {/* Interactive Modal for Forgot Password or Sign Up */}
-      {modalType && (
-        <div className="modal-backdrop animate-fade-in" onClick={() => setModalType(null)}>
-          <div className="modal-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">
-                {modalType === 'forgot' ? 'Reset Your Password' : 'Join MedVault'}
-              </h3>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setModalType(null)}
-                aria-label="Close modal"
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              {modalType === 'forgot' ? (
-                <p className="modal-message">
-                  Enter your registered username or medical email, and we'll dispatch a secure recovery link.
-                </p>
-              ) : (
-                <p className="modal-message">
-                  Contact your hospital administrator or clinic supervisor to activate your new MedVault provider account.
-                </p>
-              )}
-              <div className="input-pill-container" style={{ marginTop: '16px' }}>
-                <input
-                  type="text"
-                  className="pill-input"
-                  placeholder={modalType === 'forgot' ? 'Enter recovery email / username' : 'Enter clinic work email'}
-                  style={{ paddingLeft: '20px' }}
-                />
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="login-submit-btn"
-                style={{ height: '44px', fontSize: '0.95rem' }}
-                onClick={() => {
-                  alert(modalType === 'forgot' ? 'Recovery instructions sent!' : 'Request submitted to administrator!');
-                  setModalType(null);
-                }}
-              >
-                {modalType === 'forgot' ? 'Send Reset Link' : 'Submit Registration'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {modalType === 'forgot' && <ForgotPasswordFlow onClose={() => setModalType(null)} />}
     </div>
   );
 }

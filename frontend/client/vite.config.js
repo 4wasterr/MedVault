@@ -5,7 +5,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const imagesDir = path.resolve(__dirname, 'src/pages/images')
+const imagesDir = path.resolve(__dirname, '../pages/images')
 
 function resolveImagesPlugin() {
   return {
@@ -27,6 +27,7 @@ function resolveImagesPlugin() {
 export default defineConfig({
   plugins: [react(), resolveImagesPlugin()],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: [
       { find: './images', replacement: imagesDir },
       { find: '../images', replacement: imagesDir },
@@ -35,7 +36,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: true,
+    strictPort: true,
+    open: false,
+    fs: { allow: [path.resolve(__dirname, '..')] },
     proxy: {
       '/api': 'http://localhost:5000',
     },

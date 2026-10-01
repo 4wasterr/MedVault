@@ -1,0 +1,79 @@
+.medsec-screen { align-items: flex-start; }
+.medsec-workspace { gap: 22px; }
+.medsec-logo { border: 0; background: none; padding: 0; }
+.medsec-header { align-items: flex-start; }
+.medsec-header .dashboard-main-title { font-size: clamp(2rem, 2.6vw, 2.8rem); }
+.medsec-subtitle { color: #64748b; margin: 8px 0 0; font-size: .95rem; }
+.medsec-role-wrapper { position: relative; flex-shrink: 0; }
+.medsec-role-pill { display: flex; align-items: center; gap: 10px; color: #059669; font: inherit; font-weight: 700; background: #fff; border: 0; border-radius: 999px; padding: 5px 16px 5px 5px; box-shadow: var(--nd-card-shadow); white-space: nowrap; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease; }
+.medsec-role-pill:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 50, 90, .14); }
+.medsec-role-pill:focus-visible { outline: 3px solid #00adef; outline-offset: 3px; }
+.medsec-profile-menu { top: calc(100% + 10px); width: 230px; }
+.medsec-role-avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #e0f2fe; color: #0284c7; font-size: 1.1rem; }
+.medsec-grid { display: grid; grid-template-columns: minmax(280px, .78fr) minmax(0, 1.6fr); gap: 22px; align-items: start; min-width: 0; }
+.medsec-schedule-grid { grid-template-columns: minmax(280px, .85fr) minmax(0, 1.4fr); }
+.medsec-panel { background: #fff; border-radius: 22px; padding: 22px; box-shadow: var(--nd-card-shadow); min-width: 0; }
+.medsec-panel-heading, .medsec-profile-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
+.medsec-heading-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.medsec-panel-heading h2, .medsec-profile-heading h2 { margin: 3px 0 5px; }
+.medsec-filters { margin: 12px 0 18px; }
+.medsec-schedule-stats { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 14px; }
+.medsec-panel h2 { margin: 0 0 14px; font-size: 1.15rem; color: #111827; }
+.medsec-panel h3 { margin: 0 0 12px; font-size: 1rem; color: #1e293b; }
+.medsec-muted { color: #64748b; font-size: .9rem; }
+.medsec-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.medsec-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.medsec-field > span, .medsec-field > label { font-size: .79rem; font-weight: 700; color: #475569; }
+.medsec-field input, .medsec-field select, .medsec-field textarea, .medsec-input { width: 100%; min-width: 0; border: 1px solid #dbe4ee; background: #fff; border-radius: 11px; padding: 11px 13px; font: inherit; color: #1e293b; box-sizing: border-box; }
+.medsec-field textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
+.medsec-field input:focus, .medsec-field select:focus, .medsec-field textarea:focus, .medsec-input:focus { outline: 3px solid #c9edfc; border-color: #00adef; }
+.medsec-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.medsec-form-grid .wide { grid-column: 1 / -1; }
+.medsec-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.medsec-btn { border: 0; border-radius: 11px; padding: 10px 16px; min-height: 42px; background: #00adef; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+.medsec-btn:hover { background: #009bd8; }
+.medsec-btn.secondary { color: #0369a1; background: #e8f7fd; }
+.medsec-btn.secondary:hover { background: #d5f0fb; }
+.medsec-btn.outline { color: #0369a1; background: #fff; border: 2px solid #0284c7; }
+.medsec-btn.outline:hover { color: #fff; background: #0284c7; }
+.medsec-btn.danger { color: white; background: #ef4444; }
+.medsec-btn.danger:hover { background: #dc2626; }
+.medsec-btn:disabled { opacity: .5; cursor: not-allowed; }
+.medsec-list { display: flex; flex-direction: column; gap: 8px; max-height: min(65vh, 750px); overflow: auto; padding-right: 3px; }
+.medsec-list-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-width: 0; border: 1px solid #e7eef6; border-radius: 14px; background: #fff; padding: 13px 14px; text-align: left; color: #1e293b; font: inherit; cursor: pointer; }
+.medsec-list-item:hover, .medsec-list-item.active { border-color: #00adef; background: #f1fbff; }
+.medsec-list-item strong { display: block; font-size: .9rem; }
+.medsec-list-item small { display: block; color: #64748b; margin-top: 4px; }
+.medsec-badge { display: inline-flex; align-items: center; border-radius: 999px; background: #e0f2fe; color: #0369a1; padding: 5px 9px; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.medsec-badge.completed { background: #dcfce7; color: #166534; }
+.medsec-badge.consultation { background: #fef3c7; color: #92400e; }
+.medsec-badge.blocked { background: #fee2e2; color: #b91c1c; }
+.medsec-tabs { display: flex; gap: 5px; overflow-x: auto; border-bottom: 1px solid #e2e8f0; margin: 0 -22px 20px; padding: 0 22px; }
+.medsec-tab { border: 0; border-bottom: 3px solid transparent; background: none; padding: 12px 15px; white-space: nowrap; color: #64748b; font: inherit; font-size: .84rem; font-weight: 700; cursor: pointer; }
+.medsec-tab.active { color: #0284c7; border-bottom-color: #00adef; }
+.medsec-section-divider { border-top: 1px solid #e7eef6; margin: 20px 0; }
+.medsec-info-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid #f1f5f9; font-size: .91rem; }
+.medsec-info-row > span:first-child { color: #64748b; }
+.medsec-info-row > span:last-child { color: #1e293b; font-weight: 600; text-align: right; }
+.medsec-note-card, .medsec-visit-card { border: 1px solid #e4edf5; border-radius: 14px; padding: 15px; margin-bottom: 12px; background: #fcfdff; }
+.medsec-note-meta { display: flex; gap: 8px; justify-content: space-between; color: #64748b; font-size: .78rem; margin-bottom: 10px; }
+.medsec-notice { border-radius: 11px; background: #e8f7fd; color: #075985; padding: 11px 13px; font-size: .86rem; margin: 12px 0; }
+.medsec-error { border-radius: 11px; background: #fef2f2; color: #b91c1c; padding: 11px 13px; font-size: .86rem; margin: 12px 0; }
+.medsec-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.4); display: grid; place-items: center; padding: 20px; z-index: 100; }
+.medsec-modal { background: #fff; border-radius: 20px; padding: 24px; width: min(100%, 480px); max-height: calc(100dvh - 32px); overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.15); }
+.medsec-modal h2 { margin: 0 0 8px; }
+.medsec-modal p { color: #64748b; }
+.medsec-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.medsec-slot { border: 1px solid #dbe4ee; background: #f8fafc; border-radius: 12px; padding: 11px; text-align: left; font: inherit; cursor: pointer; }
+.medsec-slot.available { background: #f0fdf4; border-color: #bbf7d0; }
+.medsec-slot.blocked { background: #fef2f2; border-color: #fecaca; }
+.medsec-slot.booked { background: #eff6ff; border-color: #bfdbfe; cursor: default; }
+.medsec-slot strong, .medsec-slot small { display: block; }
+.medsec-slot small { color: #64748b; margin-top: 4px; }
+.medsec-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 15px 0; }
+.medsec-progress-step { border-radius: 999px; padding: 8px 12px; color: #64748b; background: #f1f5f9; font-weight: 700; font-size: .82rem; }
+.medsec-progress-step.active { color: #0369a1; background: #e0f2fe; }
+.medsec-progress-step.done { color: #166534; background: #dcfce7; }
+@media (max-width: 900px) { .medsec-grid, .medsec-schedule-grid { grid-template-columns: minmax(0, 1fr); } .medsec-list { max-height: 320px; } }
+@media (max-width: 700px) { .medsec-form-grid { grid-template-columns: minmax(0, 1fr); } .medsec-header { gap: 12px; } .medsec-role-pill { padding: 5px; } .medsec-role-label { display: none; } .medsec-panel { padding: 17px; } .medsec-tabs { margin-left: -17px; margin-right: -17px; padding: 0 17px; } }
+@media (max-width: 480px) { .medsec-grid { gap: 14px; } .medsec-panel { padding: 15px; border-radius: 16px; } .medsec-tabs { margin-left: -15px; margin-right: -15px; padding: 0 15px; } .medsec-tab { padding: 11px 10px; } .medsec-list-item { flex-wrap: wrap; } .medsec-badge { white-space: normal; } .medsec-info-row { flex-wrap: wrap; } .medsec-info-row > span:last-child { text-align: left; overflow-wrap: anywhere; } .medsec-slot-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); } .medsec-modal-backdrop { padding: 12px; } .medsec-modal { padding: 18px; } }

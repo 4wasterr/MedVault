@@ -42,8 +42,8 @@ body, html {
 .medvault-login-page {
   position: relative;
   display: flex;
-  width: 100vw;
-  min-height: 100vh;
+  width: 100%;
+  min-height: 100dvh;
   overflow: hidden;
   background-color: var(--mv-bg-blue-start);
 }
@@ -55,7 +55,7 @@ body, html {
   position: relative;
   flex: 1 1 50%;
   max-width: 53%;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: #0c1a29;
 }
@@ -267,8 +267,9 @@ body, html {
   /* Soft, soothing eye-friendly sky-blue gradient */
   background: linear-gradient(135deg, var(--mv-bg-blue-start) 0%, var(--mv-bg-blue-mid) 50%, var(--mv-bg-blue-end) 100%);
   padding: 32px 28px;
-  min-height: 100vh;
-  overflow: hidden;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
   z-index: 1;
 }
 
@@ -834,8 +835,8 @@ body, html {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100dvh;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
   display: flex;
@@ -850,6 +851,8 @@ body, html {
   border-radius: 28px;
   width: 100%;
   max-width: 420px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   padding: 32px 28px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 }
@@ -1186,7 +1189,8 @@ body, html {
   .login-left-section {
     flex: none;
     max-width: 100%;
-    height: 260px;
+    width: 100%;
+    height: clamp(145px, 24dvh, 240px);
   }
 
   .left-content-overlay {
@@ -1201,6 +1205,7 @@ body, html {
 
   .login-right-section {
     flex: 1;
+    min-height: 0;
     padding: 24px 16px 40px;
   }
 
@@ -1208,6 +1213,14 @@ body, html {
     border-radius: 30px;
     padding: 36px 24px;
   }
+}
+
+@media (max-height: 760px) and (min-width: 961px) {
+  .login-right-section {
+    align-items: flex-start;
+    padding-block: 20px;
+  }
+  .login-card { padding-block: 28px; }
 }
 
 @media (max-width: 480px) {
@@ -1218,4 +1231,5 @@ body, html {
   .login-card {
     padding: 30px 18px;
   }
+  .login-right-section { padding: 16px 12px 28px; }
 }

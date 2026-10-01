@@ -42,8 +42,8 @@ body, html {
 .medvault-login-page {
   position: relative;
   display: flex;
-  width: 100vw;
-  min-height: 100vh;
+  width: 100%;
+  min-height: 100dvh;
   overflow: hidden;
   background-color: var(--mv-bg-blue-start);
 }
@@ -55,7 +55,7 @@ body, html {
   position: relative;
   flex: 1 1 50%;
   max-width: 53%;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: #0c1a29;
 }
@@ -267,8 +267,9 @@ body, html {
   /* Soft, soothing eye-friendly sky-blue gradient */
   background: linear-gradient(135deg, var(--mv-bg-blue-start) 0%, var(--mv-bg-blue-mid) 50%, var(--mv-bg-blue-end) 100%);
   padding: 32px 28px;
-  min-height: 100vh;
-  overflow: hidden;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
   z-index: 1;
 }
 
@@ -741,7 +742,7 @@ body, html {
   font-size: 0.84rem;
 }
 
-.already-account-text {
+.dont-have-account-text {
   color: var(--mv-text-sub);
   font-weight: 500;
 }
@@ -834,8 +835,8 @@ body, html {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100dvh;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
   display: flex;
@@ -850,6 +851,8 @@ body, html {
   border-radius: 28px;
   width: 100%;
   max-width: 420px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   padding: 32px 28px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 }
@@ -885,6 +888,281 @@ body, html {
 
 .modal-actions {
   margin-top: 24px;
+}
+
+/* Password recovery preview, styled after the supplied mobile reference. */
+.recovery-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(1, 18, 12, .78);
+  backdrop-filter: blur(12px);
+}
+
+.recovery-panel {
+  width: min(100%, 410px);
+  min-height: min(620px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border: 1px solid rgba(145, 255, 119, .13);
+  border-radius: 34px;
+  padding: 24px 27px 32px;
+  color: #f6fff6;
+  background: radial-gradient(ellipse 105% 65% at 10% 0%, #12432a 0%, #071e14 47%, transparent 88%), #030907;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .06);
+  font-family: var(--mv-font);
+  scrollbar-width: thin;
+  scrollbar-color: #315943 transparent;
+}
+
+.recovery-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #f3fff0;
+  font-size: .65rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 0 5px;
+}
+
+.recovery-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 19px;
+}
+
+.recovery-back {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(167, 255, 134, .15);
+  border-radius: 50%;
+  background: #0b2419;
+  color: #edffed;
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(48, 211, 83, .05);
+}
+
+.recovery-back svg { width: 19px; height: 19px; }
+.recovery-back:hover { background: #15432a; }
+
+.recovery-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .82rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.recovery-brand span { color: #c6f65a; font-size: 1rem; }
+.recovery-content { margin-top: 50px; }
+
+.recovery-content h2 {
+  margin: 0;
+  color: #f8fff7;
+  font-size: clamp(1.42rem, 5vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -.035em;
+  line-height: 1.15;
+}
+
+.recovery-subtitle {
+  margin: 8px 0 26px;
+  color: #aab9ac;
+  font-size: .79rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.recovery-subtitle strong { color: #e7ffe3; font-weight: 600; }
+
+.recovery-label {
+  display: block;
+  margin: 18px 0 8px;
+  color: #f4fff1;
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.recovery-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 49px;
+  padding: 0 13px;
+  border: 1px solid #34443a;
+  border-radius: 12px;
+  background: rgba(5, 14, 10, .83);
+  color: #93a397;
+  transition: border-color .18s, box-shadow .18s;
+}
+
+.recovery-input-wrap:focus-within {
+  border-color: #a6ee57;
+  box-shadow: 0 0 0 3px rgba(166, 238, 87, .11);
+}
+
+.recovery-input-wrap > svg { width: 18px; height: 18px; flex: 0 0 18px; }
+
+.recovery-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #f7fff5;
+  font: inherit;
+  font-size: .82rem;
+}
+
+.recovery-input-wrap input::placeholder { color: #77887c; }
+
+.recovery-eye {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 0;
+  background: transparent;
+  color: #96a59a;
+  cursor: pointer;
+}
+
+.recovery-eye svg { width: 17px; height: 17px; }
+.recovery-eye:hover { color: #cafa70; }
+
+.recovery-primary {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 23px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(95deg, #27d44b 0%, #d9fa53 100%);
+  color: #06130a;
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .18s, transform .18s;
+}
+
+.recovery-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.recovery-primary:active { transform: translateY(0); }
+
+.recovery-otp {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.recovery-otp input {
+  width: 100%;
+  height: 53px;
+  border: 1px solid #405349;
+  border-radius: 11px;
+  outline: none;
+  background: rgba(8, 20, 13, .92);
+  color: #f7fff4;
+  text-align: center;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.recovery-otp input:focus { border-color: #bded58; box-shadow: 0 0 0 3px rgba(189, 237, 88, .11); }
+
+.recovery-resend {
+  margin-top: 14px;
+  color: #7f9083;
+  text-align: center;
+  font-size: .74rem;
+}
+
+.recovery-resend button {
+  border: 0;
+  background: transparent;
+  color: #f2fff0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.recovery-resend button:hover { color: #cbf85e; }
+
+.recovery-demo-code {
+  margin-top: 20px;
+  padding: 10px 12px;
+  border: 1px solid rgba(181, 239, 100, .2);
+  border-radius: 10px;
+  background: rgba(111, 190, 64, .08);
+  color: #b7cdb5;
+  text-align: center;
+  font-size: .74rem;
+}
+
+.recovery-demo-code strong { color: #d8fb72; letter-spacing: .18em; }
+
+.recovery-error {
+  margin-top: 15px;
+  color: #ffb1ae;
+  font-size: .78rem;
+  line-height: 1.4;
+}
+
+.recovery-demo-note {
+  margin-top: 34px;
+  color: #7f9184;
+  text-align: center;
+  font-size: .7rem;
+  line-height: 1.4;
+}
+
+.recovery-complete { margin-top: 30px; }
+.recovery-complete p { color: #adbfaf; font-size: .85rem; line-height: 1.55; }
+.recovery-complete-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #27d44b, #d9fa53);
+  color: #06130a;
+  font-size: 1.7rem;
+}
+
+.recovery-panel button:focus-visible {
+  outline: 2px solid #d7fa5a;
+  outline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .recovery-backdrop { padding: 0; }
+  .recovery-panel {
+    width: 100%;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: 22px clamp(20px, 6vw, 30px) 28px;
+  }
+}
+
+@media (max-height: 620px) and (min-width: 481px) {
+  .recovery-panel { min-height: 0; }
+  .recovery-content { margin-top: 26px; }
 }
 
 /* ==========================================================================
@@ -1186,7 +1464,8 @@ body, html {
   .login-left-section {
     flex: none;
     max-width: 100%;
-    height: 260px;
+    width: 100%;
+    height: clamp(145px, 24dvh, 240px);
   }
 
   .left-content-overlay {
@@ -1201,6 +1480,7 @@ body, html {
 
   .login-right-section {
     flex: 1;
+    min-height: 0;
     padding: 24px 16px 40px;
   }
 
@@ -1208,6 +1488,14 @@ body, html {
     border-radius: 30px;
     padding: 36px 24px;
   }
+}
+
+@media (max-height: 760px) and (min-width: 961px) {
+  .login-right-section {
+    align-items: flex-start;
+    padding-block: 20px;
+  }
+  .login-card { padding-block: 28px; }
 }
 
 @media (max-width: 480px) {
@@ -1218,4 +1506,5 @@ body, html {
   .login-card {
     padding: 30px 18px;
   }
+  .login-right-section { padding: 16px 12px 28px; }
 }

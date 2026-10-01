@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
+import { createRecordId, dateKey, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from './medsecData';
 
 export default function ReceptionistDashboard({
   onLogout,
@@ -8,8 +9,13 @@ export default function ReceptionistDashboard({
   onNavigate,
   patients,
   setPatients,
+  appointments = [],
+  setAppointments,
+  schedules = {},
+  role = 'Receptionist',
 }) {
-  const nurseName = receptionistName || 'Receptionist';
+  const nurseName = receptionistName || role;
+  const isMedicalSecretary = role === 'Medical Secretary';
   const [activeNav, setActiveNav] = useState('home'); // 'home' | 'patients' | 'records'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -18,10 +24,13 @@ export default function ReceptionistDashboard({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeModal, setActiveModal] = useState(null); // 'register' | 'appointment' | 'patientList' | 'patientDetail' | null
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const dashboardDate = new Date();
+  const [appointmentError, setAppointmentError] = useState('');
 
   const closeModal = () => {
     setActiveModal(null);
     setActiveNav('home');
+    setAppointmentError('');
   };
 
   // Pic 3 Register Form State
@@ -41,54 +50,56 @@ export default function ReceptionistDashboard({
   // Range Toggle State: 'Weekly' | 'Quarterly' | 'Annually'
   const [chartRange, setChartRange] = useState('Weekly');
 
-  // Today's Appointments Data
-  const [todayAppointments, setTodayAppointments] = useState([
-    { id: 1, time: '8:30 am', patient: 'Juan Martinez', type: 'Consultation', doctor: 'Dr. Santos', status: 'Waiting', bp: '120/80', hr: '72 bpm' },
-    { id: 2, time: '9:45 am', patient: 'Ken Ty', type: 'Follow-up', doctor: 'Dr. Reyes', status: 'Scheduled', bp: '118/75', hr: '68 bpm' },
-    { id: 3, time: '10:04 am', patient: 'Allen Tracy', type: 'Check-up', doctor: 'Dr. Cruz', status: 'In Progress', bp: '130/85', hr: '78 bpm' },
-    { id: 4, time: '12:12 pm', patient: 'Abigail Yatco', type: 'In Progress', doctor: 'Dr. Rebucayo', status: 'Completed', bp: '115/70', hr: '70 bpm' },
-  ]);
-
-  // Upcoming Appointments Data
-  const [upcomingAppointments, setUpcomingAppointments] = useState([
-    { id: 101, time: '1:45 pm', patient: 'Pedro Reyes', type: 'Consultation', doctor: 'Dr. Santos' },
-    { id: 102, time: '2:03 pm', patient: 'Therese Chan', type: 'Follow-up', doctor: 'Dr. Cruz' },
-    { id: 103, time: '3:00 pm', patient: 'Carol San', type: 'Check-up', doctor: 'Dr. Reyes' },
-    { id: 104, time: '5:07 pm', patient: 'John Travis', type: 'Consultation', doctor: 'Dr. Rebucayo' },
-  ]);
-
-  // New Patient Form State
-  const [newPatient, setNewPatient] = useState({ name: '', age: '', contact: '', doctor: 'Dr. Santos', type: 'Consultation', time: '1:30 pm' });
-
-  // Range-dependent chart dataset
+  // Activity comes from the same appointments shown in both modules.
+  const bookedAppointments = appointments.filter((item) => item.patientId && !['Open', 'Cancelled'].includes(item.status));
+  const weekStart = new Date(dashboardDate.getFullYear(), dashboardDate.getMonth(), dashboardDate.getDate(), 12);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const chartDatasets = {
-    Weekly: [
-      { label: 'Mon', count: 75, height: '74%' },
-      { label: 'Tue', count: 55, height: '56%' },
-      { label: 'Wed', count: 42, height: '44%' },
-      { label: 'Thu', count: 60, height: '62%' },
-      { label: 'Fri', count: 95, height: '94%' },
-      { label: 'Sat', count: 62, height: '63%' },
-      { label: 'Sun', count: 58, height: '59%' },
-    ],
-    Quarterly: [
-      { label: 'Q1', count: 240, height: '68%' },
-      { label: 'Q2', count: 310, height: '84%' },
-      { label: 'Q3', count: 280, height: '76%' },
-      { label: 'Q4', count: 360, height: '96%' },
-    ],
-    Annually: [
-      { label: '2023', count: 980, height: '62%' },
-      { label: '2024', count: 1240, height: '78%' },
-      { label: '2025', count: 1450, height: '88%' },
-      { label: '2026', count: 1680, height: '95%' },
-    ],
+    Weekly: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => {
+      const day = new Date(weekStart);
+      day.setDate(day.getDate() + index);
+      return { label, count: bookedAppointments.filter((item) => dateKey(item.date) === dateKey(day)).length };
+    }),
+    Quarterly: [1, 2, 3, 4].map((quarter) => ({
+      label: `Q${quarter}`,
+      count: bookedAppointments.filter((item) => {
+        const key = dateKey(item.date);
+        return Number(key.slice(0, 4)) === dashboardDate.getFullYear() &&
+          Math.floor((Number(key.slice(5, 7)) - 1) / 3) + 1 === quarter;
+      }).length,
+    })),
+    Annually: Array.from({ length: 4 }, (_, index) => dashboardDate.getFullYear() - 3 + index).map((year) => ({
+      label: String(year), count: bookedAppointments.filter((item) => Number(dateKey(item.date).slice(0, 4)) === year).length,
+    })),
   };
 
   const currentChartData = chartDatasets[chartRange] || chartDatasets.Weekly;
+  const chartMaximum = Math.max(10, Math.ceil(Math.max(...currentChartData.map((item) => item.count)) / 10) * 10);
+  const chartTicks = [1, 0.7, 0.5, 0.25, 0.1, 0].map((fraction) =>
+    Math.round(chartMaximum * fraction)
+  );
+
+  const handleCardKeyDown = (event, action) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      action();
+    }
+  };
+
+  const todayKey = todayISO();
+  const sharedAppointments = appointments
+    .filter((item) => item.patientId && !['Open', 'Cancelled'].includes(item.status))
+    .map((item) => ({
+      id: item.id, time: item.time, patient: item.patientName || 'Patient', type: item.type,
+      doctor: item.doctor, status: item.visitStatus || (item.status === 'Completed' ? 'Completed' : 'Waiting'),
+      date: item.date, bp: patients?.find((patient) => patient.id === item.patientId)?.vitals?.bp || '—',
+      hr: patients?.find((patient) => patient.id === item.patientId)?.vitals?.hr || '—',
+    }));
+  const dashboardToday = sharedAppointments.filter((item) => dateKey(item.date) === todayKey);
+  const dashboardUpcoming = sharedAppointments.filter((item) => dateKey(item.date) > todayKey && item.status !== 'Completed');
 
   // Filtering
-  const filteredToday = todayAppointments.filter((app) => {
+  const filteredToday = dashboardToday.filter((app) => {
     const matchesSearch = app.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.doctor.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.type.toLowerCase().includes(searchQuery.toLowerCase());
@@ -96,7 +107,7 @@ export default function ReceptionistDashboard({
     return matchesSearch && matchesFilter;
   });
 
-  const filteredUpcoming = upcomingAppointments.filter((app) =>
+  const filteredUpcoming = dashboardUpcoming.filter((app) =>
     app.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
     app.time.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -106,32 +117,21 @@ export default function ReceptionistDashboard({
     const fullName = `${registerFormData.firstName} ${registerFormData.middleName ? registerFormData.middleName + ' ' : ''}${registerFormData.lastName}`.trim();
     if (!fullName) return;
 
-    const created = {
-      id: Date.now(),
-      time: '2:00 pm',
-      patient: fullName,
-      type: 'Consultation',
-      doctor: 'Dr. Santos',
-      status: 'Waiting',
-      bp: '120/80',
-      hr: '74 bpm',
-    };
-
-    setTodayAppointments((prev) => [created, ...prev]);
-
     if (setPatients) {
-      const nextNum = (patients ? patients.length : 4) + 1;
       const newPatientObj = {
-        id: `PTNT-${String(nextNum).padStart(3, '0')}`,
+        id: createRecordId('PTNT'),
         name: fullName,
-        age: 28,
+        age: '',
         status: 'Waiting',
-        sex: registerFormData.sex || 'Male',
-        contact: registerFormData.contactNumber || 'N/A',
-        address: registerFormData.address || 'N/A',
-        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergLastName}`.trim() || 'N/A',
-        emergencyContact: registerFormData.emergContactNumber || 'N/A',
-        doctor: 'Dr. Santos',
+        sex: registerFormData.sex || '',
+        contact: registerFormData.contactNumber || '',
+        address: registerFormData.address || '',
+        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergLastName}`.trim(),
+        emergencyContact: registerFormData.emergContactNumber || '',
+        doctor: '',
+        date: todayKey,
+        vitals: {}, medical: {}, appointments: [],
+        createdAt: new Date().toISOString(),
       };
       setPatients((prev) => [newPatientObj, ...prev]);
     }
@@ -149,6 +149,34 @@ export default function ReceptionistDashboard({
       emergMiddleName: '',
       emergLastName: '',
     });
+  };
+
+  const handleDashboardAppointment = (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const patient = patients?.find((item) => item.id === form.get('patientId'));
+    if (!patient || !setAppointments) return;
+    const date = String(form.get('date'));
+    const time = String(form.get('time'));
+    const doctor = String(form.get('doctor'));
+    const savedSchedule = schedules[scheduleKey(doctor, date)];
+    if (hasBooking(appointments, doctor, date, time) ||
+      (savedSchedule && (!slotsBetween(savedSchedule.start, savedSchedule.end).includes(timeKey(time)) || savedSchedule.blocked?.[timeKey(time)]))) {
+      setAppointmentError('This time is already booked or blocked in Doctor Schedules.'); return;
+    }
+    const booking = {
+      id: createRecordId('APPT'), patientId: patient.id, patientName: patient.name,
+      age: patient.age, sex: patient.sex, contact: patient.contact, address: patient.address,
+      emergencyName: patient.emergencyName, emergencyContact: patient.emergencyContact,
+      doctor, date, time, type: String(form.get('type')), status: 'Confirmed', visitStatus: 'Waiting',
+      notes: 'Appointment booked by Receptionist.',
+    };
+    setAppointments((current) => [booking, ...current]);
+    setPatients?.((current) => current.map((item) => item.id === patient.id ? {
+      ...item, appointments: [{ sourceAppointmentId: booking.id, date, doctor, type: booking.type, status: 'Scheduled' }, ...(item.appointments || [])],
+    } : item));
+    setAppointmentError('');
+    closeModal();
   };
 
   return (
@@ -192,8 +220,8 @@ export default function ReceptionistDashboard({
               setActiveNav('patients');
               if (onNavigate) onNavigate('patients');
             }}
-            title="Patients Module"
-            aria-label="Patients Module"
+            title={isMedicalSecretary ? 'Patient Records' : 'Patients Module'}
+            aria-label={isMedicalSecretary ? 'Patient Records' : 'Patients Module'}
           >
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
               <circle cx="10" cy="8" r="4" fill={activeNav === 'patients' ? '#ffffff' : '#00ADEF'} />
@@ -222,6 +250,14 @@ export default function ReceptionistDashboard({
               <line x1="20" y1="19" x2="22.5" y2="21.5" stroke={activeNav === 'appointments' ? '#ffffff' : '#00ADEF'} strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </button>
+          {isMedicalSecretary && <button type="button" className="nav-btn" onClick={() => onNavigate?.('schedules')}
+            title="Doctor Schedules" aria-label="Doctor Schedules">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="17" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+              <path d="M3 9h18M8 2v4M16 2v4" fill="none" stroke="currentColor" strokeWidth="2" />
+              <circle cx="12" cy="15" r="3" />
+            </svg>
+          </button>}
         </nav>
 
         {/* Bottom Floating Power Button (Squircle - 1:1 with 2nd Pic) */}
@@ -248,7 +284,7 @@ export default function ReceptionistDashboard({
         {/* TOP HEADER */}
         <header className="nd-header">
           <div className="header-titles">
-            <span className="welcome-receptionist-text">Welcome Back, Receptionist</span>
+            <span className="welcome-receptionist-text">Welcome Back, {role}</span>
             <h1 className="dashboard-main-title">Dashboard</h1>
           </div>
 
@@ -310,7 +346,7 @@ export default function ReceptionistDashboard({
                 title={nurseName}
                 aria-label="Profile"
               >
-                <span>A</span>
+                <span>{isMedicalSecretary ? 'M' : 'A'}</span>
               </button>
 
               {showProfileMenu && (
@@ -336,11 +372,14 @@ export default function ReceptionistDashboard({
             <div
               className={`kpi-card ${activeFilter === 'Waiting' ? 'kpi-active' : ''}`}
               onClick={() => setActiveFilter(activeFilter === 'Waiting' ? 'All' : 'Waiting')}
+              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter(activeFilter === 'Waiting' ? 'All' : 'Waiting'))}
+              role="button"
+              tabIndex={0}
               title="Filter Waiting Patients"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">Waiting Patients</span>
-                <span className="kpi-digit">21</span>
+                <span className="kpi-digit">{dashboardToday.filter((item) => item.status === 'Waiting').length}</span>
               </div>
               <div className="kpi-symbol purple-people-icon">
                 <svg viewBox="0 0 24 24" width="30" height="30" fill="#5B67F1">
@@ -353,11 +392,14 @@ export default function ReceptionistDashboard({
             <div
               className={`kpi-card ${activeFilter === 'Completed' ? 'kpi-active' : ''}`}
               onClick={() => setActiveFilter(activeFilter === 'Completed' ? 'All' : 'Completed')}
+              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter(activeFilter === 'Completed' ? 'All' : 'Completed'))}
+              role="button"
+              tabIndex={0}
               title="Filter Completed Today"
             >
               <div className="kpi-texts">
-                <span className="kpi-heading">Completed Today</span>
-                <span className="kpi-digit">7</span>
+                <span className="kpi-heading">{isMedicalSecretary ? 'Completed Patients' : 'Completed Today'}</span>
+                <span className="kpi-digit">{dashboardToday.filter((item) => item.status === 'Completed').length}</span>
               </div>
               <div className="kpi-symbol orange-check-icon">
                 <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#F97316" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -372,11 +414,14 @@ export default function ReceptionistDashboard({
             <div
               className={`kpi-card ${activeFilter === 'All' ? 'kpi-active' : ''}`}
               onClick={() => setActiveFilter('All')}
+              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter('All'))}
+              role="button"
+              tabIndex={0}
               title="Show All Appointments"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">Today's Appointments</span>
-                <span className="kpi-digit">14</span>
+                <span className="kpi-digit">{dashboardToday.length}</span>
               </div>
               <div className="kpi-symbol pink-user-icon">
                 <svg viewBox="0 0 24 24" width="26" height="26" fill="#C084FC">
@@ -389,11 +434,14 @@ export default function ReceptionistDashboard({
             <div
               className="kpi-card"
               onClick={() => setActiveModal('register')}
+              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveModal('register'))}
+              role="button"
+              tabIndex={0}
               title="Register New Patient"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">New Patients Today</span>
-                <span className="kpi-digit">3</span>
+                <span className="kpi-digit">{(patients || []).filter((patient) => patient.createdAt && dateKey(patient.createdAt) === todayKey).length}</span>
               </div>
               <div className="kpi-symbol red-target-icon">
                 <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#EF4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -415,6 +463,8 @@ export default function ReceptionistDashboard({
                   type="button"
                   className={`range-tab-btn ${chartRange === 'Weekly' ? 'active' : ''}`}
                   onClick={() => setChartRange('Weekly')}
+                  role="tab"
+                  aria-selected={chartRange === 'Weekly'}
                 >
                   Weekly
                 </button>
@@ -422,6 +472,8 @@ export default function ReceptionistDashboard({
                   type="button"
                   className={`range-tab-btn ${chartRange === 'Quarterly' ? 'active' : ''}`}
                   onClick={() => setChartRange('Quarterly')}
+                  role="tab"
+                  aria-selected={chartRange === 'Quarterly'}
                 >
                   Quarterly
                 </button>
@@ -429,6 +481,8 @@ export default function ReceptionistDashboard({
                   type="button"
                   className={`range-tab-btn ${chartRange === 'Annually' ? 'active' : ''}`}
                   onClick={() => setChartRange('Annually')}
+                  role="tab"
+                  aria-selected={chartRange === 'Annually'}
                 >
                   Annually
                 </button>
@@ -439,12 +493,7 @@ export default function ReceptionistDashboard({
             <div className="chart-wrapper-exact">
               {/* Y-Axis numbers: 100, 70, 50, 25, 10, 0 */}
               <div className="exact-y-axis">
-                <span>100</span>
-                <span>70</span>
-                <span>50</span>
-                <span>25</span>
-                <span>10</span>
-                <span>0</span>
+                {chartTicks.map((tick) => <span key={tick}>{tick}</span>)}
               </div>
 
               {/* Bars & Grid lines */}
@@ -464,8 +513,9 @@ export default function ReceptionistDashboard({
                       <div className="bar-vertical-track">
                         <div
                           className="exact-cyan-bar animate-grow-bar"
-                          style={{ height: item.height }}
+                          style={{ height: `${(item.count / chartMaximum) * 100}%` }}
                           data-tooltip={`${item.count} Patients`}
+                          aria-label={`${item.label}: ${item.count} patients`}
                         ></div>
                       </div>
                       <span className="day-x-label">{item.label}</span>
@@ -565,7 +615,24 @@ export default function ReceptionistDashboard({
         {/* =========================================================================
             ROW 3: 3 ACTION BUTTON CARDS
             ========================================================================= */}
-        <section className="nd-row-actions">
+        <section className={`nd-row-actions ${isMedicalSecretary ? 'medsec-quick-actions' : ''}`}>
+          {isMedicalSecretary ? (
+            <>
+              <button type="button" className="exact-action-card" onClick={() => onNavigate?.('patients')}>
+                <div className="action-label-stack"><span>Patient</span><span>Records</span></div>
+                <span className="plus-symbol purple-plus" aria-hidden="true">→</span>
+              </button>
+              <button type="button" className="exact-action-card" onClick={() => onNavigate?.('appointments')}>
+                <div className="action-label-stack"><span>Appointments</span><span>Module</span></div>
+                <span className="plus-symbol cyan-plus" aria-hidden="true">→</span>
+              </button>
+              <button type="button" className="exact-action-card" onClick={() => onNavigate?.('schedules')}>
+                <div className="action-label-stack"><span>Doctor</span><span>Schedules</span></div>
+                <span className="plus-symbol purple-plus" aria-hidden="true">→</span>
+              </button>
+            </>
+          ) : (
+            <>
           {/* 1. Register a Patient */}
           <button
             type="button"
@@ -612,6 +679,8 @@ export default function ReceptionistDashboard({
               </svg>
             </div>
           </button>
+            </>
+          )}
         </section>
       </main>
     </div>
@@ -815,27 +884,32 @@ export default function ReceptionistDashboard({
               <button type="button" className="close-x" onClick={closeModal}>×</button>
             </div>
             <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                alert('Appointment successfully created and synchronized.');
-                closeModal();
-              }}
+              onSubmit={handleDashboardAppointment}
               className="modal-fields-stack"
             >
               <div className="field-block">
-                <label>Patient Name</label>
-                <input type="text" placeholder="Enter patient name..." required />
+                <label>Patient</label>
+                <select name="patientId" required defaultValue=""><option value="">Select patient</option>
+                  {(patients || []).map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
+                </select>
+              </div>
+              <div className="field-block-row">
+                <div className="field-block"><label>Doctor</label><select name="doctor" defaultValue="Dr. Santos">
+                  {['Dr. Cruz', 'Dr. Santos', 'Dr. Reyes', 'Dr. Rebuyaco'].map((doctor) => <option key={doctor}>{doctor}</option>)}
+                </select></div>
+                <div className="field-block"><label>Visit type</label><select name="type" defaultValue="Consultation"><option>Consultation</option><option>Checkup</option><option>Follow-up</option></select></div>
               </div>
               <div className="field-block-row">
                 <div className="field-block">
                   <label>Date</label>
-                  <input type="date" defaultValue="2026-09-18" required />
+                  <input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
                 </div>
                 <div className="field-block">
                   <label>Time</label>
-                  <input type="time" defaultValue="14:00" required />
+                  <input name="time" type="time" step="1800" defaultValue="14:00" required />
                 </div>
               </div>
+              {appointmentError && <p role="alert" style={{ color: '#b91c1c', margin: 0 }}>{appointmentError}</p>}
               <div className="modal-btn-row">
                 <button type="button" className="modal-btn-ghost" onClick={closeModal}>Cancel</button>
                 <button type="submit" className="modal-btn-primary">Create Appointment</button>
@@ -854,7 +928,7 @@ export default function ReceptionistDashboard({
               <button type="button" className="close-x" onClick={closeModal}>×</button>
             </div>
             <div className="patient-roster-stack">
-              {[...todayAppointments, ...upcomingAppointments].map((item, idx) => {
+              {[...dashboardToday, ...dashboardUpcoming].map((item, idx) => {
                 const displayName = item.patient || item.name || 'Patient';
                 return (
                   <div key={idx} className="roster-row">

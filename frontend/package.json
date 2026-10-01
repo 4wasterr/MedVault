@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev": "node scripts/dev.mjs",
     "server": "npm run dev --prefix server",
     "client": "npm run dev --prefix client",
     "build": "npm run build --prefix client"

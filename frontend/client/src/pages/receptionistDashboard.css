@@ -35,7 +35,7 @@
 }
 
 html, body, #root {
-  width: 100vw;
+  width: 100%;
   min-height: 100vh;
   margin: 0;
   padding: 0;
@@ -48,8 +48,8 @@ html, body, #root {
    Screen Container (Horizontally & Vertically Centered Across Viewport)
    ========================================================================== */
 .nd-screen-container {
-  width: 100vw;
-  min-height: 100vh;
+  width: 100%;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -88,8 +88,8 @@ html, body, #root {
   margin-right: 30px;
   position: sticky;
   top: clamp(28px, 4vh, 48px);
-  height: calc(100vh - clamp(56px, 8vh, 96px));
-  min-height: 560px;
+  height: calc(100dvh - clamp(56px, 8vh, 96px));
+  min-height: 0;
   box-sizing: border-box;
 }
 
@@ -367,7 +367,7 @@ html, body, #root {
    ========================================================================== */
 .nd-row-top {
   display: grid;
-  grid-template-columns: 1.22fr 1fr;
+  grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr);
   gap: 26px;
   align-items: stretch;
   width: 100%;
@@ -603,7 +603,7 @@ html, body, #root {
    ========================================================================== */
 .nd-row-tables {
   display: grid;
-  grid-template-columns: 1.25fr 1fr;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 28px;
   align-items: stretch;
   width: 100%;
@@ -630,6 +630,8 @@ html, body, #root {
 
 .table-flow-container {
   width: 100%;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .exact-nd-table {
@@ -764,10 +766,7 @@ html, body, #root {
    ========================================================================= */
 .modal-backdrop-clean {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  inset: 0;
   background: rgba(15, 23, 42, 0.38);
   backdrop-filter: blur(4px);
   display: flex;
@@ -783,6 +782,8 @@ html, body, #root {
   padding: 32px 30px;
   width: 100%;
   max-width: 480px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
 }
 
@@ -1534,17 +1535,137 @@ html, body, #root {
     margin-right: 0;
     margin-bottom: 16px;
     justify-content: space-between;
+    position: static;
   }
   .nd-sidebar-nav {
     flex-direction: row;
     width: auto;
     margin: 0;
-  }
-  .nd-row-top, .nd-row-tables {
-    grid-template-columns: 1fr;
+    padding: 4px 6px;
+    border-radius: 9999px;
   }
   .nd-row-actions {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .nd-row-top, .nd-row-tables {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nd-header {
+    gap: 16px;
+  }
+  .header-right-tools {
+    min-width: 0;
+    gap: 10px;
+  }
+  .search-pill-container {
+    width: min(240px, 32vw);
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .nd-screen-container {
+    padding: 12px;
+  }
+  .nd-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .header-titles {
+    min-width: 0;
+  }
+  .dashboard-main-title {
+    font-size: clamp(1.55rem, 6vw, 2rem);
+    overflow-wrap: anywhere;
+  }
+  .header-right-tools {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .search-pill-container {
+    width: auto;
+    flex: 1;
+  }
+  .kpi-quad-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpi-card {
+    min-width: 0;
+    gap: 6px;
+  }
+  .kpi-heading {
+    overflow-wrap: anywhere;
+  }
+  .nd-chart-card, .nd-table-card {
+    min-width: 0;
+  }
+  .chart-card-top-bar {
+    justify-content: center;
+  }
+  .chart-wrapper-exact {
+    overflow-x: auto;
+  }
+  .exact-chart-canvas {
+    min-width: 360px;
+  }
+  .table-flow-container .exact-nd-table {
+    min-width: 440px;
+  }
+  .nd-row-actions .exact-action-card {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .nd-sidebar-logo svg {
+    width: 32px;
+    height: 32px;
+  }
+  .nd-sidebar-nav {
+    gap: 2px;
+    padding: 3px;
+  }
+  .nav-btn, .power-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+  .nav-btn svg {
+    width: 21px;
+    height: 21px;
+  }
+  .kpi-card {
+    padding: 10px;
+  }
+  .kpi-symbol svg {
+    width: 20px;
+    height: 20px;
+  }
+  .range-tab-btn {
+    padding-inline: 7px;
+    font-size: .72rem;
+  }
+  .exact-bar-column {
+    width: auto;
+    min-width: 0;
+    flex: 1;
+  }
+  .exact-cyan-bar {
+    width: min(22px, 70%);
+  }
+  .day-x-label {
+    font-size: .64rem;
+  }
+}
+
+@media (max-height: 700px) and (min-width: 1025px) {
+  .nd-sidebar {
+    height: calc(100dvh - 16px);
   }
 }
 

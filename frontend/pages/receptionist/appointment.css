@@ -486,8 +486,8 @@
   border: 1px solid #F1F5F9;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 295px);
-  min-height: 480px;
+  max-height: clamp(220px, calc(100dvh - 240px), 760px);
+  min-height: 0;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -771,7 +771,7 @@
   background: transparent;
   border: none;
   box-shadow: none;
-  min-height: 600px;
+  min-height: clamp(300px, 60dvh, 600px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -817,7 +817,7 @@
   flex-direction: column;
   gap: 16px;
   box-sizing: border-box;
-  min-height: 600px;
+  min-height: min(600px, calc(100dvh - 130px));
 }
 
 /* Top Bar: Title + Close Button */
@@ -964,7 +964,7 @@
   flex-direction: column;
   gap: 16px;
   padding-top: 6px;
-  min-height: 420px;
+  min-height: 0;
 }
 
 .ap-tab-heading {
@@ -1112,6 +1112,8 @@
   border-radius: 24px;
   width: 100%;
   max-width: 580px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
   padding: 32px;
   box-sizing: border-box;
@@ -1307,8 +1309,8 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: calc(100vh - 295px);
-  min-height: 480px;
+  max-height: clamp(220px, calc(100dvh - 240px), 760px);
+  min-height: 0;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1692,5 +1694,45 @@
   .ap-info-item.full-width {
     grid-column: span 1;
   }
+}
+
+@media (max-width: 768px) {
+  .ap-filter-card, .ap-details-card {
+    padding: 18px;
+  }
+  .ap-split-layout {
+    gap: 16px;
+  }
+  .ap-table-head-row {
+    display: none;
+  }
+  .ap-table-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 12px;
+    padding: 14px 16px;
+  }
+  .ap-col-time { grid-column: 1; grid-row: 1; }
+  .ap-col-patient { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .ap-col-type { grid-column: 1; grid-row: 3; min-width: 0; }
+  .ap-col-status { grid-column: 2; grid-row: 3; }
+  .ap-col-actions { grid-column: 1 / -1; grid-row: 4; padding-top: 4px; }
+  .ap-tabs-bar {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .ap-tab-btn { flex: 0 0 auto; }
+  .ap-schedule-card, .ap-calendar-card { max-height: clamp(220px, 48dvh, 380px); }
+  .ap-details-card { min-height: 0; }
+}
+
+@media (max-width: 480px) {
+  .ap-main-title { font-size: 1.7rem; }
+  .ap-filter-card, .ap-details-card, .ap-modal-card { padding: 16px; }
+  .ap-filter-badge-row, .ap-subbar-left { flex-wrap: wrap; }
+  .ap-filter-dropdown { width: min(270px, calc(100vw - 48px)); }
+  .ap-picker-dropdown { left: auto; right: 0; }
+  .ap-cal-slot-card { flex-wrap: wrap; }
+  .ap-cal-slot-right { width: 100%; justify-content: flex-end; }
+  .ap-modal-footer, .ap-card-actions { flex-wrap: wrap; }
 }
 

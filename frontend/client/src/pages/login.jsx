@@ -5,6 +5,7 @@ import slideClipboard from './images/slide_clipboard.png';
 import slideNurses from './images/slide_nurses.png';
 import slideXray from './images/slide_xray.png';
 import slideSurgery from './images/slide_surgery.png';
+import { api } from '../sharedState';
 
 const SLIDES = [
   {
@@ -76,6 +77,7 @@ export default function Login({ onLoginSuccess }) {
   const [errors, setErrors] = useState({ username: '', password: '', general: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authenticatedRole, setAuthenticatedRole] = useState(null);
   const [modalType, setModalType] = useState(null); // 'forgot' | 'signup' | null
   const [shakeField, setShakeField] = useState(null);
 
@@ -104,7 +106,7 @@ export default function Login({ onLoginSuccess }) {
       const next = !prev;
       try {
         localStorage.setItem('medvault_slideshow_paused', String(next));
-      } catch (err) {
+      } catch {
         // ignore storage error
       }
       return next;
@@ -155,7 +157,7 @@ export default function Login({ onLoginSuccess }) {
     return isValid;
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -165,22 +167,25 @@ export default function Login({ onLoginSuccess }) {
     setIsSubmitting(true);
     setErrors({ username: '', password: '', general: '' });
 
-    // Simulate authentication delay then retain the Welcome Back animation
-    setTimeout(() => {
+    try {
+      const { role } = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
       setIsSubmitting(false);
       setIsLoggedIn(true);
-
-      // If parent App provided onLoginSuccess, retain the Welcome animation for 1.4s then transition
+      setAuthenticatedRole(role);
       if (onLoginSuccess) {
         setTimeout(() => {
-          onLoginSuccess(username || 'Nurse');
+          onLoginSuccess(role);
         }, 1400);
       }
-    }, 850);
+    } catch (error) {
+      setIsSubmitting(false);
+      setErrors({ username: '', password: '', general: error.message });
+    }
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setAuthenticatedRole(null);
     setPassword('');
     setErrors({ username: '', password: '', general: '' });
   };
@@ -493,17 +498,17 @@ export default function Login({ onLoginSuccess }) {
               </div>
               <h2 className="success-title">Welcome Back, {username || 'Nurse'}!</h2>
               <p className="success-subtitle">
-                Authenticating session... Loading Nurse Clinical Dashboard.
+                Loading the {authenticatedRole} dashboard.
               </p>
 
               <div className="success-details-box">
                 <div className="detail-item">
                   <span className="detail-label">Station</span>
-                  <span className="detail-value status-active">Nurse Station B • Synchronized</span>
+                  <span className="detail-value status-active">{authenticatedRole} • Active</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">Security</span>
-                  <span className="detail-value">HIPAA Verified 256-Bit SSL</span>
+                  <span className="detail-value">Demo account</span>
                 </div>
               </div>
 
@@ -512,7 +517,7 @@ export default function Login({ onLoginSuccess }) {
                   type="button"
                   className="login-submit-btn"
                   style={{ marginTop: '8px' }}
-                  onClick={() => onLoginSuccess(username || 'Nurse')}
+                  onClick={() => onLoginSuccess(authenticatedRole)}
                 >
                   Enter Dashboard Now →
                 </button>

@@ -1,16 +1,15 @@
-# React + Vite
+# MedVault frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Run `npm run dev` from the repository root, then open `http://localhost:5173/`. In PowerShell, use `npm.cmd run dev` if Windows blocks `npm.ps1` under its execution policy. The command starts the React frontend and API if needed; if they are already running, it prints the existing URL without trying to claim the ports again. Use Node.js 22.13 or newer.
 
-Currently, two official plugins are available:
+The visible pages are React JSX files, not standalone HTML pages. Edit these source files for changes to appear in the browser:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Receptionist and login: `frontend/pages/receptionist/`
+- Medical secretary: `frontend/pages/medical secretary/`
+- Super Admin dashboard, user management, and doctor management: `frontend/pages/super admin/`
+- Shared app routing and state: `frontend/client/src/App.jsx`
+- Global styles: `frontend/client/src/index.css`
 
-## React Compiler
+The HTML file at `frontend/client/index.html` only mounts the React app. The similarly named files in `frontend/client/src/pages/` are older copies and are not imported by the running app. The app builds from `frontend/pages/` for both development and production.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Save an edited JSX or CSS file while the dev server is running to update the page. If viewing the production build through the API server, run `npm run build` again after edits. Opening `index.html` directly from disk does not start the app.

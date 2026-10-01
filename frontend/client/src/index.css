@@ -25,3 +25,72 @@ html, body {
   margin: 0;
   padding: 0;
 }
+
+.medvault-loading {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  text-align: center;
+  color: #12365a;
+  background: #f5f9fc;
+  font-size: 1.1rem;
+}
+
+.medvault-loading button, .medvault-sync-alert button { cursor: pointer; }
+
+.medvault-sync-alert {
+  position: fixed;
+  z-index: 1000;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #78350f;
+  box-shadow: 0 8px 24px #0002;
+}
+
+.medvault-sync-alert button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.3rem;
+}
+
+.medvault-import-alert {
+  position: fixed;
+  z-index: 1001;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(720px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid #7dd3fc;
+  border-radius: 12px;
+  background: #f0f9ff;
+  color: #0c4a6e;
+  box-shadow: 0 8px 24px #0002;
+}
+
+.medvault-import-alert button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #0284c7;
+  color: #fff;
+  cursor: pointer;
+}
+
+.medvault-import-alert button:last-child { background: transparent; color: inherit; font-size: 1.2rem; }
+@media (max-width: 600px) { .medvault-import-alert { flex-wrap: wrap; } }

@@ -2,10 +2,12 @@
   "name": "medvault-server",
   "private": true,
   "version": "1.0.0",
+  "engines": { "node": ">=22.13.0" },
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "test": "node --test src/index.test.js"
   },
   "dependencies": {
     "cors": "^2.8.6",

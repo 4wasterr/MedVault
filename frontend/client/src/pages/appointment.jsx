@@ -1,209 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import './receptionistDashboard.css';
 import './appointment.css';
+import { initialAppointments } from './initialAppointments';
+import { createRecordId, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from './medsecData';
 
 export default function Appointment({
   onNavigate,
   onLogout,
   patients = [],
-  setPatients: _setPatients,
+  setPatients,
+  appointments: sharedAppointments,
+  setAppointments: setSharedAppointments,
+  schedules = {},
+  role = 'Receptionist',
 }) {
-  // Available schedule dates for interactive date navigation
-  const availableDates = [
-    'Sept 18, 2026',
-    'Sept 19, 2026',
-    'Sept 20, 2026',
-    'Sept 21, 2026',
-    'Sept 22, 2026',
-  ];
-  const [currentDateIndex, setCurrentDateIndex] = useState(1); // Default to Sept 19, 2026
-  const currentDate = availableDates[currentDateIndex];
+  const [selectedDate, setSelectedDate] = useState(todayISO);
+  const currentDate = displayDate(selectedDate);
 
   // Seed Appointments matching clinical workflow
-  const initialAppointments = [
-    {
-      id: 'APPT-101',
-      time: '08:30 AM',
-      patientId: 'PTNT-005',
-      patientName: 'John Doe',
-      age: 42,
-      sex: 'Male',
-      contact: '0917-111-2233',
-      address: '12 Acacia St., Quezon City',
-      emergencyName: 'Jane Doe',
-      emergencyContact: '0917-222-3344',
-      type: 'Routine Checkup',
-      doctor: 'Dr. Cruz',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Confirmed',
-      notes: 'Annual physical examination and routine blood pressure screening.',
-    },
-    {
-      id: 'APPT-102',
-      time: '09:00 AM',
-      patientId: 'PTNT-006',
-      patientName: 'Maria Santos',
-      age: 29,
-      sex: 'Female',
-      contact: '0918-333-4455',
-      address: '45 Emerald Ave., Pasig City',
-      emergencyName: 'Carlos Santos',
-      emergencyContact: '0918-444-5566',
-      type: 'General Consultation',
-      doctor: 'Dr. Santos',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Checked-In',
-      notes: 'Consultation for mild seasonal cough and throat irritation.',
-    },
-    {
-      id: 'APPT-103',
-      time: '09:30 AM',
-      patientId: null,
-      patientName: '*Available Slot*',
-      age: null,
-      sex: null,
-      contact: '',
-      address: '',
-      emergencyName: '',
-      emergencyContact: '',
-      type: 'Standard Intake',
-      doctor: 'Dr. Santos',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Open',
-      notes: 'Open appointment window for walk-in triage or advance booking.',
-    },
-    {
-      id: 'APPT-104',
-      time: '10:00 AM',
-      patientId: 'PTNT-007',
-      patientName: 'Robert Reyes',
-      age: 51,
-      sex: 'Male',
-      contact: '0922-555-6677',
-      address: '78 Mabini St., Manila',
-      emergencyName: 'Elena Reyes',
-      emergencyContact: '0922-666-7788',
-      type: 'Follow-up (Routine)',
-      doctor: 'Dr. Reyes',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Confirmed',
-      notes: 'Follow-up on laboratory panel results and prescription renewal.',
-    },
-    {
-      id: 'APPT-105',
-      time: '10:30 AM',
-      patientId: 'PTNT-002',
-      patientName: 'Allen Tracy',
-      age: 21,
-      sex: 'Female',
-      contact: '0919-345-6789',
-      address: '789 Quezon Ave., Quezon City',
-      emergencyName: 'Robert Tracy',
-      emergencyContact: '0919-765-4321',
-      type: 'Follow up',
-      doctor: 'Dr. Rebuyaco',
-      room: 'Consultation Room 1',
-      date: 'Sept 19, 2026',
-      status: 'Confirmed',
-      notes: 'Follow-up evaluation for resolving allergic rhinitis.',
-    },
-    {
-      id: 'APPT-106',
-      time: '11:00 AM',
-      patientId: 'PTNT-001',
-      patientName: 'Juan Dela Cruz',
-      age: 34,
-      sex: 'Male',
-      contact: '0991-123-1245',
-      address: '143 Jose St., Malabon City',
-      emergencyName: 'Maria Dela Cruz',
-      emergencyContact: '0991-123-1245',
-      type: 'Routine Checkup',
-      doctor: 'Dr. Cruz',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Checked-In',
-      notes: 'Hypertension checkup, follow-up on Amlodipine 5mg regimen.',
-    },
-    {
-      id: 'APPT-107',
-      time: '11:30 AM',
-      patientId: null,
-      patientName: '*Available Slot*',
-      age: null,
-      sex: null,
-      contact: '',
-      address: '',
-      emergencyName: '',
-      emergencyContact: '',
-      type: 'General Wellness',
-      doctor: 'Dr. Reyes',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Open',
-      notes: 'Open slot available for immediate booking.',
-    },
-    {
-      id: 'APPT-108',
-      time: '01:30 PM',
-      patientId: 'PTNT-003',
-      patientName: 'Richiebelle Del Rosario',
-      age: 16,
-      sex: 'Female',
-      contact: '0918-234-5678',
-      address: '456 Taft Ave., Pasay City',
-      emergencyName: 'Susan Del Rosario',
-      emergencyContact: '0918-876-5432',
-      type: 'Consultation',
-      doctor: 'Dr. Santos',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Confirmed',
-      notes: 'Pediatric respiratory follow-up consultation.',
-    },
-    {
-      id: 'APPT-109',
-      time: '02:00 PM',
-      patientId: 'PTNT-004',
-      patientName: 'John Smith',
-      age: 19,
-      sex: 'Male',
-      contact: '0920-456-7890',
-      address: '321 Shaw Blvd., Mandaluyong City',
-      emergencyName: 'Carlos Smith',
-      emergencyContact: '0920-654-3210',
-      type: 'Routine Checkup',
-      doctor: 'Dr. Reyes',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Confirmed',
-      notes: 'Routine fitness verification exam.',
-    },
-    {
-      id: 'APPT-110',
-      time: '02:30 PM',
-      patientId: null,
-      patientName: '*Available Slot*',
-      age: null,
-      sex: null,
-      contact: '',
-      address: '',
-      emergencyName: '',
-      emergencyContact: '',
-      type: 'Standard Intake',
-      doctor: 'Dr. Santos',
-      room: 'General Intake A',
-      date: 'Sept 19, 2026',
-      status: 'Open',
-      notes: 'Afternoon open slot for clinical intake.',
-    },
-  ];
+  const [localAppointments, setLocalAppointments] = useState(initialAppointments);
+  const appointments = sharedAppointments ?? localAppointments;
+  const setAppointments = setSharedAppointments ?? setLocalAppointments;
 
-  const [appointments, setAppointments] = useState(initialAppointments);
+  const unavailable = (doctor, date, time, excludeId) => {
+    if (hasBooking(appointments, doctor, date, time, excludeId)) return true;
+    const saved = schedules[scheduleKey(doctor, date)];
+    return Boolean(saved && (!slotsBetween(saved.start, saved.end).includes(timeKey(time)) || saved.blocked?.[timeKey(time)]));
+  };
+
   const [selectedAppointment, setSelectedAppointment] = useState(null);
 
   // Detail card active tab: 'apptInfo' | 'patientInfo' | 'notes'
@@ -273,23 +97,38 @@ export default function Appointment({
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState('');
+  useEffect(() => {
+    if (!selectedAppointment || showEditModal || isEditingNotes || isEditingPatientInfo) return undefined;
+    const latest = appointments.find((item) => item.id === selectedAppointment.id);
+    if (!latest || JSON.stringify(latest) === JSON.stringify(selectedAppointment)) return undefined;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) setSelectedAppointment(latest); });
+    return () => { cancelled = true; };
+  }, [appointments, selectedAppointment, showEditModal, isEditingNotes, isEditingPatientInfo]);
 
   // Form states for New Appointment
   const [newForm, setNewForm] = useState({
+    patientId: '',
     patientName: '',
-    time: '08:30 AM',
+    date: todayISO(),
+    time: '',
     type: 'Routine Checkup',
     doctor: 'Dr. Cruz',
     room: 'General Intake A',
     contact: '',
     notes: '',
   });
+  const newSchedule = getSchedule(schedules, newForm.doctor, newForm.date);
+  const newBookingSlots = slotsBetween(newSchedule.start, newSchedule.end)
+    .filter((slot) => !unavailable(newForm.doctor, newForm.date, slot));
 
   // Form state for Editing Appointment
   const [editForm, setEditForm] = useState({});
+  const [editOriginal, setEditOriginal] = useState(null);
 
   // Form state for Booking an Available Slot
   const [bookForm, setBookForm] = useState({
+    patientId: '',
     patientName: '',
     contact: '',
     type: 'Routine Checkup',
@@ -325,7 +164,8 @@ export default function Appointment({
   }, []);
 
   // Filtered Appointments
-  const filteredAppointments = appointments.filter((appt) => {
+  const dayAppointments = appointments.filter((appt) => dateKey(appt.date) === selectedDate);
+  const filteredAppointments = dayAppointments.filter((appt) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       !q ||
@@ -333,7 +173,7 @@ export default function Appointment({
       appt.time.toLowerCase().includes(q) ||
       appt.type.toLowerCase().includes(q) ||
       appt.doctor.toLowerCase().includes(q) ||
-      appt.room.toLowerCase().includes(q) ||
+      (appt.room || '').toLowerCase().includes(q) ||
       (appt.notes && appt.notes.toLowerCase().includes(q)) ||
       (appt.patientId && appt.patientId.toLowerCase().includes(q));
 
@@ -347,16 +187,16 @@ export default function Appointment({
 
     const matchesRoom =
       selectedRoom === 'All' ||
-      appt.room.toLowerCase() === selectedRoom.toLowerCase();
+      (appt.room || '').toLowerCase() === selectedRoom.toLowerCase();
 
     return matchesSearch && matchesFilter && matchesDoctor && matchesRoom;
   });
 
   // Calendar stats computation
-  const totalSlotsCount = appointments.length;
-  const confirmedCount = appointments.filter((a) => a.status === 'Confirmed').length;
-  const checkedInCount = appointments.filter((a) => a.status === 'Checked-In').length;
-  const openSlotsCount = appointments.filter((a) => a.status === 'Open').length;
+  const totalSlotsCount = dayAppointments.length;
+  const confirmedCount = dayAppointments.filter((a) => a.status === 'Confirmed').length;
+  const checkedInCount = dayAppointments.filter((a) => a.status === 'Checked-In').length;
+  const openSlotsCount = dayAppointments.filter((a) => a.status === 'Open').length;
 
   // Action: Check-in patient
   const handleCheckIn = (apptId) => {
@@ -396,9 +236,11 @@ export default function Appointment({
   // Action: Quick Autofill from existing patients in New Appointment modal
   const handleAutofillNewPatient = (patientId) => {
     const found = patients.find((p) => p.id === patientId);
+    if (!found) { setNewForm((prev) => ({ ...prev, patientId: '' })); return; }
     if (found) {
       setNewForm((prev) => ({
         ...prev,
+        patientId: found.id,
         patientName: found.name,
         contact: found.contact || '',
         notes: `Scheduled visit for ${found.name}.`,
@@ -410,9 +252,11 @@ export default function Appointment({
   // Action: Quick Autofill from existing patients in Book Slot modal
   const handleAutofillBookPatient = (patientId) => {
     const found = patients.find((p) => p.id === patientId);
+    if (!found) { setBookForm((prev) => ({ ...prev, patientId: '' })); return; }
     if (found) {
       setBookForm((prev) => ({
         ...prev,
+        patientId: found.id,
         patientName: found.name,
         contact: found.contact || '',
         notes: `Intake visit booked for ${found.name}.`,
@@ -425,6 +269,7 @@ export default function Appointment({
   const handleOpenBookSlot = (slot) => {
     setTargetSlot(slot);
     setBookForm({
+      patientId: '',
       patientName: '',
       contact: '',
       type: slot.type || 'Routine Checkup',
@@ -434,32 +279,54 @@ export default function Appointment({
     setShowBookSlotModal(true);
   };
 
+  const newPatientForBooking = (name, contact, doctor, type, date) => ({
+    id: createRecordId('PTNT'), name: name.trim(), age: '', sex: '', birthday: '',
+    contact: contact || '', address: '', emergencyName: '', emergencyContact: '',
+    doctor, type, date, status: 'Waiting', createdAt: new Date().toISOString(),
+    vitals: {}, medical: {}, appointments: [],
+  });
+
   const handleBookSlotSubmit = (e) => {
     e.preventDefault();
     if (!bookForm.patientName.trim()) return;
+    if (JSON.stringify(appointments.find((item) => item.id === targetSlot?.id) || null) !== JSON.stringify(targetSlot)) {
+      showToast('This slot changed in another session. Reopen it to review the latest details.'); return;
+    }
+    if (unavailable(bookForm.doctor, targetSlot.date, targetSlot.time, targetSlot.id)) {
+      showToast('That slot is booked or blocked in Doctor Schedules.'); return;
+    }
 
-    // Check if entered patient matches an existing patient in registry
-    const matchedPatient = patients.find(
-      (p) => p.name.toLowerCase() === bookForm.patientName.trim().toLowerCase()
-    );
+    const matchedPatient = patients.find((patient) => patient.id === bookForm.patientId);
+    const patient = matchedPatient || newPatientForBooking(bookForm.patientName, bookForm.contact,
+      bookForm.doctor, bookForm.type, targetSlot.date);
 
     const updatedAppt = {
       ...targetSlot,
-      patientId: matchedPatient ? matchedPatient.id : `PTNT-${Math.floor(100 + Math.random() * 900)}`,
-      patientName: bookForm.patientName.trim(),
-      contact: bookForm.contact || matchedPatient?.contact || '0917-000-0000',
-      address: matchedPatient?.address || 'Metro Manila',
-      emergencyName: matchedPatient?.emergencyName || 'Family Member',
-      emergencyContact: matchedPatient?.emergencyContact || '0917-000-0000',
+      patientId: patient.id,
+      patientName: patient.name,
+      age: patient.age, sex: patient.sex,
+      contact: bookForm.contact || patient.contact || '',
+      address: patient.address || '',
+      emergencyName: patient.emergencyName || '',
+      emergencyContact: patient.emergencyContact || '',
       type: bookForm.type,
       doctor: bookForm.doctor,
       status: 'Confirmed',
-      notes: bookForm.notes || 'Appointment booked by Receptionist.',
+      notes: bookForm.notes || `Appointment booked by ${role}.`,
     };
 
     setAppointments((prev) =>
       prev.map((a) => (a.id === targetSlot.id ? updatedAppt : a))
     );
+    if (setPatients) setPatients((current) => {
+      const history = { sourceAppointmentId: updatedAppt.id, date: updatedAppt.date, doctor: updatedAppt.doctor,
+        type: updatedAppt.type, status: 'Scheduled' };
+      if (!matchedPatient) return [{ ...patient, appointments: [history] }, ...current];
+      return current.map((item) => item.id === patient.id ? {
+        ...item, contact: updatedAppt.contact,
+        appointments: [history, ...(item.appointments || []).filter((entry) => entry.sourceAppointmentId !== updatedAppt.id)],
+      } : item);
+    });
     setSelectedAppointment(updatedAppt);
     setShowBookSlotModal(false);
     showToast(`Booked ${targetSlot.time} for ${bookForm.patientName}!`);
@@ -469,36 +336,49 @@ export default function Appointment({
   const handleNewSubmit = (e) => {
     e.preventDefault();
     if (!newForm.patientName.trim()) return;
+    if (!newBookingSlots.some((slot) => timeKey(slot) === timeKey(newForm.time))) {
+      showToast('That slot is booked or blocked in Doctor Schedules.'); return;
+    }
 
-    const matchedPatient = patients.find(
-      (p) => p.name.toLowerCase() === newForm.patientName.trim().toLowerCase()
-    );
+    const matchedPatient = patients.find((patient) => patient.id === newForm.patientId);
+    const patient = matchedPatient || newPatientForBooking(newForm.patientName, newForm.contact,
+      newForm.doctor, newForm.type, newForm.date);
 
     const newApptObj = {
-      id: `APPT-${100 + appointments.length + 1}`,
+      id: createRecordId('APPT'),
       time: newForm.time,
-      patientId: matchedPatient ? matchedPatient.id : `PTNT-0${10 + appointments.length}`,
-      patientName: newForm.patientName.trim(),
-      age: matchedPatient?.age || 32,
-      sex: matchedPatient?.sex || 'Male',
-      contact: newForm.contact || matchedPatient?.contact || '0917-000-0000',
-      address: matchedPatient?.address || 'Metro Manila',
-      emergencyName: matchedPatient?.emergencyName || 'Emergency Contact',
-      emergencyContact: matchedPatient?.emergencyContact || '0917-000-0000',
+      patientId: patient.id,
+      patientName: patient.name,
+      age: patient.age, sex: patient.sex,
+      contact: newForm.contact || patient.contact || '',
+      address: patient.address || '',
+      emergencyName: patient.emergencyName || '',
+      emergencyContact: patient.emergencyContact || '',
       type: newForm.type,
       doctor: newForm.doctor,
       room: newForm.room,
-      date: currentDate,
+      date: newForm.date,
       status: 'Confirmed',
       notes: newForm.notes || 'New intake appointment scheduled.',
     };
 
     setAppointments((prev) => [newApptObj, ...prev]);
+    if (setPatients) setPatients((current) => {
+      const history = { sourceAppointmentId: newApptObj.id, date: newApptObj.date, doctor: newApptObj.doctor,
+        type: newApptObj.type, status: 'Scheduled' };
+      if (!matchedPatient) return [{ ...patient, appointments: [history] }, ...current];
+      return current.map((item) => item.id === patient.id ? {
+        ...item, contact: newApptObj.contact, appointments: [history, ...(item.appointments || [])],
+      } : item);
+    });
     setSelectedAppointment(newApptObj);
+    setSelectedDate(dateKey(newApptObj.date));
     setShowNewModal(false);
     setNewForm({
+      patientId: '',
       patientName: '',
-      time: '08:30 AM',
+      date: todayISO(),
+      time: '',
       type: 'Routine Checkup',
       doctor: 'Dr. Cruz',
       room: 'General Intake A',
@@ -511,17 +391,29 @@ export default function Appointment({
   // Action: Open Edit Modal
   const handleOpenEdit = (appt) => {
     setEditForm({ ...appt });
+    setEditOriginal(appt);
     setShowEditModal(true);
   };
 
   const handleEditSubmit = (e) => {
     e.preventDefault();
+    if (JSON.stringify(appointments.find((item) => item.id === editForm.id) || null) !== JSON.stringify(editOriginal)) {
+      showToast('This appointment changed in another session. Reopen it before saving.'); return;
+    }
+    if (unavailable(editForm.doctor, editForm.date, editForm.time, editForm.id)) {
+      showToast('That slot is booked or blocked in Doctor Schedules.'); return;
+    }
     setAppointments((prev) =>
       prev.map((a) => (a.id === editForm.id ? { ...editForm } : a))
     );
+    if (setPatients && editForm.patientId) setPatients((items) => items.map((patient) => patient.id === editForm.patientId ? {
+      ...patient, appointments: (patient.appointments || []).map((entry) => entry.sourceAppointmentId === editForm.id
+        ? { ...entry, date: editForm.date, doctor: editForm.doctor, type: editForm.type } : entry),
+    } : patient));
     if (selectedAppointment && selectedAppointment.id === editForm.id) {
       setSelectedAppointment({ ...editForm });
     }
+    setSelectedDate(dateKey(editForm.date));
     setShowEditModal(false);
     showToast('Appointment updated successfully!');
   };
@@ -529,6 +421,11 @@ export default function Appointment({
   // Action: Cancel / Free appointment
   const handleConfirmCancel = () => {
     if (!deleteTarget) return;
+    if (JSON.stringify(appointments.find((item) => item.id === deleteTarget.id) || null) !== JSON.stringify(deleteTarget)) {
+      setShowDeleteConfirm(false);
+      showToast('This appointment changed in another session. Review it before cancelling.');
+      return;
+    }
 
     // Convert booked appointment into an available open slot
     const freedSlot = {
@@ -548,6 +445,9 @@ export default function Appointment({
     setAppointments((prev) =>
       prev.map((a) => (a.id === deleteTarget.id ? freedSlot : a))
     );
+    if (setPatients && deleteTarget.patientId) setPatients((items) => items.map((patient) => patient.id === deleteTarget.patientId ? {
+      ...patient, appointments: (patient.appointments || []).filter((entry) => entry.sourceAppointmentId !== deleteTarget.id),
+    } : patient));
     if (selectedAppointment && selectedAppointment.id === deleteTarget.id) {
       setSelectedAppointment(freedSlot);
     }
@@ -564,6 +464,9 @@ export default function Appointment({
 
   const handleSaveNotes = () => {
     if (!selectedAppointment) return;
+    if (JSON.stringify(appointments.find((item) => item.id === selectedAppointment.id) || null) !== JSON.stringify(selectedAppointment)) {
+      showToast('This appointment changed in another session. Reopen it before saving notes.'); return;
+    }
     const updated = { ...selectedAppointment, notes: editedNotesText };
     setAppointments((prev) =>
       prev.map((a) => (a.id === selectedAppointment.id ? updated : a))
@@ -587,6 +490,9 @@ export default function Appointment({
 
   const handleSavePatientInfo = () => {
     if (!selectedAppointment) return;
+    if (JSON.stringify(appointments.find((item) => item.id === selectedAppointment.id) || null) !== JSON.stringify(selectedAppointment)) {
+      showToast('This appointment changed in another session. Reopen it before saving.'); return;
+    }
     const updated = {
       ...selectedAppointment,
       contact: patientEditForm.contact,
@@ -597,31 +503,26 @@ export default function Appointment({
     setAppointments((prev) =>
       prev.map((a) => (a.id === selectedAppointment.id ? updated : a))
     );
+    if (setPatients && updated.patientId) setPatients((items) => items.map((patient) => patient.id === updated.patientId ? {
+      ...patient, contact: updated.contact, address: updated.address,
+      emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact,
+    } : patient));
     setSelectedAppointment(updated);
     setIsEditingPatientInfo(false);
     showToast('Patient contact details saved!');
   };
 
   // Interactive Date cycler
-  const handlePrevDay = () => {
-    if (currentDateIndex > 0) {
-      const nextIdx = currentDateIndex - 1;
-      setCurrentDateIndex(nextIdx);
-      showToast(`Viewing ${availableDates[nextIdx]} schedule`);
-    } else {
-      showToast('Viewing earliest available schedule date.');
-    }
+  const shiftDay = (days) => {
+    const date = new Date(`${selectedDate}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    const next = dateKey(date);
+    setSelectedDate(next);
+    setSelectedAppointment(null);
+    showToast(`Viewing ${displayDate(next)} schedule`);
   };
-
-  const handleNextDay = () => {
-    if (currentDateIndex < availableDates.length - 1) {
-      const nextIdx = currentDateIndex + 1;
-      setCurrentDateIndex(nextIdx);
-      showToast(`Viewing ${availableDates[nextIdx]} schedule`);
-    } else {
-      showToast('Viewing latest available schedule date.');
-    }
-  };
+  const handlePrevDay = () => shiftDay(-1);
+  const handleNextDay = () => shiftDay(1);
 
   // Interactive Notification clicking
   const handleNotificationClick = (notif) => {
@@ -679,8 +580,8 @@ export default function Appointment({
               type="button"
               className="nav-btn"
               onClick={() => onNavigate && onNavigate('patients')}
-              title="Patients Module"
-              aria-label="Patients Module"
+              title={role === 'Medical Secretary' ? 'Patient Records' : 'Patients Module'}
+              aria-label={role === 'Medical Secretary' ? 'Patient Records' : 'Patients Module'}
             >
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
                 <circle cx="10" cy="8" r="4" fill="#00ADEF" />
@@ -734,7 +635,7 @@ export default function Appointment({
               <h1 className="ap-main-title">Appointments Module</h1>
               <p className="ap-main-subtitle">
                 Manage schedules, bookings, and appointment statuses
-                <span className="ap-role-tag">Role: Receptionist</span>
+                <span className="ap-role-tag">Role: {role}</span>
               </p>
             </div>
 
@@ -808,15 +709,15 @@ export default function Appointment({
                     setShowProfileMenu(!showProfileMenu);
                     setShowNotifications(false);
                   }}
-                  title="Receptionist Profile & Duty Status"
+                  title={`${role} Profile & Duty Status`}
                   aria-label="Profile"
                 >
-                  <span>A</span>
+                  <span>{role === 'Medical Secretary' ? 'M' : 'A'}</span>
                 </button>
 
                 {showProfileMenu && (
                   <div className="avatar-dropdown animate-pop-in" style={{ minWidth: '200px' }}>
-                    <div className="avatar-nurse-name">Receptionist Desk A</div>
+                    <div className="avatar-nurse-name">{role}</div>
                     <div className="ap-duty-toggle-row">
                       <span className={`ap-duty-badge ${isOnDuty ? 'on-duty' : 'on-break'}`}>
                         {isOnDuty ? '● On Duty' : '○ On Break'}
@@ -826,7 +727,7 @@ export default function Appointment({
                         className="ap-duty-switch-btn"
                         onClick={() => {
                           setIsOnDuty(!isOnDuty);
-                          showToast(isOnDuty ? 'Receptionist marked On Break' : 'Receptionist marked On Duty');
+                          showToast(isOnDuty ? `${role} marked On Break` : `${role} marked On Duty`);
                         }}
                       >
                         {isOnDuty ? 'Take Break' : 'Resume Duty'}
@@ -1027,14 +928,15 @@ export default function Appointment({
                         >
                           ◀
                         </button>
-                        <span
+                        <button
+                          type="button"
                           className="clickable"
                           onClick={() => setShowDatePicker(!showDatePicker)}
                           title="Click to jump to date"
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: 'pointer', border: 0, background: 'transparent', font: 'inherit', color: 'inherit' }}
                         >
                           DATE: <strong>{currentDate}</strong> ▾
-                        </span>
+                        </button>
                         <button
                           type="button"
                           className="ap-date-btn"
@@ -1051,20 +953,15 @@ export default function Appointment({
                           <span style={{ fontSize: '0.74rem', color: '#64748B', padding: '2px 8px', fontWeight: 600 }}>
                             Select Date:
                           </span>
-                          {availableDates.map((d, idx) => (
-                            <button
-                              key={d}
-                              type="button"
-                              className={`ap-picker-item ${idx === currentDateIndex ? 'active' : ''}`}
-                              onClick={() => {
-                                setCurrentDateIndex(idx);
-                                setShowDatePicker(false);
-                                showToast(`Viewing ${d}`);
-                              }}
-                            >
-                              {d} {idx === 1 ? '(Today)' : ''}
-                            </button>
-                          ))}
+                          <input type="date" className="ap-form-input" value={selectedDate}
+                            aria-label="Schedule date" onChange={(event) => {
+                              setSelectedDate(event.target.value);
+                              setSelectedAppointment(null);
+                              setShowDatePicker(false);
+                            }} />
+                          <button type="button" className="ap-picker-item" onClick={() => {
+                            setSelectedDate(todayISO()); setSelectedAppointment(null); setShowDatePicker(false);
+                          }}>Today</button>
                         </div>
                       )}
                     </div>
@@ -1798,7 +1695,7 @@ export default function Appointment({
                       ) : (
                         <div className="ap-info-grid-2col">
                           <div className="ap-info-item full-width">
-                            <span className="ap-info-lbl">Receptionist Intake Notes</span>
+                            <span className="ap-info-lbl">{role} Intake Notes</span>
                             <span className="ap-info-val">{selectedAppointment.notes}</span>
                           </div>
 
@@ -1809,7 +1706,7 @@ export default function Appointment({
 
                           <div className="ap-info-item">
                             <span className="ap-info-lbl">Authorization</span>
-                            <span className="ap-info-val">Receptionist Desk A</span>
+                            <span className="ap-info-val">{role}</span>
                           </div>
                         </div>
                       )}
@@ -1858,7 +1755,7 @@ export default function Appointment({
                     <select
                       className="ap-form-select"
                       onChange={(e) => handleAutofillNewPatient(e.target.value)}
-                      defaultValue=""
+                      value={newForm.patientId}
                     >
                       <option value="">-- Choose Registered Patient or Type Below --</option>
                       {patients.map((p) => (
@@ -1879,26 +1776,26 @@ export default function Appointment({
                     placeholder="e.g. Roberto Gomez"
                     className="ap-form-input"
                     value={newForm.patientName}
-                    onChange={(e) => setNewForm({ ...newForm, patientName: e.target.value })}
+                    onChange={(e) => setNewForm({ ...newForm, patientId: '', patientName: e.target.value })}
                   />
+                </div>
+
+                <div className="ap-form-field">
+                  <label className="ap-form-label">Date *</label>
+                  <input type="date" required className="ap-form-input" value={newForm.date}
+                    onChange={(e) => setNewForm({ ...newForm, date: e.target.value, time: '' })} />
                 </div>
 
                 <div className="ap-form-field">
                   <label className="ap-form-label">Time Slot *</label>
                   <select
                     className="ap-form-select"
+                    required
                     value={newForm.time}
                     onChange={(e) => setNewForm({ ...newForm, time: e.target.value })}
                   >
-                    <option value="08:30 AM">08:30 AM</option>
-                    <option value="09:00 AM">09:00 AM</option>
-                    <option value="09:30 AM">09:30 AM</option>
-                    <option value="10:00 AM">10:00 AM</option>
-                    <option value="10:30 AM">10:30 AM</option>
-                    <option value="11:00 AM">11:00 AM</option>
-                    <option value="01:30 PM">01:30 PM</option>
-                    <option value="02:00 PM">02:00 PM</option>
-                    <option value="02:30 PM">02:30 PM</option>
+                    <option value="">Select available time</option>
+                    {newBookingSlots.map((slot) => <option key={slot} value={displayTime(slot)}>{displayTime(slot)}</option>)}
                   </select>
                 </div>
 
@@ -1932,7 +1829,7 @@ export default function Appointment({
                   <select
                     className="ap-form-select"
                     value={newForm.doctor}
-                    onChange={(e) => setNewForm({ ...newForm, doctor: e.target.value })}
+                    onChange={(e) => setNewForm({ ...newForm, doctor: e.target.value, time: '' })}
                   >
                     <option value="Dr. Cruz">Dr. Cruz</option>
                     <option value="Dr. Santos">Dr. Santos</option>
@@ -2011,7 +1908,7 @@ export default function Appointment({
                     <select
                       className="ap-form-select"
                       onChange={(e) => handleAutofillBookPatient(e.target.value)}
-                      defaultValue=""
+                      value={bookForm.patientId}
                     >
                       <option value="">-- Choose Registered Patient or Type Below --</option>
                       {patients.map((p) => (
@@ -2032,7 +1929,7 @@ export default function Appointment({
                     placeholder="Enter patient name"
                     className="ap-form-input"
                     value={bookForm.patientName}
-                    onChange={(e) => setBookForm({ ...bookForm, patientName: e.target.value })}
+                    onChange={(e) => setBookForm({ ...bookForm, patientId: '', patientName: e.target.value })}
                   />
                 </div>
 
@@ -2298,7 +2195,7 @@ export default function Appointment({
               </button>
             </div>
             <p style={{ color: '#475569', fontSize: '0.92rem', lineHeight: '1.5' }}>
-              Are you sure you want to sign out from the Receptionist station?
+              Are you sure you want to sign out from the {role} station?
             </p>
             <div className="ap-modal-footer">
               <button
