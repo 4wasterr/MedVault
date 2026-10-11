@@ -1,0 +1,3 @@
+# Install under /etc/cron.d/medvault-backup on the Ubuntu host; 02:00 Asia/Manila.
+# The host timezone must be Asia/Manila, as configured in the deployment guide.
+0 2 * * * root cd /opt/medvault && /usr/bin/flock -n /run/medvault-backup.lock /usr/bin/docker compose -f deploy/compose.yml --env-file deploy/.env run --rm --no-deps backup >> /var/log/medvault-backup.log 2>&1

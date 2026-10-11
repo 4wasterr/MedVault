@@ -3,9 +3,10 @@ import '../receptionist/receptionistDashboard.css';
 import '../medical secretary/MedSecModules.css';
 import './AdminDashboard.css';
 
-const navigation = [['dashboard', 'Dashboard'], ['users', 'User Management'], ['doctors', 'Doctor Management']];
+const navigation = [['dashboard', 'Dashboard'], ['users', 'User Management'], ['doctors', 'Doctor Management'], ['audit', 'Audit Logs']];
 
 function Icon({ view }) {
+  if (view === 'audit') return <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 7h8M8 11h8M8 15h4M8 18h4" /></svg>;
   if (view === 'dashboard') return <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>;
   if (view === 'users') return <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="4" /><path d="M1 20c0-4 3-7 8-7s8 3 8 7H1z" /><path d="M17 6a3 3 0 0 1 0 6M19 14c2 1 3 3 3 6h-3" /></svg>;
   return <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="9" /><path d="M8 8h8M8 16h8" /></svg>;

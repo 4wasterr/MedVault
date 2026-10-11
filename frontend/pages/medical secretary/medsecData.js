@@ -1,8 +1,28 @@
-export const DOCTORS = ['Dr. Cruz', 'Dr. Santos', 'Dr. Reyes', 'Dr. Rebuyaco'];
+export const DOCTORS = [];
 
 export function createRecordId(prefix) {
   const unique = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${unique}`;
+}
+
+export function isPastPatient(patient, appointments = []) {
+  if (!patient) return false;
+  const completed = (record) => record?.status !== 'Cancelled' &&
+    /^(done|completed)$/i.test(record?.visitStatus || record?.status || '');
+  const savedDetails = [
+    patient.medicalHistory?.conditions ?? patient.medical?.history,
+    patient.medicalHistory?.allergies ?? patient.medical?.allergies,
+    patient.medicalHistory?.medications ?? patient.medical?.medications,
+    patient.consultation?.diagnosis ?? patient.medical?.diagnosis,
+    patient.consultation?.treatment ?? patient.medical?.treatment,
+    patient.consultation?.followUp ?? patient.medical?.notes,
+    patient.consultation?.findings,
+    ...(patient.recordNotes || []).map((note) => note.text),
+  ];
+  return savedDetails.some((value) => String(value ?? '').trim().length > 0) ||
+    (patient.visits || []).length > 0 || completed(patient) ||
+    (patient.appointments || []).some(completed) ||
+    appointments.some((appointment) => appointment.patientId === patient.id && completed(appointment));
 }
 
 export function todayISO() {

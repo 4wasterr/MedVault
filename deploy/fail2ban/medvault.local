@@ -1,0 +1,17 @@
+[medvault]
+enabled = true
+filter = medvault
+backend = systemd
+maxretry = 5
+findtime = 15m
+bantime = 1h
+# Docker published ports bypass normal UFW INPUT rules; ban in DOCKER-USER.
+action = iptables-allports[name=medvault, chain=DOCKER-USER]
+
+[sshd]
+enabled = true
+backend = systemd
+port = 2222
+maxretry = 5
+bantime = 1h
+action = ufw

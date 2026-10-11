@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
+import PatientHistoryBadge from '../components/PatientHistoryBadge';
 
 const tabs = [
   ['personal', 'Personal'], ['vitals', 'Vitals'], ['medicalHistory', 'Medical History'],
@@ -42,7 +43,7 @@ function Field({ label, value, onChange, type = 'text', wide = false, multiline 
 }
 
 export default function MedSecPatientRecords({
-  patients = [], setPatients, appointments = [], setAppointments, selectedPatientId, initialTab = 'personal', onNavigate, onLogout,
+  patients = [], setPatients, appointments = [], setAppointments, selectedPatientId, initialTab = 'personal', onNavigate, onLogout, onRecordView, username,
 }) {
   const [selectedId, setSelectedId] = useState(selectedPatientId || null);
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -55,6 +56,11 @@ export default function MedSecPatientRecords({
   const [dirty, setDirty] = useState(false);
 
   const patient = patients.find((item) => item.id === selectedId);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && selectedId) void onRecordView?.('patients', selectedId, activeTab); });
+    return () => { cancelled = true; };
+  }, [selectedId, activeTab, onRecordView]);
   useEffect(() => {
     if (dirty) return undefined;
     let cancelled = false;
@@ -97,26 +103,26 @@ export default function MedSecPatientRecords({
     const pendingNote = noteText.trim();
     const updated = { ...draft, name: draft.name.trim(),
       recordNotes: pendingNote ? [
-        { id: `note-${Date.now()}`, text: pendingNote, author: 'Medical Secretary', createdAt: new Date().toISOString() },
+        { id: `note-${Date.now()}`, text: pendingNote, author: username || 'Medical Secretary', createdAt: new Date().toISOString() },
         ...draft.recordNotes,
       ] : draft.recordNotes,
       medical: { ...draft.medical, history: draft.medicalHistory.conditions, allergies: draft.medicalHistory.allergies,
         medications: draft.medicalHistory.medications, diagnosis: draft.consultation.diagnosis,
         treatment: draft.consultation.treatment, notes: draft.consultation.followUp },
-      lastUpdatedAt: new Date().toISOString(), lastUpdatedBy: 'Medical Secretary',
+      lastUpdatedAt: new Date().toISOString(), lastUpdatedBy: username || 'Medical Secretary',
     };
     setPatients((current) => current.map((item) => item.id === updated.id ? updated : item));
     setAppointments?.((current) => current.map((item) => item.patientId === updated.id ? {
       ...item, patientName: updated.name, age: updated.age, sex: updated.sex, contact: updated.contact,
       address: updated.address, emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact,
     } : item));
-    setDraft(updated); setBasePatient(updated); setNoteText(''); setDirty(false); setError(''); setMessage('Patient record saved. Changes are shared with reception.');
+    setDraft(updated); setBasePatient(updated); setNoteText(''); setDirty(false); setError(''); setMessage('Patient record submitted. Check the save status to confirm it reached the shared server.');
   };
 
   const addNote = () => {
     if (!noteText.trim()) return;
     setDraft((current) => ({ ...current, recordNotes: [
-      { id: `note-${Date.now()}`, text: noteText.trim(), author: 'Medical Secretary', createdAt: new Date().toISOString() },
+      { id: `note-${Date.now()}`, text: noteText.trim(), author: username || 'Medical Secretary', createdAt: new Date().toISOString() },
       ...current.recordNotes,
     ] }));
     setDirty(true); setNoteText(''); setMessage('Note added to the draft. Save Changes to keep it.');
@@ -133,7 +139,8 @@ export default function MedSecPatientRecords({
         <div className="medsec-list">
           {filtered.map((item) => <button key={item.id} type="button" className={`medsec-list-item ${selectedId === item.id ? 'active' : ''}`}
             onClick={() => selectPatient(item)}>
-            <span><strong>{item.name}</strong><small>{item.id} · {item.contact || 'No contact'}</small></span>
+            <span><strong>{item.name}</strong><small>{item.id} · {item.contact || 'No contact'}</small>
+              <PatientHistoryBadge patient={item} appointments={appointments} /></span>
             <span className={`medsec-badge ${['Done', 'Completed'].includes(item.status) ? 'completed' : ''}`}>{item.status || 'Active'}</span>
           </button>)}
           {!filtered.length && <p className="medsec-muted">No matching patients.</p>}
@@ -143,6 +150,7 @@ export default function MedSecPatientRecords({
       <section className="medsec-panel" aria-label="Patient profile">
         {!draft ? <div><h2>Select a patient</h2><p className="medsec-muted">Choose a shared profile to review or edit its records.</p></div> : <>
           <div className="medsec-profile-heading"><div><span className="medsec-muted">{draft.id}</span><h2>{draft.name}</h2>
+            <PatientHistoryBadge patient={patient} appointments={appointments} /><br />
             <span className="medsec-muted">{draft.age || '—'} years · {draft.sex || 'Not specified'} · {linkedCount} linked booking(s)</span></div>
             <button type="button" className="medsec-btn secondary" onClick={() => navigate('appointments')}>View Appointments</button>
           </div>

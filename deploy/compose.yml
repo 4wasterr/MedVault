@@ -1,0 +1,81 @@
+name: medvault
+services:
+  api:
+    image: medvault-api:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      MEDVAULT_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to the HTTPS clinic URL}
+      MEDVAULT_ADMIN_USERNAME: ${ADMIN_USERNAME:-clinic.admin}
+      MEDVAULT_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      MEDVAULT_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      MEDVAULT_JWT_SECRET_FILE: /run/secrets/jwt_secret
+      MEDVAULT_DB_PATH: /app/frontend/server/data/medvault.sqlite
+      MEDVAULT_SESSION_MINUTES: "480"
+      MEDVAULT_IDLE_MINUTES: "30"
+    secrets: [admin_password, encryption_key, jwt_secret]
+    networks: [proxy]
+    volumes: [api_data:/app/frontend/server/data]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: journald
+      options:
+        tag: medvault-api
+  nginx:
+    image: nginxinc/nginx-unprivileged:stable-alpine
+    restart: unless-stopped
+    ports: ["80:8080", "443:8443"]
+    networks: [proxy]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 64
+    depends_on: [api]
+  backup:
+    profiles: [maintenance]
+    image: medvault-api:local
+    entrypoint: [node, scripts/backup.cjs]
+    environment:
+      MEDVAULT_DB_PATH: /app/frontend/server/data/medvault.sqlite
+      MEDVAULT_BACKUP_DIRECTORY: /backups
+      MEDVAULT_BACKUP_KEY_FILE: /run/secrets/backup_key
+    secrets: [backup_key]
+    network_mode: none
+    volumes: [api_data:/app/frontend/server/data:ro, ./backups:/backups]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 64
+networks:
+  proxy:
+volumes:
+  api_data:
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+  encryption_key:
+    file: ./secrets/encryption_key
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  backup_key:
+    file: ./secrets/backup_key

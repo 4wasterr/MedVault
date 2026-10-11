@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './receptionistDashboard.css';
 import './appointment.css';
-import { initialAppointments } from './initialAppointments';
 import { createRecordId, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
 
 export default function Appointment({
@@ -13,13 +12,13 @@ export default function Appointment({
   setAppointments: setSharedAppointments,
   schedules = {},
   doctors = [],
+  onRecordView,
   role = 'Receptionist',
 }) {
   const [selectedDate, setSelectedDate] = useState(todayISO);
   const currentDate = displayDate(selectedDate);
 
-  // Seed Appointments matching clinical workflow
-  const [localAppointments, setLocalAppointments] = useState(initialAppointments);
+  const [localAppointments, setLocalAppointments] = useState([]);
   const appointments = sharedAppointments ?? localAppointments;
   const activeDoctorNames = doctors.filter((doctor) => doctor.active).map((doctor) => doctor.name);
   const doctorNames = [...new Set([...activeDoctorNames, ...appointments.map((item) => item.doctor).filter(Boolean)])];
@@ -35,6 +34,12 @@ export default function Appointment({
 
   // Detail card active tab: 'apptInfo' | 'patientInfo' | 'notes'
   const [activeTab, setActiveTab] = useState('apptInfo');
+  const selectedId = selectedAppointment?.id;
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && selectedId) void onRecordView?.('appointments', selectedId, activeTab); });
+    return () => { cancelled = true; };
+  }, [selectedId, activeTab, onRecordView]);
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,29 +57,7 @@ export default function Appointment({
   const [isOnDuty, setIsOnDuty] = useState(true);
 
   // Notification items with unread tracking
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      text: 'Maria Santos checked in for 09:00 AM intake.',
-      apptId: 'APPT-102',
-      time: '10m ago',
-      read: false,
-    },
-    {
-      id: 2,
-      text: 'Dr. Cruz schedule confirmed for General Intake A.',
-      apptId: 'APPT-101',
-      time: '25m ago',
-      read: false,
-    },
-    {
-      id: 3,
-      text: 'New open slot available at 02:30 PM.',
-      apptId: 'APPT-110',
-      time: '1h ago',
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState([]);
 
   // Inline editing states for Tab 3 (Clinical Notes)
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -671,6 +654,7 @@ export default function Appointment({
                 {showNotifications && (
                   <div className="notif-dropdown animate-pop-in" style={{ minWidth: '290px' }}>
                     <div className="dropdown-title">Schedule Notifications</div>
+                    {!notifications.length && <div className="ap-notif-item">No notifications yet.</div>}
                     {notifications.map((notif) => (
                       <div
                         key={notif.id}
@@ -2080,12 +2064,11 @@ export default function Appointment({
                   <select
                     className="ap-form-select"
                     value={editForm.status}
+                    disabled={!['Confirmed', 'Checked-In'].includes(editOriginal?.status)}
                     onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
                   >
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="Checked-In">Checked-In</option>
-                    <option value="Open">Open</option>
-                    <option value="Cancelled">Cancelled</option>
+                    {['Confirmed', 'Checked-In'].includes(editOriginal?.status) ? <><option value="Confirmed">Confirmed</option><option value="Checked-In">Checked-In</option></>
+                      : <option value={editOriginal?.status}>{editOriginal?.status}</option>}
                   </select>
                 </div>
 

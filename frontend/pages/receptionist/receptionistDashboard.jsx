@@ -13,6 +13,7 @@ export default function ReceptionistDashboard({
   setAppointments,
   schedules = {},
   doctors = [],
+  onRecordView,
   role = 'Receptionist',
 }) {
   const nurseName = receptionistName || role;
@@ -91,10 +92,9 @@ export default function ReceptionistDashboard({
   const sharedAppointments = appointments
     .filter((item) => item.patientId && !['Open', 'Cancelled'].includes(item.status))
     .map((item) => ({
-      id: item.id, time: item.time, patient: item.patientName || 'Patient', type: item.type,
+      id: item.id, patientId: item.patientId, time: item.time, patient: item.patientName || 'Patient', type: item.type,
       doctor: item.doctor, status: item.visitStatus || (item.status === 'Completed' ? 'Completed' : 'Waiting'),
-      date: item.date, bp: patients?.find((patient) => patient.id === item.patientId)?.vitals?.bp || '—',
-      hr: patients?.find((patient) => patient.id === item.patientId)?.vitals?.hr || '—',
+      date: item.date,
     }));
   const dashboardToday = sharedAppointments.filter((item) => dateKey(item.date) === todayKey);
   const dashboardUpcoming = sharedAppointments.filter((item) => dateKey(item.date) > todayKey && item.status !== 'Completed');
@@ -326,10 +326,7 @@ export default function ReceptionistDashboard({
                 <div className="notif-dropdown animate-pop-in">
                   <div className="dropdown-title">Clinical Notifications</div>
                   <div className="notif-row">
-                    <strong>Abigail Yatco</strong> finished consultation with Dr. Rebucayo.
-                  </div>
-                  <div className="notif-row">
-                    <strong>Ken Ty</strong> check-in confirmed for 9:45 am.
+                    No notifications yet.
                   </div>
                 </div>
               )}
@@ -553,6 +550,7 @@ export default function ReceptionistDashboard({
                       className="clickable-table-row"
                       onClick={() => {
                         setSelectedPatient(app);
+                        void onRecordView?.('appointments', app.id, 'apptInfo');
                         setActiveModal('patientDetail');
                       }}
                     >
@@ -592,7 +590,8 @@ export default function ReceptionistDashboard({
                       key={item.id}
                       className="clickable-table-row"
                       onClick={() => {
-                        setSelectedPatient({ ...item, status: 'Upcoming', bp: '120/80', hr: '70 bpm' });
+                        setSelectedPatient(item);
+                        void onRecordView?.('appointments', item.id, 'apptInfo');
                         setActiveModal('patientDetail');
                       }}
                     >
@@ -936,7 +935,7 @@ export default function ReceptionistDashboard({
                     <div className="roster-initial">{displayName.charAt(0)}</div>
                     <div className="roster-info">
                       <strong>{displayName}</strong>
-                      <span>{item.type || 'Consultation'} • {item.doctor || 'Dr. Santos'}</span>
+                      <span>{item.type || 'Consultation'} • {item.doctor || 'No doctor assigned'}</span>
                     </div>
                     <span className="roster-time-tag">{item.time}</span>
                   </div>
@@ -947,12 +946,12 @@ export default function ReceptionistDashboard({
         </div>
       )}
 
-      {/* 4. Patient Detail / Vitals Modal */}
+      {/* 4. Patient Detail Modal */}
       {activeModal === 'patientDetail' && selectedPatient && (
         <div className="modal-backdrop-clean animate-fade" onClick={closeModal}>
           <div className="modal-dialog-clean animate-zoom" onClick={(e) => e.stopPropagation()}>
             <div className="modal-top">
-              <h3>Patient Clinical Snapshot</h3>
+              <h3>Patient Details</h3>
               <button type="button" className="close-x" onClick={closeModal}>×</button>
             </div>
             <div className="patient-snapshot-box">
@@ -965,19 +964,11 @@ export default function ReceptionistDashboard({
                     {selectedPatient.patient || selectedPatient.name || 'Patient'}
                   </h4>
                   <span style={{ fontSize: '0.85rem', color: '#64748B' }}>
-                    {selectedPatient.type || 'Consultation'} with {selectedPatient.doctor || 'Dr. Santos'}
+                    {selectedPatient.type || 'Consultation'} with {selectedPatient.doctor || 'No doctor assigned'}
                   </span>
                 </div>
               </div>
               <div className="vitals-two-col">
-                <div className="v-card">
-                  <span className="v-label">Blood Pressure</span>
-                  <span className="v-num">{selectedPatient.bp || '120/80'}</span>
-                </div>
-                <div className="v-card">
-                  <span className="v-label">Heart Rate</span>
-                  <span className="v-num">{selectedPatient.hr || '72 bpm'}</span>
-                </div>
                 <div className="v-card">
                   <span className="v-label">Scheduled Time</span>
                   <span className="v-num">{selectedPatient.time}</span>
@@ -989,6 +980,7 @@ export default function ReceptionistDashboard({
               </div>
             </div>
             <div className="modal-btn-row">
+              {selectedPatient.patientId && <button type="button" className="modal-btn-ghost" onClick={() => onNavigate?.('patients', { patientId: selectedPatient.patientId })}>Open Patient Record</button>}
               <button type="button" className="modal-btn-primary" onClick={closeModal}>Close</button>
             </div>
           </div>

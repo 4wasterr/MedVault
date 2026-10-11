@@ -49,29 +49,7 @@ export default function Appointment({
   const [isOnDuty, setIsOnDuty] = useState(true);
 
   // Notification items with unread tracking
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      text: 'Maria Santos checked in for 09:00 AM intake.',
-      apptId: 'APPT-102',
-      time: '10m ago',
-      read: false,
-    },
-    {
-      id: 2,
-      text: 'Dr. Cruz schedule confirmed for General Intake A.',
-      apptId: 'APPT-101',
-      time: '25m ago',
-      read: false,
-    },
-    {
-      id: 3,
-      text: 'New open slot available at 02:30 PM.',
-      apptId: 'APPT-110',
-      time: '1h ago',
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState([]);
 
   // Inline editing states for Tab 3 (Clinical Notes)
   const [isEditingNotes, setIsEditingNotes] = useState(false);

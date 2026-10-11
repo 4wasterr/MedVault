@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.env*
+**/.env*
+frontend/server/data
+deploy/secrets
+deploy/certs
+deploy/backups
+tmp
+coverage
+**/*.log

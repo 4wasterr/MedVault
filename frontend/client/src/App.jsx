@@ -1,4 +1,4 @@
-import React, { Component, useEffect, useRef, useState } from 'react';
+import React, { Component, useCallback, useEffect, useRef, useState } from 'react';
 import Login from '../../pages/receptionist/login';
 import ReceptionistDashboard from '../../pages/receptionist/receptionistDashboard';
 import PatientsModuleReceptionist from '../../pages/receptionist/patientsModuleReceptionist';
@@ -32,7 +32,7 @@ class ErrorBoundary extends Component {
 
 const initialView = () => {
   const view = new URLSearchParams(window.location.search).get('view');
-  return ['patients', 'appointments', 'schedules', 'users', 'doctors'].includes(view) ? view : 'dashboard';
+  return ['patients', 'appointments', 'schedules', 'users', 'doctors', 'audit'].includes(view) ? view : 'dashboard';
 };
 
 export default function App() {
@@ -42,6 +42,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [startupError, setStartupError] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
+  const [saveStatus, setSaveStatus] = useState('');
   const [legacyAvailable, setLegacyAvailable] = useState(() => {
     try { return ['medvault_patients', 'medvault_appointments', 'medvault_schedules'].some((key) => localStorage.getItem(key)); }
     catch { return false; }
@@ -68,28 +69,39 @@ export default function App() {
     const submitted = recordsRef.current;
     const changes = changesBetween(base, submitted);
     if (!changes.length) return;
+    const session = userRef.current;
     savingRef.current = true;
+    setSaveStatus('Saving changes...');
     let retry = false;
     try {
       const serverState = await api('changes', { method: 'POST', body: JSON.stringify({ changes }) });
-      if (!userRef.current) return;
+      if (userRef.current !== session) return;
       const newerChanges = changesBetween(submitted, recordsRef.current);
       syncedRef.current = serverState;
       const merged = applyChanges(serverState, newerChanges);
       recordsRef.current = merged;
       setRecords(merged);
       setSyncMessage('');
+      setSaveStatus('Changes saved to the shared server.');
     } catch (error) {
+      if (userRef.current !== session) return;
+      setSaveStatus('');
       if (error.status === 401) {
         userRef.current = null;
         setCurrentUser(null);
         setCurrentUsername(null);
+        installState(emptyState());
         setSyncMessage('Your session expired. Sign in again.');
       } else if (error.status === 409 && error.state) {
         installState(error.state);
         setSyncMessage('Another staff member changed a record. The latest version is shown; review and save your edit again.');
       } else if (error.status) {
-        try { installState(await api('state')); } catch { retry = true; }
+        try {
+          const latest = await api('state');
+          if (userRef.current !== session) return;
+          installState(latest);
+        } catch { if (userRef.current === session) retry = true; }
+        if (userRef.current !== session) return;
         setSyncMessage(error.message);
       } else {
         setSyncMessage('Connection lost. Changes are pending and will be retried.');
@@ -97,7 +109,7 @@ export default function App() {
       }
     } finally {
       savingRef.current = false;
-      if (retry) {
+      if (retry && userRef.current === session) {
         clearTimeout(retryRef.current);
         retryRef.current = setTimeout(() => flushRef.current?.(), 4000);
       } else if (changesBetween(syncedRef.current, recordsRef.current).length) {
@@ -114,6 +126,7 @@ export default function App() {
     const next = { ...previous, [collection]: value };
     recordsRef.current = next;
     setRecords(next);
+    setSaveStatus('Saving changes...');
     queueMicrotask(() => flushRef.current?.());
   };
 
@@ -124,7 +137,7 @@ export default function App() {
         const session = await api('session');
         const state = session.role === 'Super Admin' ? emptyState() : await api('state');
         if (cancelled) return;
-        userRef.current = session.role;
+        userRef.current = { role: session.role, username: session.username };
         setCurrentUser(session.role);
         setCurrentUsername(session.username);
         installState(state);
@@ -141,21 +154,84 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser || currentUser === 'Super Admin' || booting) return undefined;
+    const session = userRef.current;
     const poll = setInterval(async () => {
       if (savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) return;
       try {
-        const state = await api('state');
-        if (!savingRef.current && !changesBetween(syncedRef.current, recordsRef.current).length) installState(state);
+        const state = await api('state', { headers: { 'X-MedVault-Background': '1' } });
+        if (userRef.current === session && !savingRef.current && !changesBetween(syncedRef.current, recordsRef.current).length) installState(state);
       } catch (error) {
-        if (error.status === 401) {
+        if (userRef.current === session && error.status === 401) {
           userRef.current = null;
           setCurrentUser(null);
           setCurrentUsername(null);
+          setSaveStatus('');
+          installState(emptyState());
           setSyncMessage('Your session expired. Sign in again.');
         }
       }
     }, 4000);
     return () => clearInterval(poll);
+  }, [currentUser, booting]);
+
+  const recordView = useCallback(async (collection, recordId, section = '') => {
+    if (collection !== 'modules' && !syncedRef.current[collection]?.some(record => record.id === recordId)) return;
+    const session = userRef.current;
+    if (!session) return;
+    try { await api('activity', { method: 'POST', body: JSON.stringify({ collection, recordId, section }) }); }
+    catch (error) {
+      if (userRef.current !== session) return;
+      if (error.status === 401) {
+        userRef.current = null;
+        setCurrentUser(null); setCurrentUsername(null);
+        const state = emptyState(); syncedRef.current = state; recordsRef.current = state; setRecords(state);
+        setSaveStatus('');
+      }
+      setSyncMessage(`Unable to record this activity: ${error.message}`);
+    }
+  }, []);
+  const allowedViews = currentUser === 'Super Admin' ? ['dashboard', 'users', 'doctors', 'audit'] :
+    currentUser === 'Medical Secretary' ? ['dashboard', 'patients', 'appointments', 'schedules'] : ['dashboard', 'patients', 'appointments'];
+  const effectiveView = allowedViews.includes(currentView) ? currentView : 'dashboard';
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && currentUser && !booting) void recordView('modules', effectiveView); });
+    return () => { cancelled = true; };
+  }, [currentUser, booting, effectiveView, recordView]);
+
+  useEffect(() => {
+    if (!currentUser || booting) return undefined;
+    let active = true;
+    const session = userRef.current;
+    let lastTouch = Date.now();
+    const checkSession = async (background) => {
+      try { await api('session', { headers: background ? { 'X-MedVault-Background': '1' } : {} }); }
+      catch (error) {
+        if (active && userRef.current === session && error.status === 401) {
+          userRef.current = null;
+          setCurrentUser(null);
+          setCurrentUsername(null);
+          setSaveStatus('');
+          installState(emptyState());
+          setSyncMessage('Your session expired. Sign in again.');
+        }
+      }
+    };
+    const onActivity = (event) => {
+      if (event.isTrusted && Date.now() - lastTouch >= 60_000) {
+        lastTouch = Date.now();
+        void checkSession(false);
+      }
+    };
+    const timer = setInterval(() => void checkSession(true), 30_000);
+    window.addEventListener('pointerdown', onActivity, { passive: true });
+    window.addEventListener('keydown', onActivity);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener('pointerdown', onActivity);
+      window.removeEventListener('keydown', onActivity);
+    };
   }, [currentUser, booting]);
 
   useEffect(() => {
@@ -181,11 +257,12 @@ export default function App() {
     setBooting(true);
     try {
       const state = role === 'Super Admin' ? emptyState() : await api('state');
-      userRef.current = role;
+      userRef.current = { role, username };
       setCurrentUser(role);
       setCurrentUsername(username);
       installState(state);
       setSyncMessage('');
+      setSaveStatus('');
       handleNavigate('dashboard');
     } catch (error) {
       setStartupError(error.message);
@@ -212,6 +289,7 @@ export default function App() {
     userRef.current = null;
     setCurrentUser(null);
     setCurrentUsername(null);
+    setSaveStatus('');
     installState(emptyState());
     setCurrentView('dashboard');
     const url = new URL(window.location.href);
@@ -220,6 +298,7 @@ export default function App() {
   };
 
   const importBrowserRecords = async () => {
+    const session = userRef.current;
     setImportingLegacy(true);
     try {
       const read = (key, fallback) => {
@@ -231,12 +310,13 @@ export default function App() {
         appointments: read('medvault_appointments', recordsRef.current.appointments),
         schedules: read('medvault_schedules', recordsRef.current.schedules),
       }) });
+      if (userRef.current !== session) return;
       installState(imported);
       for (const key of ['medvault_patients', 'medvault_appointments', 'medvault_schedules']) localStorage.removeItem(key);
       setLegacyAvailable(false);
       setSyncMessage('Browser records imported into the shared server.');
     } catch (error) {
-      setSyncMessage(error.message || 'Unable to import browser records.');
+      if (userRef.current === session) setSyncMessage(error.message || 'Unable to import browser records.');
     } finally {
       setImportingLegacy(false);
     }
@@ -250,6 +330,7 @@ export default function App() {
     onNavigate: handleNavigate, onLogout: handleLogout,
     patients: records.patients, appointments: records.appointments, schedules: records.schedules, doctors: records.doctors,
     username: currentUsername,
+    onRecordView: recordView,
     setPatients: (updater) => updateCollection('patients', updater),
     setAppointments: (updater) => updateCollection('appointments', updater),
     setSchedules: (updater) => updateCollection('schedules', updater),
@@ -262,7 +343,7 @@ export default function App() {
 
   return <ErrorBoundary>
     {isMedicalSecretary && legacyAvailable && <div className="medvault-import-alert" role="status">
-      <span>Records from the previous browser-only version are available here. Importing replaces untouched demo data on the server.</span>
+      <span>Records from the previous browser-only version are available here. Importing replaces shared records before clinical changes have been made.</span>
       <button type="button" disabled={importingLegacy} onClick={importBrowserRecords}>
         {importingLegacy ? 'Importing…' : 'Import Browser Records'}
       </button>
@@ -271,13 +352,14 @@ export default function App() {
     {syncMessage && <div className="medvault-sync-alert" role="alert">{syncMessage}
       <button type="button" onClick={() => setSyncMessage('')} aria-label="Dismiss message">×</button>
     </div>}
+    {currentUser && saveStatus && <div className="medvault-save-status" role="status">{saveStatus}</div>}
     {!currentUser ? <Login onLoginSuccess={handleLogin} />
-      : currentUser === 'Super Admin' ? <AdminDashboard view={['users', 'doctors'].includes(currentView) ? currentView : 'dashboard'} onNavigate={handleNavigate} onLogout={handleLogout} />
-      : isMedicalSecretary && currentView === 'schedules' ? <MedSecDoctorSchedules {...sharedProps} />
-        : currentView === 'patients' ? <PatientRecords {...sharedProps}
-          key={isMedicalSecretary ? `${patientTarget.id || 'list'}-${patientTarget.tab}` : 'reception'}
+      : currentUser === 'Super Admin' ? <AdminDashboard view={effectiveView} onNavigate={handleNavigate} onLogout={handleLogout} />
+      : isMedicalSecretary && effectiveView === 'schedules' ? <MedSecDoctorSchedules {...sharedProps} />
+        : effectiveView === 'patients' ? <PatientRecords {...sharedProps}
+          key={`${currentUser}-${patientTarget.id || 'list'}-${patientTarget.tab}`}
           selectedPatientId={patientTarget.id} initialTab={patientTarget.tab} />
-          : currentView === 'appointments' ? <Appointments {...sharedProps} />
+          : effectiveView === 'appointments' ? <Appointments {...sharedProps} />
             : <Dashboard {...sharedProps} receptionistName={currentUser} />}
   </ErrorBoundary>;
 }

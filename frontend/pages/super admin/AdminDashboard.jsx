@@ -4,6 +4,7 @@ import { dateKey } from '../medical secretary/medsecData';
 import AdminShell from './AdminShell';
 import AdminUserManagement from './AdminUserManagement';
 import AdminDoctorManagement from './AdminDoctorManagement';
+import AdminAuditLogs from './AdminAuditLogs';
 
 const periods = ['Weekly', 'Quarterly', 'Annually'];
 function KpiIcon({ label, color }) {
@@ -34,22 +35,28 @@ export default function AdminDashboard({ view = 'dashboard', onNavigate, onLogou
   const [doctors, setDoctors] = useState([]);
   const [period, setPeriod] = useState('Weekly');
   const [error, setError] = useState('');
-  const refresh = async () => {
-    try { const [nextOverview, nextAccounts, nextDoctors] = await Promise.all([api('admin/overview'), api('admin/accounts'), api('admin/doctors')]);
+  const refresh = async (background = false) => {
+    const options = background === true ? { headers: { 'X-MedVault-Background': '1' } } : {};
+    try { const [nextOverview, nextAccounts, nextDoctors] = await Promise.all([api('admin/overview', options), api('admin/accounts', options), api('admin/doctors', options)]);
       setOverview(nextOverview); setAccounts(nextAccounts); setDoctors(nextDoctors); setError(''); }
     catch (requestError) { setError(requestError.message || 'Unable to load admin records.'); }
   };
-  useEffect(() => { refresh(); const timer = setInterval(refresh, 10000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void refresh(); });
+    const timer = setInterval(() => refresh(true), 10000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
   const bars = useMemo(() => chartData(overview?.bookings || [], period), [overview, period]);
   const max = Math.max(1, ...bars.map((bar) => bar.count));
   const ticks = [max, Math.round(max * .7), Math.round(max * .5), Math.round(max * .25), Math.round(max * .1), 0];
   const pending = accounts.filter((account) => account.status === 'pending');
-  const title = view === 'users' ? 'User Management' : view === 'doctors' ? 'Doctor Management' : 'Dashboard';
+  const title = view === 'users' ? 'User Management' : view === 'doctors' ? 'Doctor Management' : view === 'audit' ? 'Audit Logs' : 'Dashboard';
   return <AdminShell active={view} title={title} subtitle={view === 'dashboard' ? 'A live overview of MedVault activity' :
-    view === 'users' ? 'Create, review, and manage staff access' : 'Manage physician profiles and secretary assignments'} onNavigate={onNavigate} onLogout={onLogout}>
+    view === 'users' ? 'Create, review, and manage staff access' : view === 'audit' ? 'Review actions across all MedVault users' : 'Manage physician profiles and secretary assignments'} onNavigate={onNavigate} onLogout={onLogout}>
     {error && <p className="medsec-error" role="alert">{error}</p>}
     {view === 'users' ? <AdminUserManagement accounts={accounts} onRefresh={refresh} /> :
-      view === 'doctors' ? <AdminDoctorManagement doctors={doctors} accounts={accounts} onRefresh={refresh} /> : <>
+      view === 'doctors' ? <AdminDoctorManagement doctors={doctors} accounts={accounts} onRefresh={refresh} /> : view === 'audit' ? <AdminAuditLogs /> : <>
         <section className="nd-row-top"><div className="kpi-quad-grid admin-kpis">{[
           ['Staff Accounts', overview?.staff ?? '—', 'users', '#00ADEF'],
           ['Doctors', overview?.doctors ?? '—', 'doctors', '#F97316'],
@@ -79,6 +86,7 @@ export default function AdminDashboard({ view = 'dashboard', onNavigate, onLogou
         <section className="nd-row-actions admin-quick-actions" aria-label="Quick shortcuts"><button type="button" className="exact-action-card" onClick={() => onNavigate('users')}>
           <span className="action-label-stack"><span>User</span><span>Management</span></span><span className="plus-symbol purple-plus" aria-hidden="true">→</span></button>
           <button type="button" className="exact-action-card" onClick={() => onNavigate('doctors')}><span className="action-label-stack"><span>Doctor</span><span>Management</span></span><span className="plus-symbol cyan-plus" aria-hidden="true">→</span></button>
+          <button type="button" className="exact-action-card" onClick={() => onNavigate('audit')}><span className="action-label-stack"><span>Audit</span><span>Logs</span></span><span className="plus-symbol cyan-plus" aria-hidden="true">→</span></button>
         </section>
       </>}
   </AdminShell>;

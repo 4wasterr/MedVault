@@ -2,19 +2,30 @@
   "name": "medvault-server",
   "private": true,
   "version": "1.0.0",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "node --test src/index.test.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test src/*.test.js",
+    "verify:audit": "node scripts/verify-audit.cjs",
+    "test:load": "node scripts/load.cjs",
+    "backup": "node scripts/backup.cjs",
+    "restore": "node scripts/backup.cjs restore"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "entities": "^8.1.0",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "sanitize-html": "^2.18.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
+  "overrides": {
+    "proxy-addr": "^2.0.8"
   }
 }

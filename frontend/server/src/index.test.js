@@ -9,13 +9,17 @@ test('shared records, role authorization, conflicts, and persistence', async () 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'medvault-test-'))
   const databasePath = path.join(directory, 'records.sqlite')
   process.env.MEDVAULT_DB_PATH = databasePath
-  const { app, db } = require('./index')
+  const { app, db, security } = await require('./index').createApp({ seedDemo: true })
   const server = app.listen(0)
   const base = `http://127.0.0.1:${server.address().port}`
+  const csrfResponse = await fetch(`${base}/api/csrf`)
+  const csrfCookie = csrfResponse.headers.get('set-cookie').split(';')[0]
+  const { csrfToken } = await csrfResponse.json()
   const request = async (route, cookie, body, method = 'POST') => {
     const response = await fetch(`${base}${route}`, {
       method: body === undefined ? 'GET' : method,
-      headers: { ...(cookie ? { Cookie: cookie } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      headers: { Cookie: [cookie, csrfCookie].filter(Boolean).join('; '), 'X-CSRF-Token': csrfToken,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
     return { status: response.status, body: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] }
@@ -148,7 +152,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'patients', id: patient.id, before: patient, after: updatedPatient },
     ] })).status, 200)
-    const auditRow = db.prepare("SELECT username, role, before_data, after_data FROM audit_events WHERE collection = 'patients' AND record_id = ? AND action = 'update' ORDER BY id DESC LIMIT 1").get(patient.id)
+    const auditRow = await db.prepare("SELECT username, role, before_data, after_data FROM audit_events WHERE collection = 'patients' AND record_id = ? AND action = 'update' ORDER BY id DESC LIMIT 1").get(patient.id)
     assert.equal(auditRow.username, 'user2')
     assert.equal(JSON.parse(auditRow.before_data).id, patient.id)
     assert.equal(JSON.parse(auditRow.after_data).vitals.bp, '120/80')
@@ -157,14 +161,14 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'patients', id: patient.id, before: updatedPatient, after: patientWithVisit },
     ] })).status, 200)
-    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM visit_records WHERE patient_id = ?').get(patient.id).count, 1)
-    assert.equal(JSON.parse(db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(patient.id).data).visits, undefined)
+    assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM visit_records WHERE patient_id = ?').get(patient.id)).count, 1)
+    assert.equal(JSON.parse((await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(patient.id)).data).visits, undefined)
     assert.equal((await request('/api/state', receptionist.cookie)).body.patients.find((item) => item.id === patient.id).visits[0].summary, 'Follow-up')
     assert.equal((await request(`/api/admin/doctors/${doctorCreated.body.id}`, admin.cookie, { name: 'Dr. Final' }, 'PATCH')).status, 200)
     assert.ok((await request('/api/state', secretary.cookie)).body.schedules['Dr. Final|2026-10-02'])
     assert.equal((await request('/api/state', receptionist.cookie)).body.patients.find((item) => item.id === patient.id).visits[0].doctor, 'Dr. Final')
     assert.equal((await request('/api/state', receptionist.cookie)).body.patients.find((item) => item.id === patient.id).consultation.doctor, 'Dr. Final')
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE collection = 'visit_records' AND action = 'doctor-rename'").get().count, 1)
+    assert.equal((await db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE collection = 'visit_records' AND action = 'doctor-rename'").get()).count, 1)
     const cancelled = { ...appointment, status: 'Cancelled', cancelledAt: new Date().toISOString() }
     const openSlot = { ...appointment, id: 'APPT-open-test', patientId: null, patientName: '*Available Slot*', status: 'Open' }
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
@@ -189,7 +193,9 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     ] })).status, 409)
 
     const persisted = new DatabaseSync(databasePath)
-    assert.equal(JSON.parse(persisted.prepare('SELECT data FROM records WHERE collection = ? AND id = ?').get('patients', patient.id).data).vitals.bp, '120/80')
+    const stored = persisted.prepare('SELECT data FROM records WHERE collection = ? AND id = ?').get('patients', patient.id).data
+    assert.equal(stored.includes('120/80'), false)
+    assert.equal(JSON.parse(security.decode(stored)).vitals.bp, '120/80')
     persisted.close()
     assert.equal((await request('/api/logout', receptionist.cookie, {})).status, 200)
     assert.equal((await request('/api/state', receptionist.cookie)).status, 401)
@@ -199,7 +205,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/login', '', { username: 'user1', password: 'user1' })).status, 403)
   } finally {
     await new Promise((resolve) => server.close(resolve))
-    db.close()
+    await db.close()
     const root = path.resolve(os.tmpdir()) + path.sep
     if (path.resolve(directory).startsWith(root)) fs.rmSync(directory, { recursive: true, force: true })
   }

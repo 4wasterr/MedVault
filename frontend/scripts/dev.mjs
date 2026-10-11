@@ -8,7 +8,7 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const clientRoot = path.join(frontendRoot, 'client')
 const serverRoot = path.join(frontendRoot, 'server')
 const clientUrl = 'http://localhost:5173/'
-const apiUrl = 'http://localhost:5000/api/health'
+const apiUrl = 'http://127.0.0.1:5000/api/health'
 
 function isListeningOn(port, host) {
   return new Promise((resolve) => {
@@ -69,7 +69,7 @@ if (clientStatus === 'occupied' || apiStatus === 'occupied') {
       return
     }
     console.log(`Starting MedVault ${name}...`)
-    const child = spawn(process.execPath, [binary, ...args], { cwd, stdio: 'inherit', windowsHide: true })
+    const child = spawn(process.execPath, binary === process.execPath ? args : [binary, ...args], { cwd, stdio: 'inherit', windowsHide: true })
     children.push(child)
     child.on('error', (error) => { console.error(`${name} could not start: ${error.message}`); stopAll(1) })
     child.on('exit', (code) => {
@@ -77,7 +77,7 @@ if (clientStatus === 'occupied' || apiStatus === 'occupied') {
     })
   }
 
-  if (apiStatus === 'stopped') start('API', serverRoot, path.join(serverRoot, 'node_modules/nodemon/bin/nodemon.js'), ['src/index.js'])
+  if (apiStatus === 'stopped') start('API', serverRoot, process.execPath, ['--watch', 'src/index.js'])
   if (!stopping && clientStatus === 'stopped') start('frontend', clientRoot, path.join(clientRoot, 'node_modules/vite/bin/vite.js'), [])
   if (!stopping) console.log(`Open ${clientUrl} when the startup messages appear.`)
 }

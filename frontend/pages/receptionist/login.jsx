@@ -703,7 +703,7 @@ export default function Login({ onLoginSuccess }) {
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">Security</span>
-                  <span className="detail-value">Demo account</span>
+                  <span className="detail-value">Signed in</span>
                 </div>
               </div>
 

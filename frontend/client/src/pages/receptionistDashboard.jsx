@@ -324,12 +324,7 @@ export default function ReceptionistDashboard({
               {showNotifications && (
                 <div className="notif-dropdown animate-pop-in">
                   <div className="dropdown-title">Clinical Notifications</div>
-                  <div className="notif-row">
-                    <strong>Abigail Yatco</strong> finished consultation with Dr. Rebucayo.
-                  </div>
-                  <div className="notif-row">
-                    <strong>Ken Ty</strong> check-in confirmed for 9:45 am.
-                  </div>
+                  <div className="notif-row">No notifications yet.</div>
                 </div>
               )}
             </div>
@@ -935,7 +930,7 @@ export default function ReceptionistDashboard({
                     <div className="roster-initial">{displayName.charAt(0)}</div>
                     <div className="roster-info">
                       <strong>{displayName}</strong>
-                      <span>{item.type || 'Consultation'} • {item.doctor || 'Dr. Santos'}</span>
+                      <span>{item.type || 'Consultation'} • {item.doctor || 'No doctor assigned'}</span>
                     </div>
                     <span className="roster-time-tag">{item.time}</span>
                   </div>

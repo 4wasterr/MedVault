@@ -2,179 +2,57 @@ import React, { useEffect, useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
 import { createRecordId, todayISO } from '../medical secretary/medsecData';
+import PatientHistoryBadge from '../components/PatientHistoryBadge';
 
 export default function PatientsModuleReceptionist({
   onNavigate,
   onLogout,
   patients: propPatients,
   setPatients: propSetPatients,
+  setAppointments,
+  appointments = [],
+  doctors = [],
+  onRecordView,
+  selectedPatientId,
+  initialTab = 'personal',
   role = 'Receptionist',
 }) {
-  // Rich Default Patients with complete Personal Info, Vitals, Medical Info & Appointment History
-  const defaultPatients = [
-    {
-      id: 'PTNT-001',
-      name: 'Juan Dela Cruz',
-      age: 34,
-      sex: 'Male',
-      birthday: 'Jan 10, 1991',
-      contact: '0991-123-1245',
-      address: '143 Jose St., Malabon City',
-      emergencyName: 'Maria Dela Cruz',
-      emergencyContact: '0991-123-1245',
-      doctor: 'Dr. Cruz',
-      type: 'Checkup',
-      status: 'Waiting',
-      date: 'September 16, 2026',
-      vitals: {
-        bp: '120/80',
-        hr: '72',
-        temp: '36.5',
-        respRate: '18',
-        spo2: '98',
-        weight: '68',
-        height: '172',
-      },
-      medical: {
-        allergies: 'Penicillin, Peanuts',
-        history: 'Hypertension (diagnosed 2022)',
-        diagnosis: 'Mild Essential Hypertension',
-        medications: 'Amlodipine 5mg OD',
-        treatment: 'Lifestyle modification, low sodium diet',
-        notes: 'Follow-up in 2 weeks for BP check',
-      },
-      appointments: [
-        { date: 'Sep 15, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' },
-        { date: 'Sep 25, 2026', doctor: 'Dr. Reyes', type: 'Follow-up', status: 'Scheduled' },
-      ],
-    },
-    {
-      id: 'PTNT-002',
-      name: 'Allen Tracy',
-      age: 21,
-      sex: 'Female',
-      birthday: 'Aug 24, 2005',
-      contact: '0919-345-6789',
-      address: '789 Quezon Ave., Quezon City',
-      emergencyName: 'Robert Tracy',
-      emergencyContact: '0919-765-4321',
-      doctor: 'Dr. Rebuyaco',
-      type: 'Follow up',
-      status: 'In Room',
-      date: 'September 15, 2026',
-      vitals: {
-        bp: '110/70',
-        hr: '68',
-        temp: '36.8',
-        respRate: '16',
-        spo2: '99',
-        weight: '54',
-        height: '162',
-      },
-      medical: {
-        allergies: 'None reported',
-        history: 'Mild seasonal allergic rhinitis',
-        diagnosis: 'Acute Rhinitis (Resolving)',
-        medications: 'Cetirizine 10mg PRN',
-        treatment: 'Oral hydration, rest',
-        notes: 'Symptoms improved significantly',
-      },
-      appointments: [
-        { date: 'Sep 02, 2026', doctor: 'Dr. Rebuyaco', type: 'Checkup', status: 'Done' },
-        { date: 'Sep 15, 2026', doctor: 'Dr. Rebuyaco', type: 'Follow up', status: 'Done' },
-      ],
-    },
-    {
-      id: 'PTNT-003',
-      name: 'Richiebelle Del Rosario',
-      age: 16,
-      sex: 'Female',
-      birthday: 'May 14, 2010',
-      contact: '0918-234-5678',
-      address: '456 Taft Ave., Pasay City',
-      emergencyName: 'Susan Del Rosario',
-      emergencyContact: '0918-876-5432',
-      doctor: 'Dr. Santos',
-      type: 'Consultation',
-      status: 'Done',
-      date: 'September 13, 2026',
-      vitals: {
-        bp: '118/75',
-        hr: '76',
-        temp: '37.1',
-        respRate: '18',
-        spo2: '98',
-        weight: '49',
-        height: '158',
-      },
-      medical: {
-        allergies: 'Aspirin',
-        history: 'Childhood Asthma',
-        diagnosis: 'Upper Respiratory Tract Infection',
-        medications: 'Salbutamol inhaler PRN, Paracetamol 500mg',
-        treatment: 'Inhalation therapy as needed',
-        notes: 'Clear chest sounds on auscultation',
-      },
-      appointments: [
-        { date: 'Sep 13, 2026', doctor: 'Dr. Santos', type: 'Consultation', status: 'Done' },
-      ],
-    },
-    {
-      id: 'PTNT-004',
-      name: 'John Smith',
-      age: 19,
-      sex: 'Male',
-      birthday: 'Nov 03, 2007',
-      contact: '0920-456-7890',
-      address: '321 Shaw Blvd., Mandaluyong City',
-      emergencyName: 'Carlos Smith',
-      emergencyContact: '0920-654-3210',
-      doctor: 'Dr. Reyes',
-      type: 'Checkup',
-      status: 'Waiting',
-      date: 'September 13, 2026',
-      vitals: {
-        bp: '115/75',
-        hr: '70',
-        temp: '36.6',
-        respRate: '16',
-        spo2: '99',
-        weight: '65',
-        height: '175',
-      },
-      medical: {
-        allergies: 'None',
-        history: 'None',
-        diagnosis: 'Routine General Wellness Exam',
-        medications: 'Multivitamins OD',
-        treatment: 'Maintain balanced diet and exercise',
-        notes: 'Fit and healthy',
-      },
-      appointments: [
-        { date: 'Sep 13, 2026', doctor: 'Dr. Reyes', type: 'Checkup', status: 'Done' },
-      ],
-    },
-  ];
-
-  const [localPatients, setLocalPatients] = useState(defaultPatients);
+  const [localPatients, setLocalPatients] = useState([]);
   const patients = propPatients || localPatients;
   const setPatients = propSetPatients || setLocalPatients;
 
   // Selected Patient State for Master-Detail Panel (null = Empty State)
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedPatient, setSelectedPatient] = useState(() => patients.find(patient => patient.id === selectedPatientId) || null);
 
-  // Active Tab inside Patient Profile: 'personal' | 'vitals' | 'medical' | 'appointments'
-  const [activeTab, setActiveTab] = useState('personal');
+  // Prefer the secretary's saved fields; explicit blanks must not revive older values.
+  const medicalInfo = {
+    allergies: selectedPatient?.medicalHistory?.allergies ?? selectedPatient?.medical?.allergies ?? '',
+    history: selectedPatient?.medicalHistory?.conditions ?? selectedPatient?.medical?.history ?? '',
+    diagnosis: selectedPatient?.consultation?.diagnosis ?? selectedPatient?.medical?.diagnosis ?? '',
+    medications: selectedPatient?.medicalHistory?.medications ?? selectedPatient?.medical?.medications ?? '',
+    treatment: selectedPatient?.consultation?.treatment ?? selectedPatient?.medical?.treatment ?? '',
+    notes: selectedPatient?.consultation?.followUp ?? selectedPatient?.medical?.notes ?? '',
+  };
+
+  // Active Tab inside Patient Profile: 'personal' | 'medical' | 'appointments'
+  const [activeTab, setActiveTab] = useState(['personal', 'medical', 'appointments'].includes(initialTab) ? initialTab : 'personal');
+  const selectedId = selectedPatient?.id;
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && selectedId) void onRecordView?.('patients', selectedId, activeTab); });
+    return () => { cancelled = true; };
+  }, [selectedId, activeTab, onRecordView]);
+  const doctorNames = [...new Set([...doctors.map(doctor => doctor.name), ...patients.map(patient => patient.doctor).filter(Boolean)])];
 
   // Edit Mode state for Personal Info
   const [isEditing, setIsEditing] = useState(false);
-  const [editFormData, setEditFormData] = useState({});
+  const [editFormData, setEditFormData] = useState(() => ({ ...selectedPatient }));
   useEffect(() => {
     if (!selectedPatient || isEditing) return undefined;
     const latest = patients.find((patient) => patient.id === selectedPatient.id);
-    if (!latest || JSON.stringify(latest) === JSON.stringify(selectedPatient)) return undefined;
+    if (JSON.stringify(latest) === JSON.stringify(selectedPatient)) return undefined;
     let cancelled = false;
-    queueMicrotask(() => { if (!cancelled) { setSelectedPatient(latest); setEditFormData({ ...latest }); } });
+    queueMicrotask(() => { if (!cancelled) { setSelectedPatient(latest || null); setEditFormData({ ...latest }); } });
     return () => { cancelled = true; };
   }, [patients, selectedPatient, isEditing]);
 
@@ -247,8 +125,11 @@ export default function PatientsModuleReceptionist({
     };
     setSelectedPatient(updated);
     setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setAppointments?.(current => current.map(item => item.patientId === updated.id ? { ...item,
+      patientName: updated.name, age: updated.age, sex: updated.sex, contact: updated.contact, address: updated.address,
+      emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact } : item));
     setIsEditing(false);
-    showToast(`Updated profile for ${updated.name}`);
+    showToast(`Profile update submitted for ${updated.name}. Check the save status.`);
   };
 
   // Handle registering a new patient
@@ -462,10 +343,7 @@ export default function PatientsModuleReceptionist({
                   <div className="notif-dropdown animate-pop-in">
                     <div className="dropdown-title">Clinical Notifications</div>
                     <div className="notif-row">
-                      <strong>Juan Dela Cruz</strong> completed triage vital check.
-                    </div>
-                    <div className="notif-row">
-                      <strong>Allen Tracy</strong> follow-up scheduled for 2:30 pm.
+                      No notifications yet.
                     </div>
                   </div>
                 )}
@@ -620,10 +498,7 @@ export default function PatientsModuleReceptionist({
                             onChange={(e) => setSelectedDoctor(e.target.value)}
                           >
                             <option value="All">All Doctors</option>
-                            <option value="Dr. Cruz">Dr. Cruz</option>
-                            <option value="Dr. Rebuyaco">Dr. Rebuyaco</option>
-                            <option value="Dr. Santos">Dr. Santos</option>
-                            <option value="Dr. Reyes">Dr. Reyes</option>
+                            {doctorNames.map(name => <option key={name} value={name}>{name}</option>)}
                           </select>
                         </div>
 
@@ -682,6 +557,7 @@ export default function PatientsModuleReceptionist({
                         <div className="pm-item-left">
                           <span className="pm-item-id">{patient.id}</span>
                           <h4 className="pm-item-name">{patient.name}</h4>
+                          <PatientHistoryBadge patient={patient} appointments={appointments} />
                           <span className="pm-item-meta">
                             {patient.age} years old | {getPatientType(patient)}
                           </span>
@@ -758,6 +634,7 @@ export default function PatientsModuleReceptionist({
                     <div className="pm-summary-info">
                       <div className="pm-summary-id">{selectedPatient.id}</div>
                       <h3 className="pm-summary-name">{selectedPatient.name}</h3>
+                      <PatientHistoryBadge patient={selectedPatient} appointments={appointments} />
                       <div className="pm-summary-meta">
                         {selectedPatient.age} years old | {selectedPatient.sex || 'Male'}
                       </div>
@@ -765,7 +642,7 @@ export default function PatientsModuleReceptionist({
                     </div>
                   </div>
 
-                  {/* 4 Interactive Profile Tabs */}
+                  {/* 3 Interactive Profile Tabs */}
                   <div className="pm-tabs-bar" role="tablist">
                     <button
                       type="button"
@@ -773,13 +650,6 @@ export default function PatientsModuleReceptionist({
                       onClick={() => setActiveTab('personal')}
                     >
                       Personal Info
-                    </button>
-                    <button
-                      type="button"
-                      className={`pm-tab-btn ${activeTab === 'vitals' ? 'active' : ''}`}
-                      onClick={() => setActiveTab('vitals')}
-                    >
-                      Vital Signs
                     </button>
                     <button
                       type="button"
@@ -952,107 +822,7 @@ export default function PatientsModuleReceptionist({
                     </div>
                   )}
 
-                  {/* TAB 2: Vital Signs (1:1 with media_1789814983567.png - View Only for Receptionist) */}
-                  {activeTab === 'vitals' && (
-                    <div className="pm-tab-content animate-fade">
-                      <h4 className="pm-tab-heading">Vital Signs</h4>
-
-                      <div className="pm-vitals-stack">
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Blood Pressure</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.bp || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">mmHg</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Heart Rate</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.hr || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">bpm</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Temperature</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.temp || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">°C</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Respiratory Rate</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.respRate || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">breaths/min</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Oxygen Saturation</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.spo2 || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">%</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Weight</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.weight || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">kg</span>
-                          </div>
-                        </div>
-
-                        <div className="pm-vital-row">
-                          <label className="pm-vital-label">Height</label>
-                          <div className="pm-vital-input-wrap">
-                            <input
-                              type="text"
-                              className="pm-vital-input"
-                              value={selectedPatient.vitals?.height || ''}
-                              readOnly
-                            />
-                            <span className="pm-vital-unit">cm</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TAB 3: Medical Info (1:1 with media_1789814983566.png - View Only for Receptionist) */}
+                  {/* TAB 2: Medical Info (1:1 with media_1789814983566.png - View Only for Receptionist) */}
                   {activeTab === 'medical' && (
                     <div className="pm-tab-content animate-fade">
                       <h4 className="pm-tab-heading">Medical Information</h4>
@@ -1063,7 +833,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.allergies || ''}
+                            value={medicalInfo.allergies}
                             readOnly
                           />
                         </div>
@@ -1073,7 +843,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.history || ''}
+                            value={medicalInfo.history}
                             readOnly
                           />
                         </div>
@@ -1083,7 +853,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.diagnosis || ''}
+                            value={medicalInfo.diagnosis}
                             readOnly
                           />
                         </div>
@@ -1093,7 +863,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.medications || ''}
+                            value={medicalInfo.medications}
                             readOnly
                           />
                         </div>
@@ -1103,7 +873,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.treatment || ''}
+                            value={medicalInfo.treatment}
                             readOnly
                           />
                         </div>
@@ -1113,7 +883,7 @@ export default function PatientsModuleReceptionist({
                           <input
                             type="text"
                             className="pm-medical-input"
-                            value={selectedPatient.medical?.notes || ''}
+                            value={medicalInfo.notes}
                             readOnly
                           />
                         </div>
@@ -1121,7 +891,7 @@ export default function PatientsModuleReceptionist({
                     </div>
                   )}
 
-                  {/* TAB 4: Appointment History (View Only for Receptionist) */}
+                  {/* TAB 3: Appointment History (View Only for Receptionist) */}
                   {activeTab === 'appointments' && (
                     <div className="pm-tab-content animate-fade">
                       <h4 className="pm-tab-heading">Appointment History</h4>

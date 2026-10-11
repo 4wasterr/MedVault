@@ -1,0 +1,33 @@
+.admin-management-panel { padding: 24px; }
+.admin-management-panel .medsec-panel-heading p { margin: 0; line-height: 1.5; }
+.admin-management-panel .admin-toolbar { margin: 22px 0; }
+.admin-management-panel .admin-toolbar input, .admin-management-panel .admin-toolbar select { height: 44px; font-size: .86rem; }
+.admin-data-grid { min-width: 0; }
+.admin-grid-meta { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; color: #64748b; font-size: .78rem; }
+.admin-grid-meta > span:first-child { color: #0284c7; font-weight: 700; }
+.admin-grid-scroll { max-width: 100%; max-height: 560px; overflow: auto; border: 1px solid #e7eef6; border-radius: 16px; }
+.admin-grid-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; text-align: left; color: #334155; font-size: .82rem; }
+.admin-grid-table th { position: sticky; top: 0; z-index: 1; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; background: #f3f9fc; color: #64748b; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.admin-grid-sort { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.admin-grid-sort span { color: #0284c7; }
+.admin-grid-table td { padding: 15px 16px; border-bottom: 1px solid #edf2f7; vertical-align: middle; line-height: 1.5; }
+.admin-grid-table tbody tr:nth-child(even) { background: #fcfdff; }
+.admin-grid-table tbody tr:hover { background: #f0faff; }
+.admin-grid-table tbody tr:last-child td { border-bottom: 0; }
+.admin-grid-table strong { color: #0f172a; }
+.admin-grid-table small { display: block; color: #64748b; font-size: .72rem; margin-top: 4px; }
+.admin-grid-name { min-width: 160px; max-width: 240px; overflow-wrap: anywhere; }
+.admin-grid-contact { min-width: 200px; max-width: 280px; overflow-wrap: anywhere; }
+.admin-grid-secretary { min-width: 180px; max-width: 250px; overflow-wrap: anywhere; }
+.admin-grid-status { white-space: nowrap; }
+.admin-grid-actions { min-width: 210px; }
+.admin-grid-table .admin-record-actions { justify-content: flex-start; flex-wrap: nowrap; }
+.admin-grid-table .admin-record-actions .medsec-btn { white-space: nowrap; }
+.admin-grid-table .admin-grid-empty { height: 180px; text-align: center; color: #64748b; }
+.admin-grid-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 18px; color: #64748b; font-size: .8rem; }
+.admin-grid-page-controls { display: flex; align-items: center; gap: 12px; }
+.admin-grid-page-controls .medsec-btn { min-height: 36px; padding: 8px 13px; font-size: .78rem; }
+.admin-grid-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.admin-management-panel button:focus-visible, .admin-grid-scroll:focus-visible { outline: 3px solid #00adef; outline-offset: 3px; }
+@media (max-width: 750px) { .admin-management-panel { padding: 18px; } }
+@media (max-width: 480px) { .admin-grid-page-controls { flex-wrap: wrap; gap: 10px; } .admin-grid-meta { align-items: flex-start; flex-direction: column; } }

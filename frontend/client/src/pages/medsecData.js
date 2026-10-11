@@ -1,4 +1,4 @@
-export const DOCTORS = ['Dr. Cruz', 'Dr. Santos', 'Dr. Reyes', 'Dr. Rebuyaco'];
+export const DOCTORS = [];
 
 export function createRecordId(prefix) {
   const unique = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;

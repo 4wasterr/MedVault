@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import { availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
 
@@ -6,7 +6,7 @@ const emptyForm = (doctor = '') => ({ patientId: '', doctor, date: todayISO(), t
 const progress = ['Waiting', 'In Consultation', 'Completed'];
 
 export default function MedSecAppointment({
-  onNavigate, onLogout, patients = [], setPatients, appointments = [], setAppointments, schedules = {}, doctors: managedDoctors = [],
+  onNavigate, onLogout, patients = [], setPatients, appointments = [], setAppointments, schedules = {}, doctors: managedDoctors = [], onRecordView,
 }) {
   const activeDoctors = managedDoctors.filter((doctor) => doctor.active).map((doctor) => doctor.name);
   const [selectedId, setSelectedId] = useState(null);
@@ -20,6 +20,11 @@ export default function MedSecAppointment({
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const selected = appointments.find((item) => item.id === selectedId);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled && selectedId) void onRecordView?.('appointments', selectedId, 'apptInfo'); });
+    return () => { cancelled = true; };
+  }, [selectedId, onRecordView]);
   const linkedPatient = patients.find((item) => item.id === selected?.patientId);
   const filtered = useMemo(() => appointments.filter((item) => {
     const query = search.toLowerCase().trim();

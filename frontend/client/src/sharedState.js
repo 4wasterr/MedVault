@@ -1,13 +1,30 @@
 export const emptyState = () => ({ patients: [], appointments: [], schedules: {}, doctors: [] });
 
+let csrfToken = '';
+let csrfRequest;
+async function getCsrfToken() {
+  if (csrfToken) return csrfToken;
+  if (!csrfRequest) csrfRequest = fetch('/api/csrf', { credentials: 'same-origin' })
+    .then(async (response) => {
+      const body = await response.json();
+      if (!response.ok || !body.csrfToken) throw new Error('Unable to establish a protected session.');
+      csrfToken = body.csrfToken;
+      return csrfToken;
+    }).finally(() => { csrfRequest = undefined; });
+  return csrfRequest;
+}
+
 export async function api(path, options = {}) {
+  const changing = !['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase());
+  const protection = changing ? { 'X-CSRF-Token': await getCsrfToken() } : {};
   const response = await fetch(`/api/${path}`, {
     credentials: 'same-origin',
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...protection, ...options.headers },
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 403 && /CSRF/.test(body.error || '')) csrfToken = '';
     const error = new Error(body.error || 'The server could not complete the request.');
     error.status = response.status;
     error.state = body.state;
