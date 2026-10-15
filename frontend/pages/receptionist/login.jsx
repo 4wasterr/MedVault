@@ -71,8 +71,6 @@ const SLIDES = [
   },
 ];
 
-const makeDemoCode = () => String(Math.floor(10000 + Math.random() * 90000));
-
 function RecoveryIcon({ name }) {
   if (name === 'mail') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
     <rect x="3" y="5" width="18" height="14" rx="3" /><path d="m4 7 8 6 8-6" />
@@ -89,13 +87,14 @@ function RecoveryIcon({ name }) {
 function ForgotPasswordFlow({ onClose }) {
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
-  const [demoCode, setDemoCode] = useState('');
-  const [digits, setDigits] = useState(['', '', '', '', '']);
+  const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const digitRefs = useRef([]);
 
   useEffect(() => {
@@ -106,49 +105,73 @@ function ForgotPasswordFlow({ onClose }) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const sendCode = (event) => {
+  const sendCode = async (event) => {
     event.preventDefault();
-    setDemoCode(makeDemoCode());
-    setDigits(['', '', '', '', '']);
     setError('');
-    setStep('verify');
-    requestAnimationFrame(() => digitRefs.current[0]?.focus());
+    setIsSubmitting(true);
+    try {
+      await api('auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      setDigits(['', '', '', '', '', '']);
+      setStep('verify');
+      requestAnimationFrame(() => digitRefs.current[0]?.focus());
+    } catch (err) {
+      setError(err.message || 'Unable to process password reset request.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const updateDigit = (index, value) => {
     const digit = value.replace(/\D/g, '').slice(-1);
     setDigits((current) => current.map((item, itemIndex) => itemIndex === index ? digit : item));
     setError('');
-    if (digit && index < 4) digitRefs.current[index + 1]?.focus();
+    if (digit && index < 5) digitRefs.current[index + 1]?.focus();
   };
 
   const pasteCode = (event) => {
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 5);
+    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
     event.preventDefault();
-    setDigits(Array.from({ length: 5 }, (_, index) => pasted[index] || ''));
+    setDigits(Array.from({ length: 6 }, (_, index) => pasted[index] || ''));
     setError('');
-    digitRefs.current[Math.min(pasted.length, 4)]?.focus();
+    digitRefs.current[Math.min(pasted.length, 5)]?.focus();
   };
 
-  const verifyCode = (event) => {
+  const verifyCode = async (event) => {
     event.preventDefault();
-    if (digits.join('') !== demoCode) {
-      setError('Enter the five-digit demo code shown below.');
+    const code = digits.join('');
+    if (code.length < 6) {
+      setError('Please enter the complete 6-digit verification code.');
       return;
     }
     setError('');
-    setStep('password');
+    setIsSubmitting(true);
+    try {
+      const result = await api('auth/verify-reset-code', { method: 'POST', body: JSON.stringify({ email, code }) });
+      setResetToken(result.resetToken);
+      setStep('password');
+    } catch (err) {
+      setError(err.message || 'Invalid or expired verification code.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const resendCode = () => {
-    setDemoCode(makeDemoCode());
-    setDigits(['', '', '', '', '']);
+  const resendCode = async () => {
     setError('');
-    digitRefs.current[0]?.focus();
+    setIsSubmitting(true);
+    try {
+      await api('auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      setDigits(['', '', '', '', '', '']);
+      digitRefs.current[0]?.focus();
+    } catch (err) {
+      setError(err.message || 'Unable to resend verification code.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const finishPreview = (event) => {
+  const finishReset = async (event) => {
     event.preventDefault();
     if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
       setError('Use at least 8 characters, including a letter and a number.');
@@ -158,10 +181,21 @@ function ForgotPasswordFlow({ onClose }) {
       setError('The passwords do not match.');
       return;
     }
-    setNewPassword('');
-    setConfirmPassword('');
     setError('');
-    setStep('complete');
+    setIsSubmitting(true);
+    try {
+      await api('auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, resetToken, newPassword, confirmPassword }),
+      });
+      setNewPassword('');
+      setConfirmPassword('');
+      setStep('complete');
+    } catch (err) {
+      setError(err.message || 'Unable to reset password.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const goBack = () => {
@@ -174,14 +208,14 @@ function ForgotPasswordFlow({ onClose }) {
     email: 'Forgot Password',
     verify: 'Verify your account',
     password: 'Create New Password',
-    complete: 'Preview Complete',
+    complete: 'Password Reset Complete',
   }[step];
 
   return <div className="recovery-backdrop animate-fade-in" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose();
   }}>
     <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-      <div className="recovery-topline"><span>9:30 PM</span><span aria-hidden="true">● ᴡɪғɪ ▰</span></div>
+      <div className="recovery-topline"><span>MedVault</span><span aria-hidden="true">🔒 Security</span></div>
       <div className="recovery-nav">
         <button type="button" className="recovery-back" onClick={goBack} aria-label={step === 'email' ? 'Back to login' : 'Previous step'}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" /></svg>
@@ -192,64 +226,137 @@ function ForgotPasswordFlow({ onClose }) {
         <p className="recovery-kicker">Secure account access</p>
         <h2 id="recovery-title">{title}</h2>
         {step === 'email' && <>
-          <p className="recovery-subtitle">Reset your password to access MedVault.</p>
+          <p className="recovery-subtitle">Enter your registered email address to receive a secure 6-digit verification code.</p>
           <form onSubmit={sendCode}>
-            <label className="recovery-label" htmlFor="recovery-email">Email</label>
+            <label className="recovery-label" htmlFor="recovery-email">Email Address</label>
             <div className="recovery-input-wrap"><RecoveryIcon name="mail" />
               <input id="recovery-email" type="email" required autoComplete="email" autoFocus placeholder="Enter your email"
                 value={email} onChange={(event) => setEmail(event.target.value)} />
             </div>
-            <button className="recovery-primary" type="submit">Send Code</button>
+            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Sending Code...' : 'Send Verification Code'}
+            </button>
           </form>
         </>}
         {step === 'verify' && <>
-          <p className="recovery-subtitle">Enter the 5-digit code for <strong>{email}</strong>.</p>
+          <p className="recovery-subtitle">Enter the 6-digit verification code sent to <strong>{email}</strong>.</p>
           <form onSubmit={verifyCode}>
-            <div className="recovery-otp" role="group" aria-label="Five-digit verification code">
+            <div className="recovery-otp" role="group" aria-label="Six-digit verification code">
               {digits.map((digit, index) => <input key={index} ref={(node) => { digitRefs.current[index] = node; }}
                 aria-label={`Digit ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete={index === 0 ? 'one-time-code' : 'off'}
                 maxLength={1} value={digit} onChange={(event) => updateDigit(index, event.target.value)}
                 onPaste={pasteCode} onKeyDown={(event) => {
                   if (event.key === 'Backspace' && !digit && index > 0) digitRefs.current[index - 1]?.focus();
                   if (event.key === 'ArrowLeft' && index > 0) digitRefs.current[index - 1]?.focus();
-                  if (event.key === 'ArrowRight' && index < 4) digitRefs.current[index + 1]?.focus();
+                  if (event.key === 'ArrowRight' && index < 5) digitRefs.current[index + 1]?.focus();
                 }} />)}
             </div>
-            <button className="recovery-primary" type="submit">Verification</button>
+            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Verifying...' : 'Verify Code'}
+            </button>
           </form>
-          <p className="recovery-resend">Didn't receive code? <button type="button" onClick={resendCode}>Resend Now</button></p>
-          <p className="recovery-demo-code" role="status">Demo code: <strong>{demoCode}</strong> · No email was sent</p>
+          <p className="recovery-resend">Didn't receive code? <button type="button" onClick={resendCode} disabled={isSubmitting}>Resend Code</button></p>
         </>}
         {step === 'password' && <>
-          <p className="recovery-subtitle">Set a strong password to secure access.</p>
-          <form onSubmit={finishPreview}>
-            <label className="recovery-label" htmlFor="recovery-password">Password</label>
+          <p className="recovery-subtitle">Set a strong new password (at least 8 characters, with letters and numbers).</p>
+          <form onSubmit={finishReset}>
+            <label className="recovery-label" htmlFor="recovery-password">New Password</label>
             <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
               <input id="recovery-password" type={showNewPassword ? 'text' : 'password'} required autoComplete="new-password"
-                placeholder="Enter your password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setError(''); }} />
+                placeholder="Enter your new password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setError(''); }} />
               <button type="button" className="recovery-eye" onClick={() => setShowNewPassword((visible) => !visible)}
                 aria-label={showNewPassword ? 'Hide password' : 'Show password'}><RecoveryIcon name="eye" /></button>
             </div>
-            <label className="recovery-label" htmlFor="recovery-confirm">Confirm Password</label>
+            <label className="recovery-label" htmlFor="recovery-confirm">Confirm New Password</label>
             <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
               <input id="recovery-confirm" type={showConfirmPassword ? 'text' : 'password'} required autoComplete="new-password"
-                placeholder="Confirm your password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setError(''); }} />
+                placeholder="Confirm your new password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setError(''); }} />
               <button type="button" className="recovery-eye" onClick={() => setShowConfirmPassword((visible) => !visible)}
                 aria-label={showConfirmPassword ? 'Hide confirmation' : 'Show confirmation'}><RecoveryIcon name="eye" /></button>
             </div>
-            <button className="recovery-primary" type="submit">Reset Password</button>
+            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Updating Password...' : 'Save New Password'}
+            </button>
           </form>
         </>}
         {step === 'complete' && <div className="recovery-complete">
           <span className="recovery-complete-icon" aria-hidden="true">✓</span>
-          <p>This preview is complete. Your account password has not changed because password recovery is not connected to the server yet.</p>
+          <p>Your password has been reset successfully. You can now log in to MedVault with your new credentials.</p>
           <button className="recovery-primary" type="button" onClick={onClose}>Back to Login</button>
         </div>}
         {error && <p className="recovery-error" role="alert">{error}</p>}
-        {step !== 'complete' && <p className="recovery-demo-note">UI demo only · Password changes are not saved</p>}
       </div>
     </section>
   </div>;
+}
+
+function MfaPromptModal({ mfaData, onSuccess, onCancel }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) {
+      setError('Please enter your 6-digit authenticator code or 8-character backup code.');
+      return;
+    }
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const result = await api('auth/mfa/login', {
+        method: 'POST',
+        body: JSON.stringify({ tempToken: mfaData.tempToken, code: code.trim() }),
+      });
+      onSuccess(result.role, result.username);
+    } catch (err) {
+      setError(err.message || 'Invalid authentication code or backup code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="recovery-backdrop animate-fade-in" role="presentation">
+      <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="mfa-title">
+        <div className="recovery-topline"><span>MedVault</span><span aria-hidden="true">🔒 MFA Protection</span></div>
+        <div className="recovery-content">
+          <p className="recovery-kicker">Multi-Factor Authentication</p>
+          <h2 id="mfa-title">Security Verification</h2>
+          <p className="recovery-subtitle">
+            Enter the 6-digit code from your authenticator app, or enter an emergency backup code to complete sign in.
+          </p>
+          <form onSubmit={handleSubmit}>
+            <label className="recovery-label" htmlFor="mfa-code">Verification Code</label>
+            <div className="recovery-input-wrap">
+              <RecoveryIcon name="lock" />
+              <input
+                id="mfa-code"
+                type="text"
+                autoFocus
+                autoComplete="one-time-code"
+                placeholder="6-digit code or backup code"
+                value={code}
+                onChange={(e) => { setCode(e.target.value); setError(''); }}
+              />
+            </div>
+            {error && <p className="recovery-error" role="alert" style={{ marginTop: '12px' }}>{error}</p>}
+            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Verifying...' : 'Verify & Sign In'}
+            </button>
+            <button
+              type="button"
+              className="recovery-primary"
+              style={{ background: '#f1f5f9', color: '#475569', boxShadow: 'none', marginTop: '10px' }}
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export default function Login({ onLoginSuccess }) {
@@ -263,6 +370,7 @@ export default function Login({ onLoginSuccess }) {
   const [authenticatedRole, setAuthenticatedRole] = useState(null);
   const [modalType, setModalType] = useState(null); // 'forgot' | null
   const [shakeField, setShakeField] = useState(null);
+  const [mfaData, setMfaData] = useState(null);
 
   // Slideshow State with persistence
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -364,13 +472,17 @@ export default function Login({ onLoginSuccess }) {
     setErrors({ username: '', password: '', general: '' });
 
     try {
-      const { role, username: signedInUsername } = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
+      const result = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
       setIsSubmitting(false);
+      if (result.mfaRequired) {
+        setMfaData(result);
+        return;
+      }
       setIsLoggedIn(true);
-      setAuthenticatedRole(role);
+      setAuthenticatedRole(result.role);
       if (onLoginSuccess) {
         setTimeout(() => {
-          onLoginSuccess(role, signedInUsername);
+          onLoginSuccess(result.role, result.username);
         }, 1400);
       }
     } catch (error) {
@@ -732,6 +844,22 @@ export default function Login({ onLoginSuccess }) {
       </div>
 
       {modalType === 'forgot' && <ForgotPasswordFlow onClose={() => setModalType(null)} />}
+      {mfaData && (
+        <MfaPromptModal
+          mfaData={mfaData}
+          onSuccess={(role, signedInUsername) => {
+            setMfaData(null);
+            setIsLoggedIn(true);
+            setAuthenticatedRole(role);
+            if (onLoginSuccess) {
+              setTimeout(() => {
+                onLoginSuccess(role, signedInUsername);
+              }, 1400);
+            }
+          }}
+          onCancel={() => setMfaData(null)}
+        />
+      )}
     </div>
   );
 }

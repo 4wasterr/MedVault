@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint src",
-    "test": "node --test src/sharedState.test.js",
+    "test": "node --test \"src/*.test.js\"",
     "preview": "vite preview"
   },
   "dependencies": {

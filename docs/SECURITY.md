@@ -40,23 +40,31 @@ The recovery targets are operational acceptance targets, not measured service gu
 | --- | --- | --- | --- |
 | Staff registration approval, creation, role changes, deactivation | Allow | Deny | Deny |
 | Doctor profile and secretary assignments | Allow | Deny | Deny |
+| Multi-Factor Authentication (TOTP / Backup codes) | Enforced | Supported | Supported |
+| Password reset & single-use expiring token verification | Allow (self/admin) | Allow (self) | Allow (self) |
 | Aggregate dashboard counts | Allow | Staff dashboard | Staff dashboard |
-| Patient and clinical record read | Deny | Allow (existing access) | Allow |
-| Patient demographics and booking management | Deny | Allow | Allow |
+| Patient and clinical record read | Deny | Minimum Necessary (demographics & booking intake; clinical notes redacted) | Full clinical access |
+| Patient duplicate review and merge | Deny | Allow | Allow |
+| Patient demographics and booking management | Deny | Allow (validated rules & 30-min slots) | Allow |
 | Clinical history, consultation, vitals, notes, visit progress | Deny | Deny write | Allow |
 | Doctor schedule changes | Deny | Deny | Allow for assigned doctors; unassigned doctors remain shared |
-| Import old browser records | Deny | Deny | Allow only before shared clinical records have changed |
+| Import old browser records | Deny | Deny | Strict validation (schema allowlist & invariant checks) |
+| Incremental state synchronization (`/api/sync`) | Deny | Allow (role-filtered delta) | Allow (role-filtered delta) |
 | Security health and audit metadata | Allow | Deny | Deny |
 
-All private routes verify the signed JWT, stored session and current approved account before applying the role rules. Public endpoints are limited to health, CSRF bootstrap, sign-in and pending staff registration. Invalid routes return 404. Existing clinic-wide staff read access is retained; patient/doctor/nurse roles and patient self-service are not added.
+All private routes verify the signed JWT, stored session, MFA status, and current approved account before applying the role rules. Public endpoints are limited to health, CSRF bootstrap, sign-in, MFA login gate, password recovery verification, and pending staff registration. Invalid routes return 404. Minimum necessary PHI access is enforced: receptionists receive redacted demographic views (`?minimum=1`) omitting detailed clinical history and consultation notes, while medical secretaries retain clinical access.
 
 ## Application controls
 
+- Multi-Factor Authentication (MFA): Supports RFC 6238 time-based one-time passwords (TOTP, HMAC-SHA1, 30s window, 6 digits) and pre-generated 8-character single-use emergency backup codes. MFA is mandatory for Super Admin operations and available to all staff roles. Login generates an ephemeral verification token (`mfaRequired: true`) requiring TOTP/backup code validation before session issuance.
+- Password Recovery: Replaces client-side previews with cryptographically secure, expiring (15-minute TTL) single-use 6-digit numeric verification tokens. All recovery endpoints return generic anti-enumeration messages. Failed recovery attempts are rate-limited to 5 per IP/email window before cooldown. Completed resets update the bcrypt password hash and invalidate all active user sessions immediately.
 - Passwords use bcrypt cost 12 with a random salt. New passwords require at least eight characters, a letter and a number, with a maximum of 72 UTF-8 bytes. Production bootstrap passwords require at least twelve characters. Older scrypt hashes upgrade after successful sign-in.
 - Sessions use HS256 JWTs with issuer, audience, subject, role, unique ID and expiry. Only token hashes are persisted. Default limits are eight hours absolute and thirty minutes idle. Polling never extends idle time; trusted keyboard/pointer activity refreshes an active session at most once a minute. Access changes and logout revoke sessions.
 - Five failed sign-ins lock the normalized username for fifteen minutes across IP changes. NGINX limits login/register traffic; unknown accounts use a dummy bcrypt comparison. Failed attempts and access refusals are logged.
+- Booking & Invariant Rules: The API enforces strict operational constraints: rejects past-dated bookings, enforces clinic operating hours (default 08:00–17:00 on weekdays when doctor schedule is absent), restricts appointments to 30-minute increments, and enforces a one-way appointment status lifecycle (`Open` -> `Confirmed` -> `Checked-In` / `Waiting` -> `In Consultation` -> `Completed` / `Cancelled`). Cancelled and Completed appointments cannot be reopened.
+- Relational Schema & Duplicate Prevention: Domain entities are normalized into dedicated relational tables (`patients_rel`, `appointments_rel`, `schedules_rel`) with foreign keys, indexes, and automated sync. Patient duplicate detection flags normalized name, date-of-birth, and contact collisions, requiring explicit confirmation or resolution via the `/api/patients/merge` endpoint.
 - AES-256-GCM uses independent random 96-bit IVs, authentication tags and record/field-path associated data. Sensitive clinical groups and identifying patient fields are encrypted before SQLite writes, including audit snapshots. Existing plaintext records and legacy audit snapshots migrate in a transaction at startup. Workflow metadata such as record IDs, statuses and appointment times remains queryable. This is field encryption, not encryption of every database byte.
-- SQL values use prepared statements. Incoming stored text is stripped of markup and disallowed control characters; nested/deep and oversized requests are rejected. Optimistic `before` snapshots preserve their exact stored text for conflict checks. React escapes rendered text; CSP limits scripts to the same origin.
+- SQL values use prepared statements. Incoming stored text is stripped of markup and disallowed control characters; nested/deep and oversized requests are rejected. Change payloads are strictly validated against field allowlists to prevent schema drift. React escapes rendered text; CSP limits scripts to the same origin.
 - JSON mutations require a CSRF token matching a Strict HttpOnly cookie and reject hostile Origin/cross-site fetch headers. HTTPS production cookies add Secure; Helmet supplies CSP, HSTS, frame and MIME protections. Responses containing API data are not cached.
 - Audit entries hash their metadata, encrypted snapshots and previous entry hash. SQLite triggers reject UPDATE/DELETE. Writes and their audits commit together; the chain is verified on startup. Admin endpoints expose verification and metadata without clinical audit payloads. Committed audit metadata and checkpoints are emitted to the host journal.
 
@@ -112,7 +120,7 @@ Likelihood and impact use 1 (low), 2 (moderate), 3 (high). Risk = likelihood × 
 
 On 2026-10-11, Node.js v24.16.0 on this Windows workspace, the isolated synthetic SQLite load fixture completed 200/200 state reads with 20 concurrent clients: p50 177.38 ms, p95 280.64 ms, p99 288.29 ms, 106.26 requests/second. These figures measure the local application and synthetic fixture, excluding production TLS, remote networking and a large clinic database. The harness writes fresh measurements to ignored `output/security/load-results.json`. Re-run against a staging host with representative synthetic records before setting production capacity targets.
 
-Security metrics are the rejection and integrity checks above. The backend suite passes 23 tests; the frontend suite, build, lint and manual browser-origin sign-in through Vite also pass. Reliability is verified locally by reopening encrypted records and by backup/restore; actual container/host restart duration and RTO remain to be measured. Dependency audits reported zero known vulnerabilities after updating the server lockfile and the client `source-map-js` patch; this is a point-in-time check.
+Security metrics are the rejection and integrity checks above. The backend suite passes 31 tests (including gap validations for MFA, password resets, minimum-necessary PHI, relational sync, and booking rules); the frontend suite passes 21 tests across booking rules, registration policies, recovery flow, accessibility, multi-user concurrency, and state synchronization; build, lint and manual browser-origin sign-in through Vite also pass. Reliability is verified locally by reopening encrypted records and by backup/restore; actual container/host restart duration and RTO remain to be measured. Dependency audits reported zero known vulnerabilities after updating the server lockfile and the client `source-map-js` patch; this is a point-in-time check.
 
 ## Run assurance checks
 

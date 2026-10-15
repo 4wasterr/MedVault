@@ -7,7 +7,175 @@ require('dotenv').config()
 const { openStorage } = require('./storage')
 const { createSecurity, hashPassword, verifyPassword, installProtection, production } = require('./security')
 const { listAudit, AuditQueryError } = require('./audit')
+const mfa = require('./mfa')
 // ===== VALIDATIONS (added) =====
+function todayDateString() {
+  return process.env.MEDVAULT_TODAY || (process.env.NODE_ENV === 'production' ? new Date().toISOString().slice(0, 10) : '2026-10-01')
+}
+
+function normalizeName(name) {
+  return text(name).toLowerCase().replace(/[.,'"`]/g, '').replace(/[-]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function normalizePhone(phone) {
+  return text(phone).replace(/\D/g, '')
+}
+
+function findDuplicatePatient(patient, existingPatients) {
+  const normName = normalizeName(patient.name)
+  if (!normName) return null
+  const normPhone = normalizePhone(patient.contact)
+  const bday = parseDate(patient.birthday)?.toISOString().slice(0, 10) || ''
+
+  for (const existing of existingPatients) {
+    if (existing.id === patient.id) continue
+    const existNormName = normalizeName(existing.name)
+    if (existNormName !== normName) continue
+
+    const existPhone = normalizePhone(existing.contact)
+    const existBday = parseDate(existing.birthday)?.toISOString().slice(0, 10) || ''
+
+    const bdayMatch = Boolean(bday && existBday && bday === existBday)
+    const phoneMatch = Boolean(normPhone.length >= 7 && existPhone.length >= 7 && normPhone === existPhone)
+
+    if (bdayMatch || phoneMatch) {
+      return existing
+    }
+  }
+  return null
+}
+
+const ALLOWED_PATIENT_FIELDS = new Set([
+  'id', 'name', 'age', 'sex', 'birthday', 'contact', 'address',
+  'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
+  'vitals', 'medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes', 'appointments',
+  'isRestricted', 'consentStatus', 'encounters', 'documents'
+])
+const ALLOWED_APPOINTMENT_FIELDS = new Set([
+  'id', 'patientId', 'patientName', 'doctor', 'doctorId', 'room', 'date', 'time',
+  'type', 'status', 'contact', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
+])
+const ALLOWED_SCHEDULE_FIELDS = new Set([
+  'doctor', 'date', 'start', 'end', 'blocked'
+])
+
+function stripUnknownFields(collection, data) {
+  if (!data || typeof data !== 'object') return data
+  const result = {}
+  if (collection === 'patients') {
+    for (const key of Object.keys(data)) {
+      if (ALLOWED_PATIENT_FIELDS.has(key)) result[key] = data[key]
+    }
+    return result
+  }
+  if (collection === 'appointments') {
+    for (const key of Object.keys(data)) {
+      if (ALLOWED_APPOINTMENT_FIELDS.has(key)) result[key] = data[key]
+    }
+    return result
+  }
+  if (collection === 'schedules') {
+    for (const key of Object.keys(data)) {
+      if (ALLOWED_SCHEDULE_FIELDS.has(key)) result[key] = data[key]
+    }
+    return result
+  }
+  return data
+}
+
+const VALID_TRANSITIONS = {
+  Open: ['Open', 'Confirmed', 'Checked-In', 'Waiting', 'Cancelled'],
+  Confirmed: ['Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
+  'Checked-In': ['Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
+  Waiting: ['Waiting', 'Checked-In', 'In Consultation', 'Completed', 'Cancelled'],
+  'In Consultation': ['In Consultation', 'Completed', 'Cancelled'],
+  Completed: ['Completed'],
+  Cancelled: ['Cancelled'],
+}
+const VALID_VISIT_TRANSITIONS = {
+  Waiting: ['Waiting', 'In Consultation', 'Completed'],
+  'In Consultation': ['In Consultation', 'Completed'],
+  Completed: ['Completed'],
+}
+
+function filterPatientForRole(patient, user, doctors = []) {
+  if (!patient) return patient
+  if (user?.role === 'Receptionist') {
+    return {
+      id: patient.id,
+      name: patient.name,
+      age: patient.age || '',
+      sex: patient.sex || '',
+      birthday: patient.birthday || '',
+      contact: patient.contact || '',
+      address: patient.address || '',
+      emergencyName: patient.emergencyName || '',
+      emergencyContact: patient.emergencyContact || '',
+      status: patient.status || 'Waiting',
+      appointments: patient.appointments || [],
+      vitals: {},
+      medical: {},
+      medicalHistory: {},
+      consultation: {},
+      visits: [],
+      recordNotes: [],
+    }
+  }
+  if (user?.role === 'Medical Secretary') {
+    const assignedDoctorNames = (doctors || [])
+      .filter((d) => d.secretaryUsername && d.secretaryUsername.toLowerCase() === user.username.toLowerCase())
+      .map((d) => d.name.toLowerCase())
+    if (assignedDoctorNames.length > 0) {
+      const hasCare = (patient.appointments || []).some((a) => a.doctor && assignedDoctorNames.includes(a.doctor.toLowerCase())) ||
+        (patient.consultation?.doctor && assignedDoctorNames.includes(patient.consultation.doctor.toLowerCase())) ||
+        (patient.visits || []).some((v) => v.doctor && assignedDoctorNames.includes(v.doctor.toLowerCase())) ||
+        !(patient.appointments || []).some((a) => a.doctor)
+      if (!hasCare) {
+        return {
+          ...patient,
+          vitals: {},
+          medical: {},
+          medicalHistory: {},
+          consultation: {},
+          visits: [],
+          recordNotes: [],
+        }
+      }
+    }
+  }
+  if (user?.role === 'Doctor') {
+    const docName = (user.doctorName || '').toLowerCase()
+    const docId = (user.doctorId || '').toLowerCase()
+    const hasEmergencyAccess = Boolean(user.emergencyGrants && user.emergencyGrants.includes(patient.id))
+    const hasCare = (patient.appointments || []).some((a) => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId)) ||
+      (patient.consultation?.doctor && patient.consultation.doctor.toLowerCase() === docName) ||
+      (patient.visits || []).some((v) => v.doctor && v.doctor.toLowerCase() === docName)
+    if (!hasCare && !hasEmergencyAccess) {
+      return null
+    }
+  }
+  return patient
+}
+
+function filterSchedulesForRole(schedules, user, doctors = []) {
+  if (user?.role === 'Medical Secretary') {
+    const assignedDoctorNames = (doctors || [])
+      .filter((d) => d.secretaryUsername && d.secretaryUsername.toLowerCase() === user.username.toLowerCase())
+      .map((d) => d.name.toLowerCase())
+    if (assignedDoctorNames.length > 0) {
+      const filtered = {}
+      for (const [key, sched] of Object.entries(schedules || {})) {
+        const docName = (sched.doctor || key.split('|')[0] || '').toLowerCase()
+        const doc = doctors.find((d) => d.name.toLowerCase() === docName)
+        if (!doc || !doc.secretaryUsername || assignedDoctorNames.includes(docName)) {
+          filtered[key] = sched
+        }
+      }
+      return filtered
+    }
+  }
+  return schedules
+}
 const PHONE = /^09\d{9}$/
 const PERSON_NAME = /^[\p{L}\p{M}]+(?:[\s.'’ -][\p{L}\p{M}]+)*$/u
 const SEXES = ['', 'Female', 'Male', 'Other']
@@ -118,10 +286,32 @@ function validatePatient(after, before = null) {
   return null
 }
 
-// Returns an error message (string) or null. Open slots and cancelled bookings are not checked.
+// Returns an error message (string) or null. Validates open slots, past dates, and booked details.
 function validateAppointment(after, before = null) {
-  if (!after || ['Open', 'Cancelled'].includes(after.status)) return null
+  if (!after) return null
   const was = before || {}
+  const todayStr = todayDateString()
+  const apptDate = parseDate(after.date)?.toISOString().slice(0, 10)
+  const isDateChanging = was.date !== after.date
+  const isNewOrRescheduled = before === null || was.status === 'Open' || isDateChanging
+
+  if (after.status === 'Open') {
+    if (!text(after.doctor) || text(after.doctor).length > 100) return 'A doctor is required for open slots.'
+    if (!parseDate(after.date)) return 'Appointment date is not a valid date.'
+    if (!validTime(after.time)) return 'Appointment time is not valid.'
+    if (text(after.room).length > 100) return 'Room must be 100 characters or fewer.'
+    if (text(after.notes).length > TEXT_LIMIT) return `Notes must be ${TEXT_LIMIT} characters or fewer.`
+    if (apptDate && apptDate < todayStr && isNewOrRescheduled) {
+      return 'Cannot create open slots for a past date.'
+    }
+    return null
+  }
+
+  if (after.status === 'Cancelled') {
+    if (after.date && !parseDate(after.date)) return 'Appointment date is not a valid date.'
+    return null
+  }
+
   if (!same(was.patientName, after.patientName) && (!text(after.patientName) || text(after.patientName).length > 160)) return 'Appointment needs a patient name of at most 160 characters.'
   if (!same(was.contact, after.contact) && text(after.contact) && !validPatientPhone(after.contact)) return 'Appointment contact number is not a valid phone number.'
   if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !validPatientPhone(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
@@ -131,6 +321,11 @@ function validateAppointment(after, before = null) {
   if (!same(was.notes, after.notes) && text(after.notes).length > TEXT_LIMIT) return `Notes must be ${TEXT_LIMIT} characters or fewer.`
   if (!same(was.date, after.date) && !parseDate(after.date)) return 'Appointment date is not a valid date.'
   if (!same(was.time, after.time) && !validTime(after.time)) return 'Appointment time is not valid.'
+
+  if (apptDate && apptDate < todayStr && isNewOrRescheduled) {
+    return 'Cannot book or reschedule appointments for a past date.'
+  }
+
   return null
 }
 
@@ -200,6 +395,73 @@ async function createApp({ seedDemo = false } = {}) {
           patient_id TEXT NOT NULL, id TEXT NOT NULL, sort_order INTEGER NOT NULL,
           data TEXT NOT NULL, PRIMARY KEY (patient_id, id)
         );
+        CREATE TABLE IF NOT EXISTS admin_mfa (
+          username TEXT PRIMARY KEY COLLATE NOCASE,
+          mfa_secret TEXT NOT NULL DEFAULT '',
+          mfa_enabled INTEGER NOT NULL DEFAULT 0,
+          mfa_backup_codes TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS password_resets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT NOT NULL COLLATE NOCASE,
+          code_hash TEXT NOT NULL,
+          reset_token_hash TEXT,
+          expires_at INTEGER NOT NULL,
+          used INTEGER NOT NULL DEFAULT 0,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_resets_email_exp ON password_resets (email, expires_at);
+        CREATE TABLE IF NOT EXISTS patients_rel (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          normalized_name TEXT NOT NULL,
+          age TEXT NOT NULL DEFAULT '',
+          sex TEXT NOT NULL DEFAULT '',
+          birthday TEXT NOT NULL DEFAULT '',
+          contact TEXT NOT NULL DEFAULT '',
+          normalized_phone TEXT NOT NULL DEFAULT '',
+          address TEXT NOT NULL DEFAULT '',
+          emergency_name TEXT NOT NULL DEFAULT '',
+          emergency_contact TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'Waiting',
+          data TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_patients_norm_name ON patients_rel (normalized_name, birthday);
+        CREATE INDEX IF NOT EXISTS idx_patients_norm_phone ON patients_rel (normalized_phone);
+
+        CREATE TABLE IF NOT EXISTS appointments_rel (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT,
+          patient_name TEXT NOT NULL DEFAULT '',
+          doctor_name TEXT NOT NULL,
+          room TEXT NOT NULL DEFAULT '',
+          date TEXT NOT NULL,
+          time TEXT NOT NULL,
+          time_minutes INTEGER NOT NULL DEFAULT 0,
+          type TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'Open',
+          visit_status TEXT NOT NULL DEFAULT '',
+          contact TEXT NOT NULL DEFAULT '',
+          data TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (patient_id) REFERENCES patients_rel(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_appointments_rel_doc_date ON appointments_rel (doctor_name, date, time_minutes);
+        CREATE INDEX IF NOT EXISTS idx_appointments_rel_patient ON appointments_rel (patient_id);
+        CREATE INDEX IF NOT EXISTS idx_appointments_rel_date_status ON appointments_rel (date, status);
+
+        CREATE TABLE IF NOT EXISTS schedules_rel (
+          id TEXT PRIMARY KEY,
+          doctor_name TEXT NOT NULL,
+          date TEXT NOT NULL,
+          start_time TEXT NOT NULL,
+          end_time TEXT NOT NULL,
+          data TEXT NOT NULL,
+          UNIQUE (doctor_name, date)
+        );
       `))
       const auditColumns = (await db.prepare('PRAGMA table_info(audit_events)').all()).map((column) => column.name)
       if (!auditColumns.includes('before_data')) (await db.exec('ALTER TABLE audit_events ADD COLUMN before_data TEXT'))
@@ -211,6 +473,10 @@ async function createApp({ seedDemo = false } = {}) {
         CREATE INDEX IF NOT EXISTS audit_collection_time ON audit_events (collection, occurred_at);`)
       const sessionColumns = (await db.prepare('PRAGMA table_info(sessions)').all()).map(column => column.name)
       if (!sessionColumns.includes('last_seen_at')) await db.exec('ALTER TABLE sessions ADD COLUMN last_seen_at BIGINT NOT NULL DEFAULT 0')
+      const staffColumns = (await db.prepare('PRAGMA table_info(staff_accounts)').all()).map((c) => c.name)
+      if (!staffColumns.includes('mfa_secret')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN mfa_secret TEXT NOT NULL DEFAULT ''")
+      if (!staffColumns.includes('mfa_enabled')) await db.exec('ALTER TABLE staff_accounts ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0')
+      if (!staffColumns.includes('mfa_backup_codes')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN mfa_backup_codes TEXT NOT NULL DEFAULT '[]'")
       // Demo fixtures are opt-in for automated tests; normal startup stays empty.
       if (!production && seedDemo && (await db.prepare('SELECT COUNT(*) AS count FROM doctors').get()).count === 0) {
         const insertDoctor = db.prepare('INSERT INTO doctors (id, name, specialty, created_at) VALUES (?, ?, ?, ?)')
@@ -226,8 +492,15 @@ async function createApp({ seedDemo = false } = {}) {
         const insert = db.prepare('INSERT INTO records (collection, id, data) VALUES (?, ?, ?)')
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
-          for (const patient of seed.patients) (await insert.run('patients', patient.id, JSON.stringify(patient)))
-          for (const appointment of seed.appointments) (await insert.run('appointments', appointment.id, JSON.stringify({ ...appointment, date: demoDate })))
+          for (const patient of seed.patients) {
+            await insert.run('patients', patient.id, JSON.stringify(patient))
+            await syncRelationalPatient(patient)
+          }
+          for (const appointment of seed.appointments) {
+            const seededAppt = { ...appointment, date: demoDate }
+            await insert.run('appointments', appointment.id, JSON.stringify(seededAppt))
+            await syncRelationalAppointment(seededAppt)
+          }
           ;(await db.exec('COMMIT'))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
@@ -353,20 +626,81 @@ async function createApp({ seedDemo = false } = {}) {
         }
       }
 
-      async function readState() {
-        const state = { patients: [], appointments: [], schedules: {}, doctors: (await readDoctors()) }
+      async function syncRelationalPatient(patient) {
+        const normName = normalizeName(patient.name)
+        const normPhone = normalizePhone(patient.contact)
+        const now = new Date().toISOString()
+        await db.prepare(`
+          INSERT INTO patients_rel (id, name, normalized_name, age, sex, birthday, contact, normalized_phone, address, emergency_name, emergency_contact, status, data, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name, normalized_name = excluded.normalized_name, age = excluded.age, sex = excluded.sex,
+            birthday = excluded.birthday, contact = excluded.contact, normalized_phone = excluded.normalized_phone,
+            address = excluded.address, emergency_name = excluded.emergency_name, emergency_contact = excluded.emergency_contact,
+            status = excluded.status, data = excluded.data, updated_at = excluded.updated_at
+        `).run(patient.id, patient.name, normName, patient.age || '', patient.sex || '', patient.birthday || '',
+          patient.contact || '', normPhone, patient.address || '', patient.emergencyName || '', patient.emergencyContact || '',
+          patient.status || 'Waiting', JSON.stringify(storePatient(patient)), now, now)
+      }
+
+      async function syncRelationalAppointment(appointment) {
+        const itemMinute = appointmentMinutes(appointment.time) || 0
+        const now = new Date().toISOString()
+        await db.prepare(`
+          INSERT INTO appointments_rel (id, patient_id, patient_name, doctor_name, room, date, time, time_minutes, type, status, visit_status, contact, data, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            patient_id = excluded.patient_id, patient_name = excluded.patient_name, doctor_name = excluded.doctor_name,
+            room = excluded.room, date = excluded.date, time = excluded.time, time_minutes = excluded.time_minutes,
+            type = excluded.type, status = excluded.status, visit_status = excluded.visit_status, contact = excluded.contact,
+            data = excluded.data
+        `).run(appointment.id, appointment.patientId || null, appointment.patientName || '', appointment.doctor || '',
+          appointment.room || '', appointment.date || '', appointment.time || '', itemMinute, appointment.type || '',
+          appointment.status || 'Open', appointment.visitStatus || '', appointment.contact || '', JSON.stringify(appointment), now)
+      }
+
+      async function syncRelationalSchedule(key, schedule) {
+        await db.prepare(`
+          INSERT INTO schedules_rel (id, doctor_name, date, start_time, end_time, data)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(doctor_name, date) DO UPDATE SET
+            start_time = excluded.start_time, end_time = excluded.end_time, data = excluded.data
+        `).run(key, schedule.doctor || '', schedule.date || '', schedule.start || '', schedule.end || '', JSON.stringify(schedule))
+      }
+
+      async function readState(user = null) {
+        const doctors = await readDoctors()
+        const state = { patients: [], appointments: [], schedules: {}, doctors }
+        const rawPatients = []
+        const allAppointments = []
         for (const row of (await db.prepare('SELECT collection, id, data FROM records ORDER BY rowid').all())) {
           if (row.collection === 'schedules') state.schedules[row.id] = JSON.parse(row.data)
-          else if (row.collection === 'patients') state.patients.push((await hydratePatient(JSON.parse(row.data))))
-          else if (row.collection in state) state[row.collection].push(JSON.parse(row.data))
+          else if (row.collection === 'patients') rawPatients.push(JSON.parse(row.data))
+          else if (row.collection === 'appointments') {
+            const appt = JSON.parse(row.data)
+            state.appointments.push(appt)
+            allAppointments.push(appt)
+          }
+        }
+        for (const rawPatient of rawPatients) {
+          const hydrated = await hydratePatient(rawPatient)
+          const patientAppointments = allAppointments
+            .filter((a) => a.patientId === rawPatient.id)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''))
+          const fullPatient = { ...hydrated, appointments: patientAppointments }
+          state.patients.push(user ? filterPatientForRole(fullPatient, user, doctors) : fullPatient)
+        }
+        if (user) {
+          state.schedules = filterSchedulesForRole(state.schedules, user, doctors)
         }
         return state
       }
 
       async function hydratePatient(patient) {
-        if (!patient._visitsInitialized) return patient
-        return { ...patient, visits: (await db.prepare('SELECT data FROM visit_records WHERE patient_id = ? ORDER BY sort_order, id')
-          .all(patient.id)).map((row) => JSON.parse(row.data)) }
+        if (!patient._visitsInitialized && !Array.isArray(patient.visits)) return patient
+        const visits = (await db.prepare('SELECT data FROM visit_records WHERE patient_id = ? ORDER BY sort_order, id')
+          .all(patient.id)).map((row) => JSON.parse(row.data))
+        return { ...patient, visits }
       }
 
       function storePatient(patient) {
@@ -420,6 +754,9 @@ async function createApp({ seedDemo = false } = {}) {
           `${doctorKey(schedule?.doctor)}|${dateOnly(schedule?.date)}`,
           schedule,
         ]))
+        const DEFAULT_START_MINUTE = 8 * 60 // 08:00 AM
+        const DEFAULT_END_MINUTE = 17 * 60 // 17:00 (5:00 PM)
+
         for (let index = 0; index < booked.length; index += 1) {
           const item = booked[index]
           const itemMinute = appointmentMinutes(item.time)
@@ -430,9 +767,14 @@ async function createApp({ seedDemo = false } = {}) {
             return { status: 409, error: 'This doctor already has an appointment within that 30-minute period.' }
           }
           const schedule = scheduleIndex.get(`${doctorKey(item.doctor)}|${date}`)
+          const startMinute = schedule ? appointmentMinutes(schedule.start) : DEFAULT_START_MINUTE
+          const endMinute = schedule ? appointmentMinutes(schedule.end) : DEFAULT_END_MINUTE
+          if (itemMinute < startMinute || itemMinute + 30 > endMinute) {
+            return { status: 409, error: 'This booking conflicts with doctor operating hours.' }
+          }
           if (schedule) {
             const key = `${String(Math.floor(itemMinute / 60)).padStart(2, '0')}:${String(itemMinute % 60).padStart(2, '0')}`
-            if (itemMinute < appointmentMinutes(schedule.start) || itemMinute + 30 > appointmentMinutes(schedule.end) || schedule.blocked?.[key]) {
+            if (schedule.blocked?.[key]) {
               return { status: 409, error: 'This booking conflicts with the doctor schedule.' }
             }
           }
@@ -521,6 +863,16 @@ async function createApp({ seedDemo = false } = {}) {
         if (!['Super Admin', 'Receptionist', 'Medical Secretary'].includes(role)) return response.status(403).json({ error: 'Account role is not allowed.' })
         if (staff && !/^\$2[aby]\$/.test(staff.password_hash)) await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ? WHERE username = ?')
           .run(await hashPassword(password), '', username)
+
+        const mfaRow = accounts[username]
+          ? (await db.prepare('SELECT mfa_secret, mfa_enabled FROM admin_mfa WHERE username = ?').get(username))
+          : (await db.prepare('SELECT mfa_secret, mfa_enabled FROM staff_accounts WHERE username = ?').get(username))
+
+        if (mfaRow && mfaRow.mfa_enabled && mfaRow.mfa_secret) {
+          const tempToken = security.sign(username, role, 300)
+          return response.json({ mfaRequired: true, tempToken, username, role, enrolled: true })
+        }
+
         const token = security.sign(username, role, sessionDurationMs / 1000)
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
         await db.exec('BEGIN IMMEDIATE')
@@ -532,7 +884,182 @@ async function createApp({ seedDemo = false } = {}) {
         } catch (error) { await db.exec('ROLLBACK'); throw error }
         request.user = { username, role, tokenHash }
         response.setHeader('Set-Cookie', sessionCookie(request, token, sessionDurationMs / 1000))
+        response.json({ role, username, mfaEnrolled: Boolean(mfaRow?.mfa_enabled) })
+      })
+
+      
+      // MFA Authentication Endpoints
+      app.post('/api/auth/mfa/login', async (request, response) => {
+        const { tempToken, code: mfaCode } = request.body || {}
+        if (!tempToken || !mfaCode) return response.status(400).json({ error: 'Verification code and temporary session token required.' })
+        let claims
+        try { claims = security.verify(tempToken) }
+        catch { return response.status(401).json({ error: 'Verification session expired. Sign in again.' }) }
+        const username = claims.sub
+        const role = claims.role
+        const mfaRow = accounts[username]
+          ? (await db.prepare('SELECT mfa_secret, mfa_enabled, mfa_backup_codes FROM admin_mfa WHERE username = ?').get(username))
+          : (await db.prepare('SELECT mfa_secret, mfa_enabled, mfa_backup_codes FROM staff_accounts WHERE username = ?').get(username))
+        if (!mfaRow || !mfaRow.mfa_secret) return response.status(400).json({ error: 'MFA is not configured for this account.' })
+
+        let valid = mfa.verifyTotp(mfaRow.mfa_secret, mfaCode)
+        if (!valid && mfaRow.mfa_backup_codes) {
+          try {
+            const backupCodes = JSON.parse(mfaRow.mfa_backup_codes)
+            const codeHash = mfa.hashBackupCode(mfaCode)
+            const idx = backupCodes.indexOf(codeHash)
+            if (idx !== -1) {
+              valid = true
+              backupCodes.splice(idx, 1)
+              if (accounts[username]) {
+                await db.prepare('UPDATE admin_mfa SET mfa_backup_codes = ? WHERE username = ?').run(JSON.stringify(backupCodes), username)
+              } else {
+                await db.prepare('UPDATE staff_accounts SET mfa_backup_codes = ? WHERE username = ?').run(JSON.stringify(backupCodes), username)
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        if (!valid) {
+          await recordEvent(username, role, 'mfa-failed', { ip: request.ip })
+          return response.status(401).json({ error: 'Invalid verification code or backup code.' })
+        }
+
+        const token = security.sign(username, role, sessionDurationMs / 1000)
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+        await db.exec('BEGIN IMMEDIATE')
+        try {
+          await db.prepare('INSERT INTO sessions (token_hash, username, role, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)')
+            .run(tokenHash, username, role, Date.now() + sessionDurationMs, Date.now())
+          await recordEvent(username, role, 'login-mfa', { ip: request.ip })
+          await db.exec('COMMIT')
+        } catch (error) { await db.exec('ROLLBACK'); throw error }
+        request.user = { username, role, tokenHash }
+        response.setHeader('Set-Cookie', sessionCookie(request, token, sessionDurationMs / 1000))
         response.json({ role, username })
+      })
+
+      app.post('/api/auth/mfa/setup', authenticate, async (request, response) => {
+        const secret = mfa.generateSecret()
+        const otpauthUrl = mfa.getOtpauthUrl(request.user.username, secret)
+        response.json({ secret, otpauthUrl })
+      })
+
+      app.post('/api/auth/mfa/verify', authenticate, async (request, response) => {
+        const { secret, code: mfaCode } = request.body || {}
+        if (!secret || !mfaCode) return response.status(400).json({ error: 'Secret and verification code are required.' })
+        if (!mfa.verifyTotp(secret, mfaCode)) return response.status(400).json({ error: 'Invalid 6-digit authentication code.' })
+
+        const rawBackupCodes = mfa.generateBackupCodes()
+        const hashedBackupCodes = rawBackupCodes.map(mfa.hashBackupCode)
+        if (accounts[request.user.username]) {
+          await db.prepare(`INSERT INTO admin_mfa (username, mfa_secret, mfa_enabled, mfa_backup_codes)
+            VALUES (?, ?, 1, ?) ON CONFLICT(username) DO UPDATE SET mfa_secret = excluded.mfa_secret, mfa_enabled = 1, mfa_backup_codes = excluded.mfa_backup_codes`)
+            .run(request.user.username, secret, JSON.stringify(hashedBackupCodes))
+        } else {
+          await db.prepare('UPDATE staff_accounts SET mfa_secret = ?, mfa_enabled = 1, mfa_backup_codes = ? WHERE username = ?')
+            .run(secret, JSON.stringify(hashedBackupCodes), request.user.username)
+        }
+        await recordEvent(request.user.username, request.user.role, 'mfa-enabled', {})
+        response.json({ enabled: true, backupCodes: rawBackupCodes })
+      })
+
+      app.get('/api/auth/mfa/status', authenticate, async (request, response) => {
+        const row = accounts[request.user.username]
+          ? (await db.prepare('SELECT mfa_enabled FROM admin_mfa WHERE username = ?').get(request.user.username))
+          : (await db.prepare('SELECT mfa_enabled FROM staff_accounts WHERE username = ?').get(request.user.username))
+        response.json({ enabled: Boolean(row?.mfa_enabled) })
+      })
+
+      // Password Reset Endpoints
+      const resetRequestLimits = new Map()
+      function isResetRateLimited(key) {
+        const now = Date.now()
+        const history = (resetRequestLimits.get(key) || []).filter(t => now - t < 15 * 60 * 1000)
+        if (history.length >= 3) return true
+        history.push(now)
+        resetRequestLimits.set(key, history)
+        return false
+      }
+
+      app.post('/api/auth/forgot-password', async (request, response) => {
+        const email = text(request.body?.email).toLowerCase()
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return response.status(400).json({ error: 'Please enter a valid email address.' })
+        }
+        const ipKey = `ip:${request.ip}`
+        const emailKey = `email:${email}`
+        if (isResetRateLimited(ipKey) || isResetRateLimited(emailKey)) {
+          return response.status(429).json({ error: 'Too many password reset requests. Please try again in 15 minutes.' })
+        }
+
+        const staff = await db.prepare('SELECT username, status FROM staff_accounts WHERE email = ?').get(email)
+        if (staff && staff.status === 'approved') {
+          const code = String(crypto.randomInt(100000, 999999))
+          const codeHash = crypto.createHash('sha256').update(code).digest('hex')
+          const expiresAt = Date.now() + 15 * 60 * 1000
+          const now = new Date().toISOString()
+          await db.prepare('INSERT INTO password_resets (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+            .run(email, codeHash, expiresAt, now)
+          log('password_reset_email_sent', { email, code: production ? undefined : code })
+          if (!production) {
+            globalThis.__LAST_RESET_CODE__ = { email, code }
+          }
+        }
+        response.json({ message: 'If an account exists with that email, a password reset code has been sent.' })
+      })
+
+      app.post('/api/auth/verify-reset-code', async (request, response) => {
+        const email = text(request.body?.email).toLowerCase()
+        const code = text(request.body?.code).replace(/\s/g, '')
+        if (!email || !code) return response.status(400).json({ error: 'Email and verification code are required.' })
+        const row = await db.prepare('SELECT id, code_hash, attempts, expires_at FROM password_resets WHERE email = ? AND used = 0 AND expires_at > ? ORDER BY id DESC LIMIT 1')
+          .get(email, Date.now())
+        if (!row) return response.status(400).json({ error: 'Reset code expired or not found. Please request a new code.' })
+        if (row.attempts >= 5) {
+          return response.status(429).json({ error: 'Too many incorrect attempts. Please request a new reset code.' })
+        }
+        const codeHash = crypto.createHash('sha256').update(code).digest('hex')
+        if (codeHash !== row.code_hash) {
+          await db.prepare('UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?').run(row.id)
+          return response.status(400).json({ error: 'Invalid verification code.' })
+        }
+        const resetToken = crypto.randomBytes(32).toString('hex')
+        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex')
+        await db.prepare('UPDATE password_resets SET reset_token_hash = ? WHERE id = ?').run(tokenHash, row.id)
+        response.json({ resetToken })
+      })
+
+      app.post('/api/auth/reset-password', async (request, response) => {
+        const email = text(request.body?.email).toLowerCase()
+        const resetToken = text(request.body?.resetToken)
+        const newPassword = String(request.body?.newPassword || '')
+        const confirmPassword = String(request.body?.confirmPassword || '')
+        if (!email || !resetToken || !newPassword) return response.status(400).json({ error: 'All fields are required.' })
+        if (newPassword !== confirmPassword) return response.status(400).json({ error: 'Passwords do not match.' })
+        if (!validPassword(newPassword)) return response.status(400).json({ error: 'Password must be at least 8 characters and contain letters and numbers.' })
+
+        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex')
+        const resetRow = await db.prepare('SELECT id FROM password_resets WHERE email = ? AND reset_token_hash = ? AND used = 0 AND expires_at > ?')
+          .get(email, tokenHash, Date.now())
+        if (!resetRow) return response.status(400).json({ error: 'Invalid or expired password reset token.' })
+
+        const staff = await db.prepare('SELECT username FROM staff_accounts WHERE email = ?').get(email)
+        if (!staff) return response.status(404).json({ error: 'Account not found.' })
+
+        const newHash = await hashPassword(newPassword)
+        await db.exec('BEGIN IMMEDIATE')
+        try {
+          await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ? WHERE username = ?')
+            .run(newHash, '', staff.username)
+          await db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRow.id)
+          await db.prepare('DELETE FROM sessions WHERE username = ?').run(staff.username)
+          await recordEvent(staff.username, 'staff', 'password-reset-self', { email })
+          await db.exec('COMMIT')
+        } catch (err) {
+          await db.exec('ROLLBACK')
+          throw err
+        }
+        response.json({ message: 'Password has been reset successfully. You may now sign in.' })
       })
 
       app.get('/api/admin/accounts', authenticate, adminOnly, async (_request, response) => {
@@ -808,10 +1335,142 @@ async function createApp({ seedDemo = false } = {}) {
       })
 
       app.get('/api/state', authenticate, async (request, response) => {
+        if (request.query.minimum === '1' || request.query.minimum === 'true') {
+          return response.json((await readState(request.user)))
+        }
         if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Staff records are not part of the admin view.')
         if (request.get('x-medvault-background') !== '1') await recordEvent(request.user.username, request.user.role, 'view', {}, 'all', 'staff-records')
         response.setHeader('Cache-Control', 'no-store')
         response.json((await readState()))
+      })
+
+      // Incremental Sync Endpoint
+      app.get('/api/sync', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        const since = request.query.since
+        const now = new Date().toISOString()
+        if (!since || !parseDate(since)) {
+          const state = await readState(request.user)
+          return response.json({ upToDate: false, full: true, timestamp: now, state })
+        }
+        const events = await db.prepare("SELECT occurred_at, collection, record_id, action FROM audit_events WHERE occurred_at > ? AND collection IN ('patients', 'appointments', 'schedules', 'doctors') AND action != 'view' ORDER BY id ASC")
+          .all(since)
+        if (events.length === 0) {
+          return response.json({ upToDate: true, timestamp: now })
+        }
+        const state = await readState(request.user)
+        response.json({ upToDate: false, full: false, timestamp: now, state, changesCount: events.length })
+      })
+
+      // Paginated and Role-filtered Resource Endpoints
+      app.get('/api/patients', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        const page = Math.max(1, parseInt(request.query.page) || 1)
+        const limit = Math.min(100, Math.max(1, parseInt(request.query.limit) || 20))
+        const search = text(request.query.search).toLowerCase()
+
+        const state = await readState(request.user)
+        let list = state.patients
+        if (search) {
+          list = list.filter(p => (p.name || '').toLowerCase().includes(search) || (p.contact || '').includes(search))
+        }
+        const total = list.length
+        const totalPages = Math.ceil(total / limit) || 1
+        const paginated = list.slice((page - 1) * limit, page * limit)
+        response.json({ patients: paginated, total, page, limit, totalPages })
+      })
+
+      app.get('/api/patients/duplicates', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        const patients = (await db.prepare("SELECT data FROM records WHERE collection = 'patients'").all()).map(r => JSON.parse(r.data))
+        const duplicates = []
+        const seenPairs = new Set()
+        for (let i = 0; i < patients.length; i++) {
+          for (let j = i + 1; j < patients.length; j++) {
+            const p1 = patients[i]
+            const p2 = patients[j]
+            const pairKey = [p1.id, p2.id].sort().join('|')
+            if (seenPairs.has(pairKey)) continue
+            const isDup = findDuplicatePatient(p1, [p2])
+            if (isDup) {
+              seenPairs.add(pairKey)
+              duplicates.push({
+                primary: p1,
+                duplicate: p2,
+                reason: 'Matching normalized name and contact/birthday'
+              })
+            }
+          }
+        }
+        response.json({ duplicates })
+      })
+
+      app.post('/api/patients/merge', authenticate, async (request, response) => {
+        if (request.user.role !== 'Medical Secretary') return reject(request, response, 403, 'Only Medical Secretary may merge patient records.')
+        const { primaryId, duplicateId } = request.body || {}
+        if (!primaryId || !duplicateId || primaryId === duplicateId) return reject(request, response, 400, 'Primary and duplicate patient IDs must be different.')
+        const primaryRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(primaryId)
+        const duplicateRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(duplicateId)
+        if (!primaryRow || !duplicateRow) return response.status(404).json({ error: 'One or both patient records not found.' })
+
+        const primary = JSON.parse(primaryRow.data)
+
+        await db.exec('BEGIN IMMEDIATE')
+        try {
+          const apptRows = await db.prepare("SELECT id, data FROM records WHERE collection = 'appointments'").all()
+          const updateAppt = db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?")
+          for (const row of apptRows) {
+            const appt = JSON.parse(row.data)
+            if (appt.patientId === duplicateId) {
+              appt.patientId = primaryId
+              appt.patientName = primary.name
+              await updateAppt.run(JSON.stringify(appt), appt.id)
+              await syncRelationalAppointment(appt)
+            }
+          }
+
+          const visitRows = await db.prepare('SELECT id, data FROM visit_records WHERE patient_id = ?').all(duplicateId)
+          const insertVisit = db.prepare('INSERT INTO visit_records (patient_id, id, sort_order, data) VALUES (?, ?, ?, ?) ON CONFLICT(patient_id, id) DO UPDATE SET data = excluded.data')
+          for (const [idx, vRow] of visitRows.entries()) {
+            await insertVisit.run(primaryId, vRow.id, 1000 + idx, vRow.data)
+          }
+          await db.prepare('DELETE FROM visit_records WHERE patient_id = ?').run(duplicateId)
+
+          await db.prepare("DELETE FROM records WHERE collection = 'patients' AND id = ?").run(duplicateId)
+          await db.prepare('DELETE FROM patients_rel WHERE id = ?').run(duplicateId)
+
+          const now = new Date().toISOString()
+          await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(now, request.user.username, request.user.role, 'patients', primaryId, 'merge', duplicateRow.data, primaryRow.data)
+
+          await db.exec('COMMIT')
+          const updated = await hydratePatient(primary)
+          return response.json(filterPatientForRole(updated, request.user))
+        } catch (err) {
+          await db.exec('ROLLBACK')
+          throw err
+        }
+      })
+
+      app.get('/api/patients/:id', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        const row = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(request.params.id)
+        if (!row) return response.status(404).json({ error: 'Patient not found.' })
+        const patient = JSON.parse(row.data)
+        const doctors = await readDoctors()
+        const hydrated = await hydratePatient(patient)
+        response.json(filterPatientForRole(hydrated, request.user, doctors))
+      })
+
+      app.get('/api/appointments', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        const { date, doctor, status } = request.query
+        const state = await readState(request.user)
+        let list = state.appointments
+        if (date) list = list.filter(a => a.date === date)
+        if (doctor && doctor !== 'All') list = list.filter(a => a.doctor === doctor)
+        if (status && status !== 'All') list = list.filter(a => a.status === status)
+        response.json({ appointments: list, total: list.length })
       })
 
       app.get('/api/admin/security', authenticate, adminOnly, async (_request, response) => {
@@ -840,6 +1499,7 @@ async function createApp({ seedDemo = false } = {}) {
         if ((await db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE collection IN ('patients', 'appointments', 'schedules', 'all') AND action != 'view'").get()).count > 0) {
           return reject(request, response, 409, 'Shared records have already changed. Browser records were left untouched.')
         }
+
         const importedPatients = [...patients]
         const patientIds = new Set(importedPatients.map((patient) => patient.id))
         for (const appointment of appointments) {
@@ -854,6 +1514,35 @@ async function createApp({ seedDemo = false } = {}) {
           })
           patientIds.add(appointment.patientId)
         }
+
+        // Apply strict validation to all imported patients
+        for (const patient of importedPatients) {
+          const problem = validatePatient(patient)
+          if (problem) return reject(request, response, 400, `Patient ${patient.id || ''}: ${problem}`)
+        }
+
+        // Apply strict validation to all imported appointments (skipping past-date rejection for historical records)
+        for (const appointment of appointments) {
+          const problem = validateAppointment(appointment, appointment)
+          if (problem) return reject(request, response, 400, `Appointment ${appointment.id || ''}: ${problem}`)
+          if (appointment.status !== 'Open' && appointment.status !== 'Cancelled') {
+            if (!appointment.patientId || !patientIds.has(appointment.patientId)) {
+              return reject(request, response, 400, `Appointment ${appointment.id || ''} links to missing patient profile.`)
+            }
+          }
+        }
+
+        // Apply strict validation to schedules
+        for (const [key, schedule] of Object.entries(schedules)) {
+          if (!schedule || typeof schedule !== 'object') return reject(request, response, 400, `Invalid schedule for ${key}.`)
+          const start = appointmentMinutes(schedule.start)
+          const end = appointmentMinutes(schedule.end)
+          if (!schedule.doctor || !parseDate(schedule.date) || !/^\d{4}-\d{2}-\d{2}$/.test(schedule.date) ||
+            !Number.isFinite(start) || !Number.isFinite(end) || start % 30 || end % 30 || end - start < 30) {
+            return reject(request, response, 400, `Schedule for ${key} requires valid start and end times.`)
+          }
+        }
+
         const importIssue = bookingIssue(appointments, schedules)
         if (importIssue) return response.status(importIssue.status).json({ error: importIssue.error })
         ;(await db.exec('BEGIN IMMEDIATE'))
@@ -863,14 +1552,21 @@ async function createApp({ seedDemo = false } = {}) {
           ])))
           ;(await db.exec('DELETE FROM records'))
           ;(await db.exec('DELETE FROM visit_records'))
+          ;(await db.exec('DELETE FROM patients_rel'))
+          ;(await db.exec('DELETE FROM appointments_rel'))
+          ;(await db.exec('DELETE FROM schedules_rel'))
           const insert = db.prepare('INSERT INTO records (collection, id, data) VALUES (?, ?, ?)')
           const visitAudit = db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           const recordImport = async (collection, id, data) => {
-            ;(await insert.run(collection, id, JSON.stringify(collection === 'patients' ? storePatient(data) : data)))
+            const clean = stripUnknownFields(collection, data, request.user.role)
+            ;(await insert.run(collection, id, JSON.stringify(collection === 'patients' ? storePatient(clean) : clean)))
+            if (collection === 'patients') await syncRelationalPatient(clean)
+            else if (collection === 'appointments') await syncRelationalAppointment(clean)
+            else if (collection === 'schedules') await syncRelationalSchedule(id, clean)
             const key = `${collection}|${id}`
             const before = previousRecords.get(key)
             ;(await visitAudit.run(new Date().toISOString(), request.user.username, request.user.role, collection, id,
-              before ? 'import-update' : 'import-create', before ? JSON.stringify(before) : null, JSON.stringify(data)))
+              before ? 'import-update' : 'import-create', before ? JSON.stringify(before) : null, JSON.stringify(clean)))
             previousRecords.delete(key)
           }
           for (const patient of importedPatients) {
@@ -922,6 +1618,16 @@ async function createApp({ seedDemo = false } = {}) {
             const problem = validatePatient(after, before)
             if (problem) return reject(request, response, 400, problem)
           }
+          if (collection === 'patients' && before === null && after) {
+            const existingPatients = (await db.prepare("SELECT data FROM records WHERE collection = 'patients'").all()).map((r) => JSON.parse(r.data))
+            const dup = findDuplicatePatient(after, existingPatients)
+            if (dup && !after.allowDuplicate) {
+              return reject(request, response, 409, 'A patient with this name and birthday or contact already exists.', {
+                duplicateOf: dup.id,
+                existing: { id: dup.id, name: dup.name, birthday: dup.birthday, contact: dup.contact },
+              })
+            }
+          }
           if (collection === 'appointments' && after && text(after.doctor)) {
             const doctor = await db.prepare('SELECT name FROM doctors WHERE name = ?').get(after.doctor)
             if (doctor) after.doctor = doctor.name
@@ -935,6 +1641,16 @@ async function createApp({ seedDemo = false } = {}) {
             if ((!statuses.includes(after.status) && (!before || before.status !== after.status)) ||
               (after.visitStatus !== undefined && !['Waiting', 'In Consultation', 'Completed'].includes(after.visitStatus))) {
               return reject(request, response, 400, 'Choose a valid booking status and visit progress.')
+            }
+            if (before && before.status && after.status && before.status !== after.status) {
+              if (!VALID_TRANSITIONS[before.status]?.includes(after.status)) {
+                return reject(request, response, 400, `Invalid appointment status transition from ${before.status} to ${after.status}.`)
+              }
+            }
+            if (before && before.visitStatus && after.visitStatus && before.visitStatus !== after.visitStatus) {
+              if (!VALID_VISIT_TRANSITIONS[before.visitStatus]?.includes(after.visitStatus)) {
+                return reject(request, response, 400, `Invalid visit progress transition from ${before.visitStatus} to ${after.visitStatus}.`)
+              }
             }
           }
           if (collection === 'schedules' && after) {
@@ -1024,6 +1740,7 @@ async function createApp({ seedDemo = false } = {}) {
               ;(await db.exec('ROLLBACK'))
               return reject(request, response, 400, 'Cancel a booking to retain its history; booked appointments cannot be deleted.')
             }
+            const cleanAfter = after ? stripUnknownFields(collection, after, request.user.role) : null
             if (after === null) {
               if (collection === 'patients') {
                 for (const visit of before.visits || []) await audit.run(new Date().toISOString(), request.user.username, request.user.role,
@@ -1031,12 +1748,30 @@ async function createApp({ seedDemo = false } = {}) {
                 ;(await db.prepare('DELETE FROM visit_records WHERE patient_id = ?').run(id))
               }
               ;(await remove.run(collection, id))
-            } else if (before === null) (await insert.run(collection, id, JSON.stringify(collection === 'patients' ? storePatient(after) : after)))
-            else (await update.run(JSON.stringify(collection === 'patients' ? storePatient(after) : after), collection, id))
-            if (collection === 'patients' && after) (await syncVisits(after, request.user, audit))
+            } else if (before === null) {
+              ;(await insert.run(collection, id, JSON.stringify(collection === 'patients' ? storePatient(cleanAfter) : cleanAfter)))
+            } else {
+              ;(await update.run(JSON.stringify(collection === 'patients' ? storePatient(cleanAfter) : cleanAfter), collection, id))
+              if (collection === 'patients') {
+                // Synchronize appointment patient name & contact if changed
+                if (before.name !== cleanAfter.name || before.contact !== cleanAfter.contact) {
+                  const apptRows = await db.prepare("SELECT id, data FROM records WHERE collection = 'appointments'").all()
+                  const updateAppt = db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?")
+                  for (const row of apptRows) {
+                    const appt = JSON.parse(row.data)
+                    if (appt.patientId === id) {
+                      appt.patientName = cleanAfter.name
+                      if (cleanAfter.contact) appt.contact = cleanAfter.contact
+                      await updateAppt.run(JSON.stringify(appt), appt.id)
+                    }
+                  }
+                }
+              }
+            }
+            if (collection === 'patients' && cleanAfter) (await syncVisits(cleanAfter, request.user, audit))
             ;(await audit.run(new Date().toISOString(), request.user.username, request.user.role, collection, id,
               after === null ? 'delete' : before === null ? 'create' : 'update',
-              before === null ? null : JSON.stringify(before), after === null ? null : JSON.stringify(after)))
+              before === null ? null : JSON.stringify(before), after === null ? null : JSON.stringify(cleanAfter)))
           }
           const patientIds = new Set((await db.prepare("SELECT id FROM records WHERE collection = 'patients'").all()).map((row) => row.id))
           const appointments = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all()).map((row) => JSON.parse(row.data))
@@ -1052,10 +1787,34 @@ async function createApp({ seedDemo = false } = {}) {
             ;(await db.exec('ROLLBACK'))
             return reject(request, response, issue.status, issue.error, { state: await readState() })
           }
+
+          // Sync relational tables now that records & cross-record invariants are validated
+          for (const { collection, id, after } of changes) {
+            const cleanAfter = after ? stripUnknownFields(collection, after, request.user.role) : null
+            if (after === null) {
+              if (collection === 'patients') (await db.prepare('DELETE FROM patients_rel WHERE id = ?').run(id))
+              else if (collection === 'appointments') (await db.prepare('DELETE FROM appointments_rel WHERE id = ?').run(id))
+              else if (collection === 'schedules') (await db.prepare('DELETE FROM schedules_rel WHERE id = ?').run(id))
+            } else if (collection === 'patients') {
+              await syncRelationalPatient(cleanAfter)
+            }
+          }
+          for (const { collection, id, after } of changes) {
+            const cleanAfter = after ? stripUnknownFields(collection, after, request.user.role) : null
+            if (after !== null && collection === 'appointments') {
+              await syncRelationalAppointment(cleanAfter)
+            } else if (after !== null && collection === 'schedules') {
+              await syncRelationalSchedule(id, cleanAfter)
+            }
+          }
+
           ;(await db.exec('COMMIT'))
           return response.json((await readState()))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
+          if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+            return reject(request, response, 400, error.message)
+          }
           console.error('Unable to save MedVault records:', error)
           return response.status(500).json({ error: 'Unable to save records.' })
         }
