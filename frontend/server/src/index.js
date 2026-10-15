@@ -462,6 +462,77 @@ async function createApp({ seedDemo = false } = {}) {
           data TEXT NOT NULL,
           UNIQUE (doctor_name, date)
         );
+
+        CREATE TABLE IF NOT EXISTS encounters (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL,
+          doctor_id TEXT NOT NULL,
+          doctor_name TEXT NOT NULL,
+          appointment_id TEXT DEFAULT '',
+          encounter_date TEXT NOT NULL,
+          subjective TEXT NOT NULL DEFAULT '',
+          objective TEXT NOT NULL DEFAULT '',
+          vitals_snapshot TEXT NOT NULL DEFAULT '{}',
+          assessment TEXT NOT NULL DEFAULT '',
+          diagnosis TEXT NOT NULL DEFAULT '',
+          treatment_plan TEXT NOT NULL DEFAULT '',
+          prescriptions TEXT NOT NULL DEFAULT '[]',
+          follow_up_date TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'draft',
+          signed_at TEXT,
+          signed_by_username TEXT,
+          signature_hash TEXT,
+          addenda TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (patient_id) REFERENCES patients_rel(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_encounters_patient ON encounters (patient_id, encounter_date);
+        CREATE INDEX IF NOT EXISTS idx_encounters_doctor ON encounters (doctor_id, status);
+        CREATE INDEX IF NOT EXISTS idx_encounters_appt ON encounters (appointment_id);
+
+        CREATE TABLE IF NOT EXISTS emergency_access_grants (
+          id TEXT PRIMARY KEY,
+          doctor_username TEXT NOT NULL COLLATE NOCASE,
+          doctor_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          consent_recorded INTEGER NOT NULL DEFAULT 1,
+          granted_at TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_emergency_grants_doc ON emergency_access_grants (doctor_username, patient_id);
+
+        CREATE TABLE IF NOT EXISTS patient_consents (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL,
+          consent_type TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'granted',
+          granted_by TEXT NOT NULL DEFAULT 'Patient',
+          notes TEXT NOT NULL DEFAULT '',
+          recorded_by TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          FOREIGN KEY (patient_id) REFERENCES patients_rel(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_consents_pat ON patient_consents (patient_id);
+
+        CREATE TABLE IF NOT EXISTS patient_documents (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL,
+          uploader_username TEXT NOT NULL COLLATE NOCASE,
+          uploader_role TEXT NOT NULL,
+          doctor_id TEXT NOT NULL DEFAULT '',
+          document_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          file_size INTEGER NOT NULL DEFAULT 0,
+          content_base64 TEXT NOT NULL,
+          notes TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (patient_id) REFERENCES patients_rel(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_documents_pat ON patient_documents (patient_id);
       `))
       const auditColumns = (await db.prepare('PRAGMA table_info(audit_events)').all()).map((column) => column.name)
       if (!auditColumns.includes('before_data')) (await db.exec('ALTER TABLE audit_events ADD COLUMN before_data TEXT'))
@@ -477,11 +548,20 @@ async function createApp({ seedDemo = false } = {}) {
       if (!staffColumns.includes('mfa_secret')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN mfa_secret TEXT NOT NULL DEFAULT ''")
       if (!staffColumns.includes('mfa_enabled')) await db.exec('ALTER TABLE staff_accounts ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0')
       if (!staffColumns.includes('mfa_backup_codes')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN mfa_backup_codes TEXT NOT NULL DEFAULT '[]'")
+      if (!staffColumns.includes('doctor_id')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN doctor_id TEXT NOT NULL DEFAULT ''")
+      const doctorColumns = (await db.prepare('PRAGMA table_info(doctors)').all()).map((c) => c.name)
+      if (!doctorColumns.includes('doctor_username')) await db.exec("ALTER TABLE doctors ADD COLUMN doctor_username TEXT NOT NULL DEFAULT '' COLLATE NOCASE")
       // Demo fixtures are opt-in for automated tests; normal startup stays empty.
       if (!production && seedDemo && (await db.prepare('SELECT COUNT(*) AS count FROM doctors').get()).count === 0) {
-        const insertDoctor = db.prepare('INSERT INTO doctors (id, name, specialty, created_at) VALUES (?, ?, ?, ?)')
-        for (const name of ['Dr. Cruz', 'Dr. Santos', 'Dr. Reyes', 'Dr. Rebuyaco']) {
-          ;(await insertDoctor.run(crypto.randomUUID(), name, 'General Medicine', new Date().toISOString()))
+        const insertDoctor = db.prepare('INSERT INTO doctors (id, name, specialty, doctor_username, created_at) VALUES (?, ?, ?, ?, ?)')
+        const demoDocs = [
+          [crypto.randomUUID(), 'Dr. Cruz', 'General Medicine', 'user4'],
+          [crypto.randomUUID(), 'Dr. Santos', 'Pediatrics', 'user5'],
+          [crypto.randomUUID(), 'Dr. Reyes', 'Cardiology', ''],
+          [crypto.randomUUID(), 'Dr. Rebuyaco', 'Surgery', ''],
+        ]
+        for (const [id, name, specialty, doctorUser] of demoDocs) {
+          ;(await insertDoctor.run(id, name, specialty, doctorUser, new Date().toISOString()))
         }
       }
 
