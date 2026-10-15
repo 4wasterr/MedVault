@@ -95,3 +95,4 @@ export function visitStatus(appointment) {
   if (['Waiting', 'In Consultation', 'Completed'].includes(appointment.status)) return appointment.status;
   return 'Waiting';
 }
+

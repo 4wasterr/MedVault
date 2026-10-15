@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
+import { validatePatientRecord } from './medsecData';
 
 const tabs = [
   ['personal', 'Personal'], ['vitals', 'Vitals'], ['medicalHistory', 'Medical History'],
@@ -97,6 +98,8 @@ export default function MedSecPatientRecords({
       setError('This patient was updated in another session. Review the latest record before saving.'); return;
     }
     if (!draft?.name?.trim()) { setError('Patient name is required.'); return; }
+        const recordProblem = validatePatientRecord(draft);
+    if (recordProblem) { setError(recordProblem); return; }
     if (draft.visits.some((visit) => !visit.date?.trim() || !visit.doctor?.trim())) {
       setError('Each visit record needs a date and doctor.'); setActiveTab('visits'); return;
     }

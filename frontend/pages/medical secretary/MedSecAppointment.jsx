@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import { availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
+import { validateBooking } from './medsecData';
 
 const emptyForm = (doctor = '') => ({ patientId: '', doctor, date: todayISO(), time: '', type: 'Consultation', notes: '' });
 const progress = ['Waiting', 'In Consultation', 'Completed'];
@@ -55,6 +56,8 @@ export default function MedSecAppointment({
     }
     const patient = patients.find((item) => item.id === form.patientId);
     if (!patient) { setError('Choose a patient profile.'); return; }
+        const bookingProblem = validateBooking({ ...form, patientName: patient.name, contact: patient.contact }, { checkDate: !existing });
+    if (bookingProblem) { setError(bookingProblem); return; }
     if (!form.time || !availableSlots(schedules, appointments, form.doctor, form.date, formMode?.id).includes(form.time)) {
       setError('Choose an available 30-minute slot for this doctor and date.'); return;
     }

@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "description": "MedVault Healthcare Management System",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "node frontend/scripts/dev.mjs",
     "client": "npm run dev --prefix frontend/client",
     "server": "npm run dev --prefix frontend/server",
-    "build": "npm run build --prefix frontend/client"
+    "build": "npm run build --prefix frontend/client",
+    "electron": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.7.2"
   }
 }

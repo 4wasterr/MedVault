@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
+import { validateDoctorForm } from '../medical secretary/medsecData';
 import './AdminDoctorManagement.css';
 
 const blank = { name: '', specialty: '', phone: '', email: '', secretaryUsername: '', active: true };
@@ -28,7 +29,11 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
   const startCreate = () => { setEditing(''); setForm(blank); setError(''); setOpen(true); };
   const startEdit = (doctor) => { setEditing(doctor.id); setForm({ ...doctor }); setError(''); setOpen(true); };
   const save = async (event) => {
-    event.preventDefault(); setBusy(true); setError(''); setMessage('');
+    //event.preventDefault(); setBusy(true); setError(''); setMessage('');
+        event.preventDefault(); setMessage('');
+    const problem = validateDoctorForm(form);
+    if (problem) { setError(problem); return; }
+    setBusy(true); setError('');
     try { await api(editing ? `admin/doctors/${encodeURIComponent(editing)}` : 'admin/doctors', {
       method: editing ? 'PATCH' : 'POST', body: JSON.stringify(form),
     }); await onRefresh(); setMessage(editing ? 'Doctor profile updated.' : 'Doctor profile created.'); setOpen(false); }

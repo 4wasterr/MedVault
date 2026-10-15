@@ -115,3 +115,50 @@ export function visitStatus(appointment) {
   if (['Waiting', 'In Consultation', 'Completed'].includes(appointment.status)) return appointment.status;
   return 'Waiting';
 }
+
+//additional codes
+
+
+export function validatePatientEdit(patient) {
+  if (!patient) return "Patient data is missing.";
+  if (!patient.firstName?.trim() || !patient.lastName?.trim()) {
+    return "First name and last name are required.";
+  }
+  return null; // Return null if validation passes
+}
+export function validateRegisterForm(formData) {
+  if (!formData) return "Registration data is missing.";
+  if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
+    return "First and last names are required.";
+  }
+  return null;
+}
+export function validateBooking(appointments, doctor, date, time, excludeId) {
+  if (!date || !time) return "Please select both a date and a time slot.";
+  if (hasBooking(appointments, doctor, date, time, excludeId)) {
+    return "This time slot is already booked for this doctor.";
+  }
+  return null; // No errors
+}
+export function validateContactDetails(contact) {
+  if (!contact) return "Contact details are missing.";
+  return null;
+}
+export function validatePatientRecord(record) {
+  if (!record) return "Patient record data is missing.";
+  return null;
+}
+export function validateStaffForm(staff) {
+  if (!staff) return "Staff data is missing.";
+  if (!staff.name?.trim() && !staff.firstName?.trim()) {
+    return "Staff name is required.";
+  }
+  return null;
+}
+export function validateDoctorForm(doctor) {
+  if (!doctor) return "Doctor data is missing.";
+  if (!doctor.name?.trim() && !doctor.firstName?.trim()) {
+    return "Doctor name is required.";
+  }
+  return null;
+}

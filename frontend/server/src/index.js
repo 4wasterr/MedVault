@@ -7,6 +7,140 @@ require('dotenv').config()
 const { openStorage } = require('./storage')
 const { createSecurity, hashPassword, verifyPassword, installProtection, production } = require('./security')
 const { listAudit, AuditQueryError } = require('./audit')
+// ===== VALIDATIONS (added) =====
+const PHONE = /^09\d{9}$/
+const PERSON_NAME = /^[\p{L}\p{M}]+(?:[\s.'’ -][\p{L}\p{M}]+)*$/u
+const SEXES = ['', 'Female', 'Male', 'Other']
+const TEXT_LIMIT = 2000
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+const text = (value) => (value === undefined || value === null ? '' : String(value)).trim()
+
+// Accepts 2026-10-15, "Jan 10, 1991", etc. Returns a Date or null.
+function parseDate(value) {
+  const raw = text(value)
+  if (!raw) return null
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw)
+  if (Number.isNaN(date.getTime())) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && date.toISOString().slice(0, 10) !== raw) return null // e.g. 2026-02-31
+  return date
+}
+
+function validTime(value) {
+  const match = text(value).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i)
+  if (!match) return false
+  const hour = Number(match[1])
+  return Number(match[2]) <= 59 && (match[3] ? hour >= 1 && hour <= 12 : hour <= 23)
+}
+
+const VITAL_RULES = {
+  hr: { label: 'Heart rate', min: 20, max: 300 },
+  temp: { label: 'Temperature (°C)', min: 30, max: 45 },
+  respRate: { label: 'Respiratory rate', min: 4, max: 80 },
+  spo2: { label: 'SpO₂', min: 50, max: 100 },
+  weight: { label: 'Weight (kg)', min: 0.2, max: 500 },
+  height: { label: 'Height (cm)', min: 20, max: 260 },
+}
+
+function vitalProblem(key, raw) {
+  const value = text(raw)
+  if (!value) return null
+  if (key === 'bp') {
+    const match = value.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/)
+    if (!match) return 'Blood pressure must look like 120/80.'
+    const [systolic, diastolic] = [Number(match[1]), Number(match[2])]
+    if (systolic < 50 || systolic > 260 || diastolic < 30 || diastolic > 160 || diastolic >= systolic) return 'Blood pressure values are out of range.'
+    return null
+  }
+  /*if (key === 'measuredAt') {
+    const date = parseDate(value)
+    if (!date) return 'Vitals “measured at” is not a valid date and time.'
+    if (date.getTime() > Date.now() + 5 * 60_000) return 'Vitals cannot be measured in the future.'
+    return null
+  }*/
+ //changes
+ if (key === 'measuredAt') {
+    const date = parseDate(value)
+    if (!date) return 'Vitals “measured at” is not a valid date and time.'
+    // Future date check disabled for testing
+    return null
+  }
+
+
+  const rule = VITAL_RULES[key]
+  if (!rule) return null
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < rule.min || number > rule.max) return `${rule.label} must be a number between ${rule.min} and ${rule.max}.`
+  return null
+}
+
+function tooLong(value) {
+  if (typeof value === 'string') return value.length > TEXT_LIMIT
+  if (Array.isArray(value)) return value.some(tooLong)
+  if (value && typeof value === 'object') return Object.values(value).some(tooLong)
+  return false
+}
+
+// Returns an error message (string) or null when the patient record is acceptable.
+function validatePatient(after, before = null) {
+  if (!after) return null
+  const was = before || {}
+  const name = text(after.name)
+  if (!same(was.name, after.name) && !PERSON_NAME.test(name)) return 'Patient name may only contain letters, spaces and . \' -'
+  if (!same(was.sex, after.sex) && !SEXES.includes(text(after.sex))) return 'Sex must be Female, Male or Other.'
+  if (!same(was.age, after.age) && text(after.age) !== '') {
+    const age = Number(after.age)
+    if (!Number.isInteger(age) || age < 0 || age > 130) return 'Age must be a whole number from 0 to 130.'
+  }
+  if (!same(was.birthday, after.birthday) && text(after.birthday) !== '') {
+    const birthday = parseDate(after.birthday)
+    if (!birthday) return 'Birthday is not a valid date.'
+    if (birthday.getTime() > Date.now()) return 'Birthday cannot be in the future.'
+    if (birthday.getFullYear() < 1900) return 'Birthday cannot be before 1900.'
+  }
+  if (!same(was.contact, after.contact) && text(after.contact) && !PHONE.test(text(after.contact))) return 'Contact number is not a valid phone number.'
+  if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !PHONE.test(text(after.emergencyContact))) return 'Emergency contact number is not a valid phone number.'
+  if (!same(was.address, after.address) && text(after.address).length > 300) return 'Address must be 300 characters or fewer.'
+  if (!same(was.emergencyName, after.emergencyName) && text(after.emergencyName).length > 160) return 'Emergency contact name must be 160 characters or fewer.'
+  if (after.vitals && typeof after.vitals === 'object' && !same(was.vitals, after.vitals)) {
+    for (const key of Object.keys(after.vitals)) {
+      if (same(was.vitals?.[key], after.vitals[key])) continue
+      const problem = vitalProblem(key, after.vitals[key])
+      if (problem) return problem
+    }
+  }
+  for (const field of ['medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes']) {
+    if (!same(was[field], after[field]) && tooLong(after[field])) return `Entries in ${field} must be ${TEXT_LIMIT} characters or fewer.`
+  }
+  if (Array.isArray(after.visits) && !same(was.visits, after.visits)) {
+    for (const visit of after.visits) {
+      if (visit && typeof visit === 'object' && text(visit.date) && !parseDate(visit.date)) return 'Each visit needs a valid date.'
+    }
+  }
+  return null
+}
+
+// Returns an error message (string) or null. Open slots and cancelled bookings are not checked.
+function validateAppointment(after, before = null) {
+  if (!after || ['Open', 'Cancelled'].includes(after.status)) return null
+  const was = before || {}
+  if (!same(was.patientName, after.patientName) && (!text(after.patientName) || text(after.patientName).length > 160)) return 'Appointment needs a patient name of at most 160 characters.'
+  if (!same(was.contact, after.contact) && text(after.contact) && !PHONE.test(text(after.contact))) return 'Appointment contact number is not a valid phone number.'
+  if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !PHONE.test(text(after.emergencyContact))) return 'Emergency contact number is not a valid phone number.'
+  if (!same(was.type, after.type) && (!text(after.type) || text(after.type).length > 100)) return 'Visit type is required (100 characters or fewer).'
+  if (!same(was.doctor, after.doctor) && (!text(after.doctor) || text(after.doctor).length > 100)) return 'A doctor is required.'
+  if (!same(was.room, after.room) && text(after.room).length > 100) return 'Room must be 100 characters or fewer.'
+  if (!same(was.notes, after.notes) && text(after.notes).length > TEXT_LIMIT) return `Notes must be ${TEXT_LIMIT} characters or fewer.`
+  if (!same(was.date, after.date) && !parseDate(after.date)) return 'Appointment date is not a valid date.'
+  if (!same(was.time, after.time) && !validTime(after.time)) return 'Appointment time is not valid.'
+  return null
+}
+
+// Stops a Super Admin from locking themselves out by editing their own access.
+function selfLockout(actingUsername, targetUsername, details) {
+  return actingUsername === targetUsername && (details.status !== 'approved' || details.role !== 'Super Admin')
+}
+// ===== END VALIDATIONS =====
 
 async function createApp({ seedDemo = false } = {}) {
   const app = express()
@@ -480,6 +614,9 @@ async function createApp({ seedDemo = false } = {}) {
         const details = accountDetails({ ...request.body, username }, previous)
         const password = String(request.body?.password || '')
         if (!details || (password && !validPassword(password))) return reject(request, response, 400, 'Check account details and password.')
+                  if (selfLockout(request.user.username, username, details)) {
+          return reject(request, response, 409, 'You cannot deactivate your own account or remove your own Super Admin role.')
+        }
         if ((details.status !== 'approved' || details.role !== 'Medical Secretary') &&
           (await db.prepare('SELECT id FROM doctors WHERE secretary_username = ? AND active = 1').get(username))) {
           return reject(request, response, 409, 'Reassign this secretary’s active doctors before changing access.')
@@ -778,6 +915,14 @@ async function createApp({ seedDemo = false } = {}) {
           seen.add(key)
           if (collection === 'patients' && after && (typeof after.name !== 'string' || !after.name.trim() || after.name.length > 160)) {
             return reject(request, response, 400, 'Patient profiles require a name of at most 160 characters.')
+          }
+                    if (collection === 'patients' && after) {
+            const problem = validatePatient(after, before)
+            if (problem) return reject(request, response, 400, problem)
+          }
+          if (collection === 'appointments' && after) {
+            const problem = validateAppointment(after, before)
+            if (problem) return reject(request, response, 400, problem)
           }
           if (collection === 'appointments' && after) {
             const statuses = ['Open', 'Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled']

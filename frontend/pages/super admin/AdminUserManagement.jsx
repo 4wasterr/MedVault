@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
+import { validateStaffForm } from '../medical secretary/medsecData';
 import './AdminUserManagement.css';
 
 const blank = { username: '', password: '', firstName: '', middleName: '', lastName: '', address: '', phone: '', email: '', role: 'Receptionist', status: 'approved' };
@@ -28,6 +29,8 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
   };
   const save = async (event) => {
     event.preventDefault();
+        const problem = validateStaffForm(form, { editing: !!editing });
+    if (problem) { setError(problem); return; }
     const valid = await run(() => api(editing ? `admin/accounts/${encodeURIComponent(editing)}` : 'admin/accounts', {
       method: editing ? 'PATCH' : 'POST', body: JSON.stringify(form),
     }), editing ? 'Account updated.' : 'Staff account created.');

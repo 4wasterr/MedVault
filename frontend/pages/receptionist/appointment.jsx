@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './receptionistDashboard.css';
 import './appointment.css';
 import { createRecordId, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
+import { validateBooking, validateContactDetails } from '../medical secretary/medsecData';
 
 export default function Appointment({
   onNavigate,
@@ -274,7 +275,9 @@ export default function Appointment({
 
   const handleBookSlotSubmit = (e) => {
     e.preventDefault();
-    if (!bookForm.patientName.trim()) return;
+    //if (!bookForm.patientName.trim()) return;
+        const bookingProblem = validateBooking(bookForm);
+    if (bookingProblem) { showToast(bookingProblem); return; }
     if (JSON.stringify(appointments.find((item) => item.id === targetSlot?.id) || null) !== JSON.stringify(targetSlot)) {
       showToast('This slot changed in another session. Reopen it to review the latest details.'); return;
     }
@@ -321,7 +324,9 @@ export default function Appointment({
   // Action: Create New Appointment
   const handleNewSubmit = (e) => {
     e.preventDefault();
-    if (!newForm.patientName.trim()) return;
+    //if (!newForm.patientName.trim()) return;
+        const bookingProblem = validateBooking(newForm, { checkDate: true });
+    if (bookingProblem) { showToast(bookingProblem); return; }
     if (!newBookingSlots.some((slot) => timeKey(slot) === timeKey(newForm.time))) {
       showToast('That slot is booked or blocked in Doctor Schedules.'); return;
     }
@@ -484,6 +489,8 @@ export default function Appointment({
     if (JSON.stringify(appointments.find((item) => item.id === selectedAppointment.id) || null) !== JSON.stringify(selectedAppointment)) {
       showToast('This appointment changed in another session. Reopen it before saving.'); return;
     }
+        const contactProblem = validateContactDetails(patientEditForm);
+    if (contactProblem) { showToast(contactProblem); return; }
     const updated = {
       ...selectedAppointment,
       contact: patientEditForm.contact,

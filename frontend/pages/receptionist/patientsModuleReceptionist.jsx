@@ -3,6 +3,7 @@ import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
 import { createRecordId, todayISO } from '../medical secretary/medsecData';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
+import { validateRegisterForm, validatePatientEdit } from '../medical secretary/medsecData';
 
 export default function PatientsModuleReceptionist({
   onNavigate,
@@ -119,6 +120,8 @@ export default function PatientsModuleReceptionist({
     if (JSON.stringify(patients.find((patient) => patient.id === selectedPatient.id) || null) !== JSON.stringify(selectedPatient)) {
       showToast('This patient changed in another session. Reopen the record before saving.'); return;
     }
+        const problem = validatePatientEdit({ ...selectedPatient, ...editFormData });
+    if (problem) { showToast(problem); return; }
     const updated = {
       ...selectedPatient,
       ...editFormData,
@@ -174,6 +177,7 @@ export default function PatientsModuleReceptionist({
     setIsEditing(false);
     setEditFormData({ ...newPatientObj });
     setShowRegisterModal(false);
+    setRegisterErrors({});
     showToast(`Patient ${fullName} (${formattedId}) registered!`);
 
     setRegisterForm({
