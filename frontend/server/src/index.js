@@ -631,19 +631,29 @@ async function createApp({ seedDemo = false } = {}) {
       const accounts = Object.assign(Object.create(null), {
         [adminUsername]: { role: 'Super Admin', hash: await hashPassword(adminPassword) },
       })
-      for (const [username, password, role, lastName] of [
-        ['user1', process.env.MEDVAULT_RECEPTION_PASSWORD || 'user1', 'Receptionist', 'Receptionist'],
-        ['user2', process.env.MEDVAULT_SECRETARY_PASSWORD || 'user2', 'Medical Secretary', 'Secretary'],
+      for (const [username, password, role, lastName, doctorMatchName] of [
+        ['user1', process.env.MEDVAULT_RECEPTION_PASSWORD || 'user1', 'Receptionist', 'Receptionist', ''],
+        ['user2', process.env.MEDVAULT_SECRETARY_PASSWORD || 'user2', 'Medical Secretary', 'Secretary', ''],
+        ['user4', process.env.MEDVAULT_DOCTOR_PASSWORD || 'user4', 'Doctor', 'Cruz', 'Dr. Cruz'],
+        ['user5', process.env.MEDVAULT_DOCTOR2_PASSWORD || 'user5', 'Doctor', 'Santos', 'Dr. Santos'],
       ]) {
         if (production || !seedDemo) continue
         if (username === adminUsername) continue
         if ((await db.prepare('SELECT username FROM staff_accounts WHERE username = ?').get(username))) continue
         const salt = ''
         const hash = await hashPassword(password)
+        let linkedDoctorId = ''
+        if (doctorMatchName) {
+          const docRow = await db.prepare('SELECT id FROM doctors WHERE name = ?').get(doctorMatchName)
+          if (docRow) {
+            linkedDoctorId = docRow.id
+            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE id = ?').run(username, linkedDoctorId)
+          }
+        }
         ;(await db.prepare(`INSERT INTO staff_accounts (username, password_salt, password_hash, role, first_name, middle_name,
-          last_name, address, phone, email, status, created_at, reviewed_at, reviewed_by)
-          VALUES (?, ?, ?, ?, 'Demo', '', ?, 'Clinic', '0000000', ?, 'approved', ?, ?, 'system')`)
-          .run(username, salt, hash, role, lastName, `${username}@medvault.local`, '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z'))
+          last_name, address, phone, email, status, created_at, reviewed_at, reviewed_by, doctor_id)
+          VALUES (?, ?, ?, ?, 'Demo', '', ?, 'Clinic', '0000000', ?, 'approved', ?, ?, 'system', ?)`)
+          .run(username, salt, hash, role, lastName, `${username}@medvault.local`, '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', linkedDoctorId))
       }
       const dummyHash = await hashPassword(crypto.randomBytes(32).toString('hex'))
       const sessionDurationMs = Number(process.env.MEDVAULT_SESSION_MINUTES || 480) * 60 * 1000
@@ -673,21 +683,37 @@ async function createApp({ seedDemo = false } = {}) {
         try { claims = security.verify(token) } catch { return response.status(401).json({ error: 'Sign in required or session expired.' }) }
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
         const session = (await db.prepare('SELECT username, role, expires_at, last_seen_at FROM sessions WHERE token_hash = ?').get(tokenHash))
-        if (!session || !['Super Admin', 'Receptionist', 'Medical Secretary'].includes(session.role) ||
+        if (!session || !['Super Admin', 'Receptionist', 'Medical Secretary', 'Doctor'].includes(session.role) ||
           session.expires_at <= Date.now() || Date.now() - session.last_seen_at > idleTimeoutMs ||
           claims.sub !== session.username || claims.role !== session.role) {
           await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
           if (session) await recordEvent(session.username, session.role, 'session-expired', { ip: request.ip })
           return response.status(401).json({ error: 'Session expired. Sign in again.' })
         }
+        let doctorId = ''
+        let doctorName = ''
         if (!accounts[session.username]) {
-          const current = (await db.prepare('SELECT role, status FROM staff_accounts WHERE username = ?').get(session.username))
+          const current = (await db.prepare('SELECT role, status, doctor_id FROM staff_accounts WHERE username = ?').get(session.username))
           if (!current || current.status !== 'approved' || current.role !== session.role) {
             ;(await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash))
             return response.status(401).json({ error: 'Account access changed. Sign in again.' })
           }
+          if (session.role === 'Doctor') {
+            doctorId = current.doctor_id || ''
+            if (doctorId) {
+              const doc = await db.prepare('SELECT name FROM doctors WHERE id = ?').get(doctorId)
+              doctorName = doc?.name || ''
+            }
+            if (!doctorName) {
+              const doc = await db.prepare('SELECT id, name FROM doctors WHERE doctor_username = ? COLLATE NOCASE OR name LIKE ?').get(session.username, `%${session.username}%`)
+              if (doc) {
+                doctorId = doc.id
+                doctorName = doc.name
+              }
+            }
+          }
         }
-        request.user = { username: session.username, role: session.role, tokenHash }
+        request.user = { username: session.username, role: session.role, tokenHash, doctorId, doctorName }
         if (request.get('x-medvault-background') !== '1') await db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(Date.now(), tokenHash)
         next()
       }
