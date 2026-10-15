@@ -54,13 +54,21 @@ export default function App() {
   const recordsRef = useRef(records);
   const syncedRef = useRef(records);
   const savingRef = useRef(false);
+  const saveBlockedRef = useRef(false);
   const flushRef = useRef(null);
   const retryRef = useRef(null);
+  const [saveBlocked, setSaveBlocked] = useState(false);
+
+  const markSaveBlocked = (value) => {
+    saveBlockedRef.current = value;
+    setSaveBlocked(value);
+  };
 
   const installState = (state) => {
     syncedRef.current = state;
     recordsRef.current = state;
     setRecords(state);
+    markSaveBlocked(false);
   };
 
   const flush = async () => {
@@ -73,6 +81,7 @@ export default function App() {
     savingRef.current = true;
     setSaveStatus('Saving changes...');
     let retry = false;
+    let blocked = false;
     try {
       const serverState = await api('changes', { method: 'POST', body: JSON.stringify({ changes }) });
       if (userRef.current !== session) return;
@@ -81,6 +90,7 @@ export default function App() {
       const merged = applyChanges(serverState, newerChanges);
       recordsRef.current = merged;
       setRecords(merged);
+      markSaveBlocked(false);
       setSyncMessage('');
       setSaveStatus('Changes saved to the shared server.');
     } catch (error) {
@@ -93,16 +103,20 @@ export default function App() {
         installState(emptyState());
         setSyncMessage('Your session expired. Sign in again.');
       } else if (error.status === 409 && error.state) {
-        installState(error.state);
-        setSyncMessage('Another staff member changed a record. The latest version is shown; review and save your edit again.');
+        const pendingChanges = changesBetween(base, recordsRef.current);
+        syncedRef.current = error.state;
+        const merged = applyChanges(error.state, pendingChanges);
+        recordsRef.current = merged;
+        setRecords(merged);
+        blocked = true;
+        markSaveBlocked(true);
+        setSaveStatus('Changes need review.');
+        setSyncMessage('Another staff member changed a record. Your draft is preserved; review it before saving again.');
       } else if (error.status) {
-        try {
-          const latest = await api('state');
-          if (userRef.current !== session) return;
-          installState(latest);
-        } catch { if (userRef.current === session) retry = true; }
-        if (userRef.current !== session) return;
-        setSyncMessage(error.message);
+        blocked = true;
+        markSaveBlocked(true);
+        setSaveStatus('Changes need attention.');
+        setSyncMessage(`${error.message} Your unsaved changes are still shown.`);
       } else {
         setSyncMessage('Connection lost. Changes are pending and will be retried.');
         retry = true;
@@ -112,12 +126,22 @@ export default function App() {
       if (retry && userRef.current === session) {
         clearTimeout(retryRef.current);
         retryRef.current = setTimeout(() => flushRef.current?.(), 4000);
-      } else if (changesBetween(syncedRef.current, recordsRef.current).length) {
+      } else if (!blocked && changesBetween(syncedRef.current, recordsRef.current).length) {
         queueMicrotask(() => flushRef.current?.());
       }
     }
   };
   useEffect(() => { flushRef.current = flush; });
+
+  useEffect(() => {
+    const warnAboutPendingChanges = (event) => {
+      if (!savingRef.current && !changesBetween(syncedRef.current, recordsRef.current).length) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnAboutPendingChanges);
+    return () => window.removeEventListener('beforeunload', warnAboutPendingChanges);
+  }, []);
 
   const updateCollection = (collection, updater) => {
     const previous = recordsRef.current;
@@ -126,6 +150,7 @@ export default function App() {
     const next = { ...previous, [collection]: value };
     recordsRef.current = next;
     setRecords(next);
+    markSaveBlocked(false);
     setSaveStatus('Saving changes...');
     queueMicrotask(() => flushRef.current?.());
   };
@@ -272,6 +297,10 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    if (saveBlockedRef.current && changesBetween(syncedRef.current, recordsRef.current).length) {
+      setSyncMessage('Review or correct the pending changes, then retry saving before signing out.');
+      return;
+    }
     const deadline = Date.now() + 10_000;
     while ((savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) && Date.now() < deadline) {
       if (!savingRef.current) await flushRef.current?.();
@@ -350,6 +379,11 @@ export default function App() {
       <button type="button" onClick={() => setLegacyAvailable(false)} aria-label="Dismiss import option">×</button>
     </div>}
     {syncMessage && <div className="medvault-sync-alert" role="alert">{syncMessage}
+      {saveBlocked && <button type="button" onClick={() => {
+        markSaveBlocked(false);
+        setSaveStatus('Saving changes...');
+        queueMicrotask(() => flushRef.current?.());
+      }}>Retry save</button>}
       <button type="button" onClick={() => setSyncMessage('')} aria-label="Dismiss message">×</button>
     </div>}
     {currentUser && saveStatus && <div className="medvault-save-status" role="status">{saveStatus}</div>}

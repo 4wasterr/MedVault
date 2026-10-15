@@ -38,6 +38,13 @@ export function dateKey(value) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
 }
 
+function validCalendarDate(value) {
+  const key = dateKey(value);
+  if (!key) return '';
+  const parsed = new Date(`${key}T12:00:00`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key ? key : '';
+}
+
 export function displayDate(value) {
   const key = dateKey(value);
   if (!key) return value || 'No date';
@@ -120,11 +127,21 @@ export function visitStatus(appointment) {
 
 
 export function validatePatientEdit(patient) {
-  if (!patient) return "Patient data is missing.";
-  if (!patient.firstName?.trim() || !patient.lastName?.trim()) {
-    return "First name and last name are required.";
+  if (!patient) return 'Patient data is missing.';
+  if (!patient.name?.trim()) return 'Patient name is required.';
+  if (patient.age !== '' && patient.age !== undefined) {
+    const age = Number(patient.age);
+    if (!Number.isInteger(age) || age < 0 || age > 130) return 'Age must be a whole number from 0 to 130.';
   }
-  return null; // Return null if validation passes
+  if (patient.birthday) {
+    const birthdayKey = validCalendarDate(patient.birthday);
+    if (!birthdayKey) return 'Birthday is not a valid date.';
+    const birthday = new Date(`${birthdayKey}T12:00:00`);
+    if (birthday.getTime() > Date.now()) return 'Birthday cannot be in the future.';
+    if (birthday.getFullYear() < 1900) return 'Birthday cannot be before 1900.';
+  }
+  if (patient.sex && !['Female', 'Male', 'Other'].includes(patient.sex)) return 'Choose a valid sex value.';
+  return validateContactDetails(patient);
 }
 export function validateRegisterForm(formData) {
   if (!formData) return "Registration data is missing.";
@@ -133,15 +150,24 @@ export function validateRegisterForm(formData) {
   }
   return null;
 }
-export function validateBooking(appointments, doctor, date, time, excludeId) {
-  if (!date || !time) return "Please select both a date and a time slot.";
-  if (hasBooking(appointments, doctor, date, time, excludeId)) {
-    return "This time slot is already booked for this doctor.";
-  }
-  return null; // No errors
+export function validateBooking(form, { checkDate = false } = {}) {
+  if (!form) return 'Booking data is missing.';
+  if (!form.patientId && !form.patientName?.trim()) return 'Choose a patient or enter the patient name.';
+  if (!form.doctor?.trim()) return 'Choose an active doctor.';
+  const bookingDate = validCalendarDate(form.date);
+  if (!bookingDate || !timeKey(form.time)) return 'Please select a valid date and time slot.';
+  if (checkDate && bookingDate < todayISO()) return 'Appointments cannot be created in the past.';
+  return null;
 }
 export function validateContactDetails(contact) {
-  if (!contact) return "Contact details are missing.";
+  if (!contact) return 'Contact details are missing.';
+  const phone = (value) => {
+    const compact = String(value).trim().replace(/[\s()-]/g, '');
+    const local = compact.startsWith('+63') ? `0${compact.slice(3)}` : compact;
+    return /^09\d{9}$/.test(local);
+  };
+  if (contact.contact && !phone(contact.contact)) return 'Contact number must be a valid Philippine mobile number.';
+  if (contact.emergencyContact && !phone(contact.emergencyContact)) return 'Emergency contact must be a valid Philippine mobile number.';
   return null;
 }
 export function validatePatientRecord(record) {

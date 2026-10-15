@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
-import { createRecordId, dateKey, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
+import { createRecordId, dateKey, getSchedule, hasBooking, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
 
 export default function ReceptionistDashboard({
   onLogout,
@@ -160,9 +160,11 @@ export default function ReceptionistDashboard({
     const date = String(form.get('date'));
     const time = String(form.get('time'));
     const doctor = String(form.get('doctor'));
-    const savedSchedule = schedules[scheduleKey(doctor, date)];
+    if (!doctor) { setAppointmentError('Choose an active doctor.'); return; }
+    if (!dateKey(date) || dateKey(date) < todayISO()) { setAppointmentError('Choose today or a future appointment date.'); return; }
+    const savedSchedule = getSchedule(schedules, doctor, date);
     if (hasBooking(appointments, doctor, date, time) ||
-      (savedSchedule && (!slotsBetween(savedSchedule.start, savedSchedule.end).includes(timeKey(time)) || savedSchedule.blocked?.[timeKey(time)]))) {
+      !slotsBetween(savedSchedule.start, savedSchedule.end).includes(timeKey(time)) || savedSchedule.blocked?.[timeKey(time)]) {
       setAppointmentError('This time is already booked or blocked in Doctor Schedules.'); return;
     }
     const booking = {
@@ -894,7 +896,8 @@ export default function ReceptionistDashboard({
                 </select>
               </div>
               <div className="field-block-row">
-                <div className="field-block"><label>Doctor</label><select name="doctor" defaultValue={doctors.find((doctor) => doctor.active)?.name || ''}>
+                <div className="field-block"><label>Doctor</label><select name="doctor" required defaultValue={doctors.find((doctor) => doctor.active)?.name || ''}>
+                  {!doctors.some((doctor) => doctor.active) && <option value="">No active doctors available</option>}
                   {doctors.filter((doctor) => doctor.active).map((doctor) => <option key={doctor.id}>{doctor.name}</option>)}
                 </select></div>
                 <div className="field-block"><label>Visit type</label><select name="type" defaultValue="Consultation"><option>Consultation</option><option>Checkup</option><option>Follow-up</option></select></div>
@@ -902,7 +905,7 @@ export default function ReceptionistDashboard({
               <div className="field-block-row">
                 <div className="field-block">
                   <label>Date</label>
-                  <input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+                  <input name="date" type="date" min={todayISO()} defaultValue={todayISO()} required />
                 </div>
                 <div className="field-block">
                   <label>Time</label>

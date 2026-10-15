@@ -4,6 +4,8 @@ import './appointment.css';
 import { createRecordId, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
 import { validateBooking, validateContactDetails } from '../medical secretary/medsecData';
 
+const canModifyBooking = (appointment) => ['Confirmed', 'Checked-In', 'Waiting'].includes(appointment?.status);
+
 export default function Appointment({
   onNavigate,
   onLogout,
@@ -187,13 +189,17 @@ export default function Appointment({
 
   // Action: Check-in patient
   const handleCheckIn = (apptId) => {
+    const target = appointments.find((a) => a.id === apptId);
+    if (target?.status !== 'Confirmed') {
+      showToast('Only confirmed appointments can be checked in.');
+      return;
+    }
     setAppointments((prev) =>
       prev.map((a) => (a.id === apptId ? { ...a, status: 'Checked-In' } : a))
     );
     if (selectedAppointment && selectedAppointment.id === apptId) {
       setSelectedAppointment((prev) => ({ ...prev, status: 'Checked-In' }));
     }
-    const target = appointments.find((a) => a.id === apptId);
     const pName = target ? target.patientName : 'Patient';
     // Add interactive notification
     setNotifications((prev) => [
@@ -211,6 +217,11 @@ export default function Appointment({
 
   // Action: Toggle Check-in status back to Confirmed
   const handleRevertStatus = (apptId) => {
+    const target = appointments.find((a) => a.id === apptId);
+    if (target?.status !== 'Checked-In') {
+      showToast('Only checked-in appointments can be reverted.');
+      return;
+    }
     setAppointments((prev) =>
       prev.map((a) => (a.id === apptId ? { ...a, status: 'Confirmed' } : a))
     );
@@ -276,7 +287,7 @@ export default function Appointment({
   const handleBookSlotSubmit = (e) => {
     e.preventDefault();
     //if (!bookForm.patientName.trim()) return;
-        const bookingProblem = validateBooking(bookForm);
+    const bookingProblem = validateBooking({ ...bookForm, date: targetSlot?.date, time: targetSlot?.time });
     if (bookingProblem) { showToast(bookingProblem); return; }
     if (JSON.stringify(appointments.find((item) => item.id === targetSlot?.id) || null) !== JSON.stringify(targetSlot)) {
       showToast('This slot changed in another session. Reopen it to review the latest details.'); return;
@@ -325,7 +336,7 @@ export default function Appointment({
   const handleNewSubmit = (e) => {
     e.preventDefault();
     //if (!newForm.patientName.trim()) return;
-        const bookingProblem = validateBooking(newForm, { checkDate: true });
+    const bookingProblem = validateBooking(newForm, { checkDate: true });
     if (bookingProblem) { showToast(bookingProblem); return; }
     if (!newBookingSlots.some((slot) => timeKey(slot) === timeKey(newForm.time))) {
       showToast('That slot is booked or blocked in Doctor Schedules.'); return;
@@ -412,6 +423,12 @@ export default function Appointment({
   // Action: Cancel / Free appointment
   const handleConfirmCancel = () => {
     if (!deleteTarget) return;
+    if (!['Confirmed', 'Checked-In', 'Waiting'].includes(deleteTarget.status)) {
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      showToast('Only active waiting or confirmed appointments can be cancelled.');
+      return;
+    }
     if (JSON.stringify(appointments.find((item) => item.id === deleteTarget.id) || null) !== JSON.stringify(deleteTarget)) {
       setShowDeleteConfirm(false);
       showToast('This appointment changed in another session. Review it before cancelling.');
@@ -1127,7 +1144,7 @@ export default function Appointment({
                               >
                                 Book
                               </button>
-                            ) : (
+                            ) : canModifyBooking(appt) ? (
                               <>
                                 <button
                                   type="button"
@@ -1150,7 +1167,7 @@ export default function Appointment({
                                   ✕
                                 </button>
                               </>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -1237,9 +1254,9 @@ export default function Appointment({
                                 >
                                   Book
                                 </button>
-                              ) : (
+                              ) : canModifyBooking(appt) ? (
                                 <>
-                                  {appt.status !== 'Checked-In' && (
+                                  {appt.status === 'Confirmed' && (
                                     <button
                                       type="button"
                                       className="ap-btn-mini-book"
@@ -1270,7 +1287,7 @@ export default function Appointment({
                                     ✕
                                   </button>
                                 </>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         );
@@ -1454,7 +1471,7 @@ export default function Appointment({
                           >
                             Book Slot
                           </button>
-                        ) : (
+                        ) : canModifyBooking(selectedAppointment) ? (
                           <>
                             <button
                               type="button"
@@ -1467,7 +1484,7 @@ export default function Appointment({
                               Cancel
                             </button>
 
-                            {selectedAppointment.status !== 'Checked-In' ? (
+                            {selectedAppointment.status === 'Confirmed' ? (
                               <button
                                 type="button"
                                 className="ap-btn-pill-green"
@@ -1475,7 +1492,7 @@ export default function Appointment({
                               >
                                 Check-In
                               </button>
-                            ) : (
+                            ) : selectedAppointment.status === 'Checked-In' ? (
                               <button
                                 type="button"
                                 className="ap-btn-pill-ghost"
@@ -1484,7 +1501,7 @@ export default function Appointment({
                               >
                                 Undo Check-In
                               </button>
-                            )}
+                            ) : null}
 
                             <button
                               type="button"
@@ -1494,7 +1511,7 @@ export default function Appointment({
                               Edit
                             </button>
                           </>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   )}
@@ -1590,24 +1607,24 @@ export default function Appointment({
 
                           <div className="ap-info-item">
                             <span className="ap-info-lbl">Patient ID</span>
-                            <span className="ap-info-val">{selectedAppointment.patientId || 'PTNT-NEW'}</span>
+                            <span className="ap-info-val">{selectedAppointment.patientId || 'Not recorded'}</span>
                           </div>
 
                           <div className="ap-info-item">
                             <span className="ap-info-lbl">Age / Sex</span>
                             <span className="ap-info-val">
-                              {selectedAppointment.age ? `${selectedAppointment.age} years old` : '28 years old'} | {selectedAppointment.sex || 'Male'}
+                              {selectedAppointment.age ? `${selectedAppointment.age} years old` : 'Age not recorded'} | {selectedAppointment.sex || 'Sex not recorded'}
                             </span>
                           </div>
 
                           <div className="ap-info-item">
                             <span className="ap-info-lbl">Contact Number</span>
-                            <span className="ap-info-val">{selectedAppointment.contact || 'N/A'}</span>
+                            <span className="ap-info-val">{selectedAppointment.contact || 'Not recorded'}</span>
                           </div>
 
                           <div className="ap-info-item full-width">
                             <span className="ap-info-lbl">Home Address</span>
-                            <span className="ap-info-val">{selectedAppointment.address || 'Address on file'}</span>
+                            <span className="ap-info-val">{selectedAppointment.address || 'Not recorded'}</span>
                           </div>
 
                           <div className="ap-info-item full-width">

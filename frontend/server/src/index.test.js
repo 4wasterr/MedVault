@@ -113,7 +113,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     ] })).status, 200)
     const patient = { id: 'PTNT-test', name: 'Test Patient', vitals: {}, medical: {}, appointments: [] }
     const appointment = { id: 'APPT-test', patientId: patient.id, patientName: patient.name,
-      doctor: 'Dr. Cruz', date: '2026-10-01', time: '09:00 AM', type: 'Consultation', status: 'Confirmed' }
+      doctor: 'Dr. Cruz', date: '2026-10-01', time: '09:00 AM', type: 'Consultation', status: 'Confirmed', contact: '0991-123-1245' }
     const created = await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'patients', id: patient.id, before: null, after: patient },
       { collection: 'appointments', id: appointment.id, before: null, after: appointment },
@@ -122,6 +122,10 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: 'APPT-conflict', before: null,
         after: { ...appointment, id: 'APPT-conflict', time: '09:00 AM' } },
+    ] })).status, 409)
+    assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
+      { collection: 'appointments', id: 'APPT-case-conflict', before: null,
+        after: { ...appointment, id: 'APPT-case-conflict', doctor: 'dr. cruz', time: '09:00 AM' } },
     ] })).status, 409)
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: 'APPT-off-grid', before: null,
@@ -134,11 +138,31 @@ test('shared records, role authorization, conflicts, and persistence', async () 
         after: { doctor: 'Dr. Cruz', date: '2026-10-01', start: '09:00', end: '17:00', blocked: {} } },
     ] })
     assert.notEqual(rejectedSchedule.status, 200)
+    assert.equal((await request('/api/changes', secretary.cookie, { changes: [
+      { collection: 'schedules', id: 'Dr. Missing|2026-10-01', before: null,
+        after: { doctor: 'Dr. Missing', date: '2026-10-01', start: '09:00', end: '17:00', blocked: {} } },
+    ] })).status, 400)
+    assert.equal((await request('/api/changes', secretary.cookie, { changes: [
+      { collection: 'schedules', id: 'Dr. Cruz|2026-02-31', before: null,
+        after: { doctor: 'Dr. Cruz', date: '2026-02-31', start: '09:00', end: '17:00', blocked: {} } },
+    ] })).status, 400)
     const schedule = { doctor: 'Dr. Cruz', date: '2026-10-01', start: '08:00', end: '17:00', blocked: { '12:00': 'Lunch' } }
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'schedules', id: 'Dr. Cruz|2026-10-01', before: null, after: schedule },
     ] })).status, 200)
     assert.equal((await request('/api/state', receptionist.cookie)).body.schedules['Dr. Cruz|2026-10-01'].blocked['12:00'], 'Lunch')
+    const terminalAppointment = { ...appointment, id: 'APPT-terminal', time: '10:00 AM' }
+    assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
+      { collection: 'appointments', id: terminalAppointment.id, before: null, after: terminalAppointment },
+    ] })).status, 200)
+    const completedAppointment = { ...terminalAppointment, status: 'Completed', visitStatus: 'Completed' }
+    assert.equal((await request('/api/changes', secretary.cookie, { changes: [
+      { collection: 'appointments', id: terminalAppointment.id, before: terminalAppointment, after: completedAppointment },
+    ] })).status, 200)
+    assert.equal((await request('/api/changes', secretary.cookie, { changes: [
+      { collection: 'appointments', id: terminalAppointment.id, before: completedAppointment,
+        after: { ...completedAppointment, status: 'Confirmed' } },
+    ] })).status, 400)
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: 'APPT-orphan', before: null,
         after: { ...appointment, id: 'APPT-orphan', patientId: 'PTNT-missing' } },
@@ -181,6 +205,10 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     ] })).status, 400)
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: appointment.id, before: cancelled, after: appointment },
+    ] })).status, 400)
+    assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
+      { collection: 'appointments', id: appointment.id, before: cancelled,
+        after: { ...cancelled, cancelledAt: new Date(Date.now() + 1000).toISOString() } },
     ] })).status, 400)
     const cruz = (await request('/api/admin/doctors', admin.cookie)).body.find((doctor) => doctor.name === 'Dr. Cruz')
     assert.equal((await request(`/api/admin/doctors/${cruz.id}`, admin.cookie, { name: 'Dr. Cruz Updated' }, 'PATCH')).status, 200)

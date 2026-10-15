@@ -3,7 +3,7 @@ import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
 import { createRecordId, todayISO } from '../medical secretary/medsecData';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
-import { validateRegisterForm, validatePatientEdit } from '../medical secretary/medsecData';
+import { validatePatientEdit } from '../medical secretary/medsecData';
 
 export default function PatientsModuleReceptionist({
   onNavigate,
@@ -685,33 +685,35 @@ export default function PatientsModuleReceptionist({
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Birthday</span>
-                            <span className="pm-info-val">{selectedPatient.birthday || 'Jan 10, 1991'}</span>
+                            <span className="pm-info-val">{selectedPatient.birthday || 'Not recorded'}</span>
                           </div>
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Age</span>
-                            <span className="pm-info-val">{selectedPatient.age}</span>
+                            <span className="pm-info-val">{selectedPatient.age || 'Not recorded'}</span>
                           </div>
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Sex</span>
-                            <span className="pm-info-val">{selectedPatient.sex || 'Male'}</span>
+                            <span className="pm-info-val">{selectedPatient.sex || 'Not recorded'}</span>
                           </div>
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Contact Number</span>
-                            <span className="pm-info-val">{selectedPatient.contact}</span>
+                            <span className="pm-info-val">{selectedPatient.contact || 'Not recorded'}</span>
                           </div>
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Address</span>
-                            <span className="pm-info-val">{selectedPatient.address}</span>
+                            <span className="pm-info-val">{selectedPatient.address || 'Not recorded'}</span>
                           </div>
 
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Emergency Contact</span>
                             <span className="pm-info-val">
-                              {selectedPatient.emergencyName} ({selectedPatient.emergencyContact})
+                              {selectedPatient.emergencyName
+                                ? `${selectedPatient.emergencyName}${selectedPatient.emergencyContact ? ` (${selectedPatient.emergencyContact})` : ''}`
+                                : 'Not recorded'}
                             </span>
                           </div>
                         </div>
@@ -751,9 +753,10 @@ export default function PatientsModuleReceptionist({
                             <span className="pm-info-lbl">Sex</span>
                             <select
                               className="pm-input-pill"
-                              value={editFormData.sex || 'Male'}
+                              value={editFormData.sex || ''}
                               onChange={(e) => setEditFormData({ ...editFormData, sex: e.target.value })}
                             >
+                              <option value="">Not recorded</option>
                               <option value="Male">Male</option>
                               <option value="Female">Female</option>
                               <option value="Other">Other</option>

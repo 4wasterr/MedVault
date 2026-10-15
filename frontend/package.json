@@ -12,8 +12,5 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {
-    "concurrently": "^10.0.5"
-  }
+  "type": "commonjs"
 }

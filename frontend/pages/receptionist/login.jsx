@@ -189,6 +189,7 @@ function ForgotPasswordFlow({ onClose }) {
         <span className="recovery-brand"><span aria-hidden="true">✚</span> MedVault</span>
       </div>
       <div className="recovery-content" key={step}>
+        <p className="recovery-kicker">Secure account access</p>
         <h2 id="recovery-title">{title}</h2>
         {step === 'email' && <>
           <p className="recovery-subtitle">Reset your password to access MedVault.</p>
