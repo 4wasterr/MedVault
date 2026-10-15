@@ -269,9 +269,15 @@ export default function App() {
   }, []);
 
   const handleNavigate = (view, target) => {
-    if (view === 'patients') setPatientTarget(target?.patientId
-      ? { id: target.patientId, tab: target.tab || 'personal' }
-      : { id: null, tab: 'personal' });
+    if (view === 'patients') {
+      setPatientTarget(target?.patientId
+        ? { id: target.patientId, tab: target.tab || 'personal' }
+        : { id: null, tab: 'personal' });
+    } else if (view === 'consultation') {
+      setPatientTarget(target?.patientId
+        ? { id: target.patientId, appointmentId: target.appointmentId || '' }
+        : { id: null, appointmentId: '' });
+    }
     setCurrentView(view);
     const url = new URL(window.location.href);
     url.searchParams.set('view', view);

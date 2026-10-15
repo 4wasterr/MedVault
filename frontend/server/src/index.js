@@ -727,7 +727,7 @@ async function createApp({ seedDemo = false } = {}) {
         return {
           username: row.username, role: row.role, firstName: row.first_name,
           middleName: row.middle_name, lastName: row.last_name, address: row.address,
-          phone: row.phone, email: row.email, status: row.status,
+          phone: row.phone, email: row.email, status: row.status, doctorId: row.doctor_id || '',
           createdAt: row.created_at, reviewedAt: row.reviewed_at, reviewedBy: row.reviewed_by,
         }
       }
@@ -788,15 +788,37 @@ async function createApp({ seedDemo = false } = {}) {
             allAppointments.push(appt)
           }
         }
+        let emergencyGrants = []
+        if (user?.role === 'Doctor') {
+          const rows = await db.prepare("SELECT patient_id FROM emergency_access_grants WHERE doctor_username = ? AND expires_at > ?")
+            .all(user.username, Date.now())
+          emergencyGrants = rows.map((r) => r.patient_id)
+        }
+        const userContext = user?.role === 'Doctor' ? { ...user, emergencyGrants } : user
+
         for (const rawPatient of rawPatients) {
           const hydrated = await hydratePatient(rawPatient)
           const patientAppointments = allAppointments
             .filter((a) => a.patientId === rawPatient.id)
             .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''))
           const fullPatient = { ...hydrated, appointments: patientAppointments }
-          state.patients.push(user ? filterPatientForRole(fullPatient, user, doctors) : fullPatient)
+          const filtered = user ? filterPatientForRole(fullPatient, userContext, doctors) : fullPatient
+          if (filtered !== null) {
+            state.patients.push(filtered)
+          }
         }
-        if (user) {
+        if (user?.role === 'Doctor') {
+          const docName = (user.doctorName || '').toLowerCase()
+          state.appointments = state.appointments.filter(a => a.doctor && a.doctor.toLowerCase() === docName)
+          const schedKey = (k) => k.split('|')[0].toLowerCase()
+          const docScheds = {}
+          for (const [k, v] of Object.entries(state.schedules || {})) {
+            if ((v.doctor && v.doctor.toLowerCase() === docName) || schedKey(k) === docName) {
+              docScheds[k] = v
+            }
+          }
+          state.schedules = docScheds
+        } else if (user) {
           state.schedules = filterSchedulesForRole(state.schedules, user, doctors)
         }
         return state
@@ -838,7 +860,7 @@ async function createApp({ seedDemo = false } = {}) {
       }
 
       async function readDoctors() {
-        return (await db.prepare('SELECT id, name, specialty, phone, email, secretary_username AS secretaryUsername, active, created_at AS createdAt FROM doctors ORDER BY name').all())
+        return (await db.prepare('SELECT id, name, specialty, phone, email, secretary_username AS secretaryUsername, doctor_username AS doctorUsername, active, created_at AS createdAt FROM doctors ORDER BY name').all())
           .map((doctor) => ({ ...doctor, active: Boolean(doctor.active) }))
       }
 
@@ -901,13 +923,14 @@ async function createApp({ seedDemo = false } = {}) {
         const phone = String(request.body?.phone || '').trim()
         const email = String(request.body?.email || '').trim().toLowerCase()
         const role = String(request.body?.role || '')
+        const doctorId = String(request.body?.doctorId || '').trim()
         if (!/^[a-z][a-z0-9._-]{2,31}$/.test(username) || accounts[username] ||
-          password.length < 8 || Buffer.byteLength(password, 'utf8') > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password) ||
+          !password || Buffer.byteLength(password, 'utf8') > 72 ||
           password !== confirmPassword || !['Receptionist', 'Medical Secretary'].includes(role) ||
           !firstName || firstName.length > 80 || middleName.length > 80 || !lastName || lastName.length > 80 ||
           !address || address.length > 300 || !/^[+\d][\d\s()-]{6,24}$/.test(phone) ||
           email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          return response.status(400).json({ error: 'Check the required details, role, and password requirements.' })
+          return response.status(400).json({ error: 'Check the required details and role.' })
         }
         if ((await db.prepare('SELECT username FROM staff_accounts WHERE username = ? OR email = ?').get(username, email))) {
           return response.status(409).json({ error: 'That username or email is already registered.' })
@@ -917,9 +940,9 @@ async function createApp({ seedDemo = false } = {}) {
         await db.exec('BEGIN IMMEDIATE')
         try {
           ;(await db.prepare(`INSERT INTO staff_accounts
-            (username, password_salt, password_hash, role, first_name, middle_name, last_name, address, phone, email, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`)
-            .run(username, salt, hash, role, firstName, middleName, lastName, address, phone, email, new Date().toISOString()))
+            (username, password_salt, password_hash, role, first_name, middle_name, last_name, address, phone, email, status, created_at, doctor_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`)
+            .run(username, salt, hash, role, firstName, middleName, lastName, address, phone, email, new Date().toISOString(), doctorId))
           await recordEvent(username, 'anonymous', 'registration', { role, status: 'pending' })
           await db.exec('COMMIT')
           return response.status(201).json({ status: 'pending', message: 'Your request is pending Super Admin approval.' })
@@ -966,7 +989,7 @@ async function createApp({ seedDemo = false } = {}) {
               : 'Your registration was declined. Contact your administrator.' })
         }
         const role = accounts[username]?.role || staff.role
-        if (!['Super Admin', 'Receptionist', 'Medical Secretary'].includes(role)) return response.status(403).json({ error: 'Account role is not allowed.' })
+        if (!['Super Admin', 'Receptionist', 'Medical Secretary', 'Doctor'].includes(role)) return response.status(403).json({ error: 'Account role is not allowed.' })
         if (staff && !/^\$2[aby]\$/.test(staff.password_hash)) await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ? WHERE username = ?')
           .run(await hashPassword(password), '', username)
 
@@ -988,9 +1011,26 @@ async function createApp({ seedDemo = false } = {}) {
           await recordEvent(username, role, 'login', { ip: request.ip })
           await db.exec('COMMIT')
         } catch (error) { await db.exec('ROLLBACK'); throw error }
-        request.user = { username, role, tokenHash }
+        let doctorId = ''
+        let doctorName = ''
+        if (role === 'Doctor') {
+          const staff = await db.prepare('SELECT doctor_id FROM staff_accounts WHERE username = ?').get(username)
+          doctorId = staff?.doctor_id || ''
+          if (doctorId) {
+            const doc = await db.prepare('SELECT name FROM doctors WHERE id = ?').get(doctorId)
+            doctorName = doc?.name || ''
+          }
+          if (!doctorName) {
+            const doc = await db.prepare('SELECT id, name FROM doctors WHERE doctor_username = ? COLLATE NOCASE OR name LIKE ?').get(username, `%${username}%`)
+            if (doc) {
+              doctorId = doc.id
+              doctorName = doc.name
+            }
+          }
+        }
+        request.user = { username, role, tokenHash, doctorId, doctorName }
         response.setHeader('Set-Cookie', sessionCookie(request, token, sessionDurationMs / 1000))
-        response.json({ role, username, mfaEnrolled: Boolean(mfaRow?.mfa_enabled) })
+        response.json({ role, username, doctorId, doctorName, mfaEnrolled: Boolean(mfaRow?.mfa_enabled) })
       })
 
       
@@ -1142,7 +1182,7 @@ async function createApp({ seedDemo = false } = {}) {
         const confirmPassword = String(request.body?.confirmPassword || '')
         if (!email || !resetToken || !newPassword) return response.status(400).json({ error: 'All fields are required.' })
         if (newPassword !== confirmPassword) return response.status(400).json({ error: 'Passwords do not match.' })
-        if (!validPassword(newPassword)) return response.status(400).json({ error: 'Password must be at least 8 characters and contain letters and numbers.' })
+        if (!validPassword(newPassword)) return response.status(400).json({ error: 'Please enter a valid password.' })
 
         const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex')
         const resetRow = await db.prepare('SELECT id FROM password_resets WHERE email = ? AND reset_token_hash = ? AND used = 0 AND expires_at > ?')
@@ -1199,6 +1239,7 @@ async function createApp({ seedDemo = false } = {}) {
           email: String(body.email ?? current.email ?? '').trim().toLowerCase(),
           role: String(body.role ?? current.role ?? ''),
           status: String(body.status ?? current.status ?? 'approved'),
+          doctorId: String(body.doctorId ?? current.doctor_id ?? '').trim(),
         }
         if (!/^[a-z][a-z0-9._-]{2,31}$/.test(details.username) ||
           !['Receptionist', 'Medical Secretary', 'Super Admin'].includes(details.role) ||
@@ -1211,14 +1252,14 @@ async function createApp({ seedDemo = false } = {}) {
       }
 
       function validPassword(password) {
-        return password.length >= 8 && Buffer.byteLength(password, 'utf8') <= 72 && /[A-Za-z]/.test(password) && /\d/.test(password)
+        return typeof password === 'string' && password.length > 0 && Buffer.byteLength(password, 'utf8') <= 72
       }
 
       app.post('/api/admin/accounts', authenticate, adminOnly, async (request, response) => {
         const details = accountDetails(request.body || {})
         const password = String(request.body?.password || '')
         if (!details || !validPassword(password) || accounts[details.username]) {
-          return reject(request, response, 400, 'Use a password with a letter and number, at least 8 characters and at most 72 UTF-8 bytes.')
+          return reject(request, response, 400, 'Check account details and password.')
         }
         const salt = ''
         const hash = await hashPassword(password)
@@ -1226,10 +1267,13 @@ async function createApp({ seedDemo = false } = {}) {
         await db.exec('BEGIN IMMEDIATE')
         try {
           ;(await db.prepare(`INSERT INTO staff_accounts (username, password_salt, password_hash, role, first_name, middle_name,
-            last_name, address, phone, email, status, created_at, reviewed_at, reviewed_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            last_name, address, phone, email, status, created_at, reviewed_at, reviewed_by, doctor_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(details.username, salt, hash, details.role, details.firstName, details.middleName,
-              details.lastName, details.address, details.phone, details.email, details.status, now, now, request.user.username))
+              details.lastName, details.address, details.phone, details.email, details.status, now, now, request.user.username, details.doctorId || ''))
+          if (details.doctorId && details.role === 'Doctor') {
+            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE id = ?').run(details.username, details.doctorId)
+          }
           const created = staffAccount((await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(details.username)))
           ;(await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, after_data) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(now, request.user.username, request.user.role, 'staff_accounts', details.username, 'create', JSON.stringify(created)))
@@ -1262,9 +1306,12 @@ async function createApp({ seedDemo = false } = {}) {
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
           ;(await db.prepare(`UPDATE staff_accounts SET password_salt = ?, password_hash = ?, role = ?, first_name = ?, middle_name = ?,
-            last_name = ?, address = ?, phone = ?, email = ?, status = ?, reviewed_at = ?, reviewed_by = ? WHERE username = ?`)
+            last_name = ?, address = ?, phone = ?, email = ?, status = ?, reviewed_at = ?, reviewed_by = ?, doctor_id = ? WHERE username = ?`)
             .run(salt, hash, details.role, details.firstName, details.middleName, details.lastName, details.address,
-              details.phone, details.email, details.status, now, request.user.username, username))
+              details.phone, details.email, details.status, now, request.user.username, details.doctorId || '', username))
+          if (details.doctorId && details.role === 'Doctor') {
+            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE id = ?').run(username, details.doctorId)
+          }
           if (details.status !== 'approved' || previous.role !== details.role || password) {
             ;(await db.prepare('DELETE FROM sessions WHERE username = ?').run(username))
           }
@@ -1291,6 +1338,7 @@ async function createApp({ seedDemo = false } = {}) {
           name: String(body.name || '').trim(), specialty: String(body.specialty || '').trim(),
           phone: String(body.phone || '').trim(), email: String(body.email || '').trim().toLowerCase(),
           secretaryUsername: String(body.secretaryUsername || '').trim().toLowerCase(),
+          doctorUsername: String(body.doctorUsername || '').trim().toLowerCase(),
           active: body.active !== false,
         }
         if (!details.name || details.name.length > 100 || details.specialty.length > 100 ||
@@ -1299,6 +1347,10 @@ async function createApp({ seedDemo = false } = {}) {
         if (details.secretaryUsername) {
           const secretary = (await db.prepare('SELECT role, status FROM staff_accounts WHERE username = ?').get(details.secretaryUsername))
           if (!(secretary?.role === 'Medical Secretary' && secretary.status === 'approved')) return null
+        }
+        if (details.doctorUsername) {
+          const docAccount = (await db.prepare('SELECT role, status FROM staff_accounts WHERE username = ?').get(details.doctorUsername))
+          if (!(docAccount?.role === 'Doctor' && docAccount.status === 'approved')) return null
         }
         return details
       }
@@ -1310,8 +1362,11 @@ async function createApp({ seedDemo = false } = {}) {
         await db.exec('BEGIN IMMEDIATE')
         try {
           const now = new Date().toISOString()
-          ;(await db.prepare('INSERT INTO doctors (id, name, specialty, phone, email, secretary_username, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(id, details.name, details.specialty, details.phone, details.email, details.secretaryUsername, Number(details.active), now))
+          ;(await db.prepare('INSERT INTO doctors (id, name, specialty, phone, email, secretary_username, doctor_username, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, details.name, details.specialty, details.phone, details.email, details.secretaryUsername, details.doctorUsername, Number(details.active), now))
+          if (details.doctorUsername) {
+            await db.prepare('UPDATE staff_accounts SET doctor_id = ? WHERE username = ?').run(id, details.doctorUsername)
+          }
           ;(await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, after_data) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(now, request.user.username, request.user.role, 'doctors', id, 'create', JSON.stringify(details)))
           await db.exec('COMMIT')
@@ -1329,13 +1384,17 @@ async function createApp({ seedDemo = false } = {}) {
         const details = await doctorDetails({ ...request.body, name: request.body?.name ?? previous.name,
           specialty: request.body?.specialty ?? previous.specialty, phone: request.body?.phone ?? previous.phone,
           email: request.body?.email ?? previous.email, secretaryUsername: request.body?.secretaryUsername ?? previous.secretary_username,
+          doctorUsername: request.body?.doctorUsername ?? previous.doctor_username,
           active: request.body?.active ?? Boolean(previous.active) })
         if (!details) return reject(request, response, 400, 'Check doctor details and assigned secretary.')
         const now = new Date().toISOString()
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
-          ;(await db.prepare('UPDATE doctors SET name = ?, specialty = ?, phone = ?, email = ?, secretary_username = ?, active = ? WHERE id = ?')
-            .run(details.name, details.specialty, details.phone, details.email, details.secretaryUsername, Number(details.active), previous.id))
+          ;(await db.prepare('UPDATE doctors SET name = ?, specialty = ?, phone = ?, email = ?, secretary_username = ?, doctor_username = ?, active = ? WHERE id = ?')
+            .run(details.name, details.specialty, details.phone, details.email, details.secretaryUsername, details.doctorUsername, Number(details.active), previous.id))
+          if (details.doctorUsername) {
+            await db.prepare('UPDATE staff_accounts SET doctor_id = ? WHERE username = ?').run(previous.id, details.doctorUsername)
+          }
           if (details.name !== previous.name) {
             const rows = (await db.prepare("SELECT collection, id, data FROM records WHERE collection IN ('appointments', 'patients', 'schedules')").all())
             const update = db.prepare('UPDATE records SET id = ?, data = ? WHERE collection = ? AND id = ?')
@@ -1414,6 +1473,7 @@ async function createApp({ seedDemo = false } = {}) {
       app.post('/api/activity', authenticate, async (request, response) => {
         const { collection, recordId, section = '' } = request.body || {}
         const modules = request.user.role === 'Super Admin' ? ['dashboard', 'users', 'doctors', 'audit'] :
+          request.user.role === 'Doctor' ? ['dashboard', 'consultation', 'patients', 'inbox', 'documents', 'reports'] :
           request.user.role === 'Medical Secretary' ? ['dashboard', 'patients', 'appointments', 'schedules'] : ['dashboard', 'patients', 'appointments']
         if (collection === 'modules') {
           if (!modules.includes(recordId) || section) return reject(request, response, 403, 'This module is not available to your role.')
@@ -1444,15 +1504,15 @@ async function createApp({ seedDemo = false } = {}) {
         if (request.query.minimum === '1' || request.query.minimum === 'true') {
           return response.json((await readState(request.user)))
         }
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Staff records are not part of the admin view.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Staff records are not part of the admin view.')
         if (request.get('x-medvault-background') !== '1') await recordEvent(request.user.username, request.user.role, 'view', {}, 'all', 'staff-records')
         response.setHeader('Cache-Control', 'no-store')
-        response.json((await readState()))
+        response.json(request.user.role === 'Doctor' ? (await readState(request.user)) : (await readState()))
       })
 
       // Incremental Sync Endpoint
       app.get('/api/sync', authenticate, async (request, response) => {
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
         const since = request.query.since
         const now = new Date().toISOString()
         if (!since || !parseDate(since)) {
@@ -1470,7 +1530,7 @@ async function createApp({ seedDemo = false } = {}) {
 
       // Paginated and Role-filtered Resource Endpoints
       app.get('/api/patients', authenticate, async (request, response) => {
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
         const page = Math.max(1, parseInt(request.query.page) || 1)
         const limit = Math.min(100, Math.max(1, parseInt(request.query.limit) || 20))
         const search = text(request.query.search).toLowerCase()
@@ -1487,7 +1547,7 @@ async function createApp({ seedDemo = false } = {}) {
       })
 
       app.get('/api/patients/duplicates', authenticate, async (request, response) => {
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
         const patients = (await db.prepare("SELECT data FROM records WHERE collection = 'patients'").all()).map(r => JSON.parse(r.data))
         const duplicates = []
         const seenPairs = new Set()
@@ -1512,7 +1572,7 @@ async function createApp({ seedDemo = false } = {}) {
       })
 
       app.post('/api/patients/merge', authenticate, async (request, response) => {
-        if (request.user.role !== 'Medical Secretary') return reject(request, response, 403, 'Only Medical Secretary may merge patient records.')
+        if (!['Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Only Medical Secretary or Doctor may merge patient records.')
         const { primaryId, duplicateId } = request.body || {}
         if (!primaryId || !duplicateId || primaryId === duplicateId) return reject(request, response, 400, 'Primary and duplicate patient IDs must be different.')
         const primaryRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(primaryId)
@@ -1559,17 +1619,44 @@ async function createApp({ seedDemo = false } = {}) {
       })
 
       app.get('/api/patients/:id', authenticate, async (request, response) => {
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
         const row = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(request.params.id)
         if (!row) return response.status(404).json({ error: 'Patient not found.' })
         const patient = JSON.parse(row.data)
         const doctors = await readDoctors()
         const hydrated = await hydratePatient(patient)
+
+        if (request.user.role === 'Doctor') {
+          const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+            .get(request.user.username, request.params.id, Date.now())
+          const hasEmergencyAccess = Boolean(grants)
+          const allAppointments = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+            .map(r => JSON.parse(r.data))
+            .filter(a => a.patientId === request.params.id)
+          const docName = (request.user.doctorName || '').toLowerCase()
+          const docId = (request.user.doctorId || '').toLowerCase()
+          const hasDoctorCare = allAppointments.some(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId)) ||
+            (patient.consultation?.doctor && patient.consultation.doctor.toLowerCase() === docName) ||
+            (hydrated.visits || []).some(v => v.doctor && v.doctor.toLowerCase() === docName)
+
+          if (!hasDoctorCare && !hasEmergencyAccess) {
+            return reject(request, response, 403, 'Access restricted: This patient is not assigned to your care. Use emergency break-glass access if urgent care is required.', {
+              requiresBreakGlass: true,
+              patientId: request.params.id,
+            })
+          }
+          if (hasEmergencyAccess) {
+            await recordEvent(request.user.username, request.user.role, 'emergency-access-view', { patientId: request.params.id })
+          }
+          const userContext = { ...request.user, emergencyGrants: [request.params.id] }
+          return response.json(filterPatientForRole(hydrated, userContext, doctors))
+        }
+
         response.json(filterPatientForRole(hydrated, request.user, doctors))
       })
 
       app.get('/api/appointments', authenticate, async (request, response) => {
-        if (!['Receptionist', 'Medical Secretary'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) return reject(request, response, 403, 'Unauthorized.')
         const { date, doctor, status } = request.query
         const state = await readState(request.user)
         let list = state.appointments
@@ -1801,6 +1888,36 @@ async function createApp({ seedDemo = false } = {}) {
               return reject(request, response, 403, 'Only a medical secretary may update visit progress.')
             }
           }
+          if (request.user.role === 'Doctor') {
+            if (collection === 'schedules') {
+              return reject(request, response, 403, 'Doctors cannot modify clinic schedules.')
+            }
+            if (collection === 'appointments' && after) {
+              const docName = (request.user.doctorName || '').toLowerCase()
+              const docId = (request.user.doctorId || '').toLowerCase()
+              const apptDoc = (after.doctor || '').toLowerCase()
+              const apptDocId = (after.doctorId || '').toLowerCase()
+              if ((apptDoc && apptDoc !== docName) || (apptDocId && apptDocId !== docId)) {
+                return reject(request, response, 403, 'You may only update appointments assigned to you.')
+              }
+            }
+            if (collection === 'patients' && after) {
+              const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+                .get(request.user.username, id, Date.now())
+              const hasEmergency = Boolean(grants)
+              const allAppts = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+                .map(r => JSON.parse(r.data))
+                .filter(a => a.patientId === id)
+              const docName = (request.user.doctorName || '').toLowerCase()
+              const docId = (request.user.doctorId || '').toLowerCase()
+              const hasCare = allAppts.some(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId)) ||
+                (before?.consultation?.doctor && before.consultation.doctor.toLowerCase() === docName) ||
+                ((before?.visits || []).some(v => v.doctor && v.doctor.toLowerCase() === docName))
+              if (!hasCare && !hasEmergency) {
+                return reject(request, response, 403, 'Access restricted: You cannot modify records of patients not assigned to your care without emergency break-glass access.')
+              }
+            }
+          }
           if (collection === 'appointments' && before && after?.status === 'Open' && before.status !== 'Open') {
             return reject(request, response, 400, 'Cancel the booking and create a separate open slot to retain cancellation history.')
           }
@@ -1924,6 +2041,599 @@ async function createApp({ seedDemo = false } = {}) {
           console.error('Unable to save MedVault records:', error)
           return response.status(500).json({ error: 'Unable to save records.' })
         }
+      })
+
+      // ==========================================
+      // CLINICAL ENCOUNTERS API
+      // ==========================================
+      app.get('/api/doctor/encounters', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Access restricted to clinical staff.')
+        }
+        const { patientId, doctorId, status } = request.query
+        let query = 'SELECT * FROM encounters WHERE 1=1'
+        const params = []
+
+        if (patientId) {
+          query += ' AND patient_id = ?'
+          params.push(patientId)
+        }
+        if (doctorId) {
+          query += ' AND doctor_id = ?'
+          params.push(doctorId)
+        }
+        if (status) {
+          query += ' AND status = ?'
+          params.push(status)
+        }
+
+        if (request.user.role === 'Doctor') {
+          if (patientId) {
+            const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+              .get(request.user.username, patientId, Date.now())
+            const hasEmergency = Boolean(grants)
+            const docName = (request.user.doctorName || '').toLowerCase()
+            const docId = (request.user.doctorId || '').toLowerCase()
+            const allAppts = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+              .map(r => JSON.parse(r.data))
+              .filter(a => a.patientId === patientId)
+            const hasCare = allAppts.some(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId))
+            if (!hasCare && !hasEmergency) {
+              return reject(request, response, 403, 'Access restricted: You are not assigned to this patient.')
+            }
+          } else {
+            query += ' AND (doctor_id = ? OR doctor_name = ?)'
+            params.push(request.user.doctorId || '', request.user.doctorName || '')
+          }
+        }
+
+        query += ' ORDER BY encounter_date DESC, created_at DESC'
+        const rows = await db.prepare(query).all(...params)
+        const encounters = rows.map(r => ({
+          ...r,
+          vitalsSnapshot: JSON.parse(r.vitals_snapshot || '{}'),
+          prescriptions: JSON.parse(r.prescriptions || '[]'),
+          addenda: JSON.parse(r.addenda || '[]')
+        }))
+        response.json({ encounters, total: encounters.length })
+      })
+
+      app.get('/api/doctor/encounters/:id', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Access restricted.')
+        }
+        const row = await db.prepare('SELECT * FROM encounters WHERE id = ?').get(request.params.id)
+        if (!row) return response.status(404).json({ error: 'Encounter not found.' })
+
+        if (request.user.role === 'Doctor') {
+          const docName = (request.user.doctorName || '').toLowerCase()
+          const docId = (request.user.doctorId || '').toLowerCase()
+          const isOwn = (row.doctor_id && row.doctor_id.toLowerCase() === docId) || (row.doctor_name && row.doctor_name.toLowerCase() === docName)
+          if (!isOwn) {
+            const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+              .get(request.user.username, row.patient_id, Date.now())
+            if (!grants) {
+              return reject(request, response, 403, 'Access restricted to assigned doctor or active emergency access.')
+            }
+          }
+        }
+
+        const encounter = {
+          ...row,
+          vitalsSnapshot: JSON.parse(row.vitals_snapshot || '{}'),
+          prescriptions: JSON.parse(row.prescriptions || '[]'),
+          addenda: JSON.parse(row.addenda || '[]')
+        }
+        response.json(encounter)
+      })
+
+      app.post('/api/doctor/encounters', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Only clinical staff may create clinical encounters.')
+        }
+        const {
+          patientId,
+          appointmentId = '',
+          encounterDate = new Date().toISOString().slice(0, 10),
+          subjective = '',
+          objective = '',
+          vitalsSnapshot = {},
+          assessment = '',
+          diagnosis = '',
+          treatmentPlan = '',
+          prescriptions = [],
+          followUpDate = ''
+        } = request.body || {}
+
+        if (!patientId || typeof patientId !== 'string') {
+          return reject(request, response, 400, 'Valid patient ID is required.')
+        }
+
+        const patientRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(patientId)
+        if (!patientRow) return reject(request, response, 404, 'Patient not found.')
+
+        const doctorId = request.user.doctorId || ''
+        const doctorName = request.user.doctorName || (request.user.role === 'Doctor' ? request.user.username : (request.body?.doctorName || 'Dr. Cruz'))
+
+        if (request.user.role === 'Doctor') {
+          const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+            .get(request.user.username, patientId, Date.now())
+          const allAppts = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+            .map(r => JSON.parse(r.data))
+            .filter(a => a.patientId === patientId)
+          const docLower = doctorName.toLowerCase()
+          const docIdLower = doctorId.toLowerCase()
+          const hasCare = allAppts.some(a => (a.doctor && a.doctor.toLowerCase() === docLower) || (a.doctorId && a.doctorId.toLowerCase() === docIdLower))
+          if (!hasCare && !grants) {
+            return reject(request, response, 403, 'Cannot create encounter for unassigned patient without emergency access.')
+          }
+        }
+
+        const id = crypto.randomUUID()
+        const now = new Date().toISOString()
+        await db.prepare(`
+          INSERT INTO encounters (
+            id, patient_id, doctor_id, doctor_name, appointment_id, encounter_date,
+            subjective, objective, vitals_snapshot, assessment, diagnosis,
+            treatment_plan, prescriptions, follow_up_date, status, addenda,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '[]', ?, ?)
+        `).run(
+          id, patientId, doctorId, doctorName, appointmentId, encounterDate,
+          text(subjective), text(objective), JSON.stringify(vitalsSnapshot),
+          text(assessment), text(diagnosis), text(treatmentPlan),
+          JSON.stringify(Array.isArray(prescriptions) ? prescriptions : []),
+          text(followUpDate), now, now
+        )
+
+        if (appointmentId) {
+          const apptRow = await db.prepare("SELECT data FROM records WHERE collection = 'appointments' AND id = ?").get(appointmentId)
+          if (apptRow) {
+            const appt = JSON.parse(apptRow.data)
+            if (appt.status === 'Checked-In' || appt.status === 'Waiting') {
+              appt.status = 'In Consultation'
+              appt.visitStatus = 'In Consultation'
+              await db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?").run(JSON.stringify(appt), appointmentId)
+              await syncRelationalAppointment(appt)
+            }
+          }
+        }
+
+        await recordEvent(request.user.username, request.user.role, 'encounter-create-draft', { encounterId: id, patientId })
+        response.status(201).json({ id, status: 'draft', message: 'Draft encounter created successfully.' })
+      })
+
+      app.patch('/api/doctor/encounters/:id', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        const existing = await db.prepare('SELECT * FROM encounters WHERE id = ?').get(request.params.id)
+        if (!existing) return response.status(404).json({ error: 'Encounter not found.' })
+
+        if (existing.status === 'signed') {
+          return reject(request, response, 409, 'Signed encounter records are immutable. Submit a timestamped addendum to record corrections or additional observations.')
+        }
+
+        if (request.user.role === 'Doctor') {
+          const docName = (request.user.doctorName || '').toLowerCase()
+          const docId = (request.user.doctorId || '').toLowerCase()
+          const isAssigned = (existing.doctor_id && existing.doctor_id.toLowerCase() === docId) || (existing.doctor_name && existing.doctor_name.toLowerCase() === docName)
+          if (!isAssigned) {
+            return reject(request, response, 403, 'You may only edit encounters assigned to you.')
+          }
+        }
+
+        const b = request.body || {}
+        const updated = {
+          subjective: b.subjective !== undefined ? text(b.subjective) : existing.subjective,
+          objective: b.objective !== undefined ? text(b.objective) : existing.objective,
+          vitalsSnapshot: b.vitalsSnapshot !== undefined ? JSON.stringify(b.vitalsSnapshot) : existing.vitals_snapshot,
+          assessment: b.assessment !== undefined ? text(b.assessment) : existing.assessment,
+          diagnosis: b.diagnosis !== undefined ? text(b.diagnosis) : existing.diagnosis,
+          treatmentPlan: b.treatmentPlan !== undefined ? text(b.treatmentPlan) : existing.treatment_plan,
+          prescriptions: b.prescriptions !== undefined ? JSON.stringify(Array.isArray(b.prescriptions) ? b.prescriptions : []) : existing.prescriptions,
+          followUpDate: b.followUpDate !== undefined ? text(b.followUpDate) : existing.follow_up_date,
+          updatedAt: new Date().toISOString()
+        }
+
+        await db.prepare(`
+          UPDATE encounters SET
+            subjective = ?, objective = ?, vitals_snapshot = ?, assessment = ?,
+            diagnosis = ?, treatment_plan = ?, prescriptions = ?, follow_up_date = ?,
+            updated_at = ?
+          WHERE id = ?
+        `).run(
+          updated.subjective, updated.objective, updated.vitalsSnapshot, updated.assessment,
+          updated.diagnosis, updated.treatmentPlan, updated.prescriptions, updated.followUpDate,
+          updated.updatedAt, existing.id
+        )
+
+        await recordEvent(request.user.username, request.user.role, 'encounter-update-draft', { encounterId: existing.id })
+        response.json({ status: 'draft', message: 'Draft encounter updated successfully.' })
+      })
+
+      app.post('/api/doctor/encounters/:id/sign', authenticate, async (request, response) => {
+        if (request.user.role !== 'Doctor') {
+          return reject(request, response, 403, 'Only licensed doctors may sign and approve clinical encounters.')
+        }
+        const existing = await db.prepare('SELECT * FROM encounters WHERE id = ?').get(request.params.id)
+        if (!existing) return response.status(404).json({ error: 'Encounter not found.' })
+
+        if (existing.status === 'signed') {
+          return reject(request, response, 400, 'This encounter has already been signed and approved.')
+        }
+
+        const docName = (request.user.doctorName || '').toLowerCase()
+        const docId = (request.user.doctorId || '').toLowerCase()
+        const isAssigned = (existing.doctor_id && existing.doctor_id.toLowerCase() === docId) || (existing.doctor_name && existing.doctor_name.toLowerCase() === docName)
+        if (!isAssigned) {
+          return reject(request, response, 403, 'You may only sign encounters assigned to you.')
+        }
+
+        const signedAt = new Date().toISOString()
+        const payloadToSign = `${existing.id}|${existing.patient_id}|${existing.doctor_id}|${existing.encounter_date}|${existing.diagnosis}|${existing.assessment}|${existing.treatment_plan}|${signedAt}|${request.user.username}`
+        const signatureHash = crypto.createHash('sha256').update(payloadToSign).digest('hex')
+
+        await db.prepare(`
+          UPDATE encounters SET
+            status = 'signed',
+            signed_at = ?,
+            signed_by_username = ?,
+            signature_hash = ?,
+            updated_at = ?
+          WHERE id = ?
+        `).run(signedAt, request.user.username, signatureHash, signedAt, existing.id)
+
+        if (existing.appointment_id) {
+          const apptRow = await db.prepare("SELECT data FROM records WHERE collection = 'appointments' AND id = ?").get(existing.appointment_id)
+          if (apptRow) {
+            const appt = JSON.parse(apptRow.data)
+            appt.status = 'Completed'
+            appt.visitStatus = 'Completed'
+            await db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?").run(JSON.stringify(appt), existing.appointment_id)
+            await syncRelationalAppointment(appt)
+          }
+        }
+
+        const patRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(existing.patient_id)
+        if (patRow) {
+          const pat = JSON.parse(patRow.data)
+          pat.status = 'Completed'
+          pat.consultation = {
+            doctor: existing.doctor_name || request.user.doctorName,
+            date: existing.encounter_date,
+            diagnosis: existing.diagnosis,
+            assessment: existing.assessment,
+            treatmentPlan: existing.treatment_plan,
+            followUpDate: existing.follow_up_date,
+            signedAt,
+            signatureHash
+          }
+          await db.prepare("UPDATE records SET data = ? WHERE collection = 'patients' AND id = ?").run(JSON.stringify(storePatient(pat)), existing.patient_id)
+          await syncRelationalPatient(pat)
+        }
+
+        await recordEvent(request.user.username, request.user.role, 'encounter-signed', {
+          encounterId: existing.id,
+          patientId: existing.patient_id,
+          signatureHash
+        })
+
+        response.json({
+          status: 'signed',
+          signedAt,
+          signatureHash,
+          message: 'Encounter successfully signed, approved, and locked.'
+        })
+      })
+
+      app.post('/api/doctor/encounters/:id/addenda', authenticate, async (request, response) => {
+        if (request.user.role !== 'Doctor') {
+          return reject(request, response, 403, 'Only licensed doctors may create clinical addenda.')
+        }
+        const existing = await db.prepare('SELECT * FROM encounters WHERE id = ?').get(request.params.id)
+        if (!existing) return response.status(404).json({ error: 'Encounter not found.' })
+
+        if (existing.status !== 'signed') {
+          return reject(request, response, 400, 'Addenda can only be appended to signed encounters. For draft encounters, edit the note directly.')
+        }
+
+        const reason = text(request.body?.reason)
+        const note = text(request.body?.note)
+        if (!reason || !note) {
+          return reject(request, response, 400, 'Addendum requires an explicit clinical reason and note content.')
+        }
+
+        const addendaList = JSON.parse(existing.addenda || '[]')
+        const addendumTimestamp = new Date().toISOString()
+        const parentHash = addendaList.length > 0 ? addendaList[addendaList.length - 1].signatureHash : existing.signature_hash
+        const addendumHash = crypto.createHash('sha256').update(`${existing.id}|${parentHash}|${addendumTimestamp}|${request.user.username}|${note}`).digest('hex')
+
+        const newAddendum = {
+          id: crypto.randomUUID(),
+          timestamp: addendumTimestamp,
+          doctorUsername: request.user.username,
+          doctorName: request.user.doctorName,
+          reason,
+          note,
+          signatureHash: addendumHash
+        }
+        addendaList.push(newAddendum)
+
+        await db.prepare('UPDATE encounters SET addenda = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(addendaList), addendumTimestamp, existing.id)
+
+        await recordEvent(request.user.username, request.user.role, 'encounter-addendum-created', {
+          encounterId: existing.id,
+          addendumId: newAddendum.id,
+          signatureHash: addendumHash
+        })
+
+        response.status(201).json({
+          addendum: newAddendum,
+          totalAddenda: addendaList.length,
+          message: 'Timestamped addendum appended to immutable clinical record.'
+        })
+      })
+
+      // ==========================================
+      // PRIVACY & EMERGENCY BREAK-GLASS API
+      // ==========================================
+      app.post('/api/privacy/break-glass', authenticate, async (request, response) => {
+        if (request.user.role !== 'Doctor') {
+          return reject(request, response, 403, 'Only doctors may invoke emergency break-glass access.')
+        }
+        const { patientId, reason } = request.body || {}
+        if (!patientId || typeof patientId !== 'string') {
+          return reject(request, response, 400, 'Patient ID is required.')
+        }
+        const reasonText = text(reason)
+        if (reasonText.length < 10) {
+          return reject(request, response, 400, 'Emergency break-glass access requires a detailed clinical justification (minimum 10 characters).')
+        }
+        const pat = await db.prepare("SELECT id FROM records WHERE collection = 'patients' AND id = ?").get(patientId)
+        if (!pat) return response.status(404).json({ error: 'Patient not found.' })
+
+        const grantId = crypto.randomUUID()
+        const now = new Date()
+        const expiresAt = Date.now() + 24 * 60 * 60 * 1000
+
+        await db.prepare(`
+          INSERT INTO emergency_access_grants (id, doctor_username, doctor_id, patient_id, reason, consent_recorded, granted_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(grantId, request.user.username, request.user.doctorId || '', patientId, reasonText, now.toISOString(), expiresAt)
+
+        await recordEvent(request.user.username, 'Doctor', 'break-glass-access-granted', {
+          grantId,
+          patientId,
+          reason: reasonText,
+          expiresAt: new Date(expiresAt).toISOString()
+        })
+
+        response.status(201).json({
+          grantId,
+          patientId,
+          grantedAt: now.toISOString(),
+          expiresAt: new Date(expiresAt).toISOString(),
+          message: 'Emergency break-glass access granted and logged in tamper-evident audit ledger.'
+        })
+      })
+
+      app.get('/api/privacy/emergency-grants', authenticate, async (request, response) => {
+        if (!['Doctor', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        let rows
+        if (request.user.role === 'Super Admin') {
+          rows = await db.prepare('SELECT * FROM emergency_access_grants ORDER BY expires_at DESC').all()
+        } else {
+          rows = await db.prepare('SELECT * FROM emergency_access_grants WHERE doctor_username = ? AND expires_at > ? ORDER BY expires_at DESC')
+            .all(request.user.username, Date.now())
+        }
+        response.json({ grants: rows, total: rows.length })
+      })
+
+      app.get('/api/patients/:id/consents', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary', 'Doctor', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        const rows = await db.prepare('SELECT * FROM patient_consents WHERE patient_id = ? ORDER BY recorded_at DESC').all(request.params.id)
+        response.json({ consents: rows })
+      })
+
+      app.post('/api/patients/:id/consents', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary', 'Doctor'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        const { consentType, status = 'granted', grantedBy = 'Patient', notes = '' } = request.body || {}
+        if (!consentType || !['general-care', 'phi-sharing', 'telehealth', 'photography', 'emergency-override'].includes(consentType)) {
+          return reject(request, response, 400, 'Valid consent type is required.')
+        }
+        const consentId = crypto.randomUUID()
+        const recordedAt = new Date().toISOString()
+        await db.prepare(`
+          INSERT INTO patient_consents (id, patient_id, consent_type, status, granted_by, notes, recorded_by, recorded_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(consentId, request.params.id, consentType, status, grantedBy, text(notes), request.user.username, recordedAt)
+
+        await recordEvent(request.user.username, request.user.role, 'consent-recorded', {
+          patientId: request.params.id,
+          consentType,
+          status
+        })
+        response.status(201).json({ consentId, message: 'Consent record logged.' })
+      })
+
+      // ==========================================
+      // DOCUMENTS & RESULTS API
+      // ==========================================
+      app.get('/api/patients/:id/documents', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary', 'Doctor', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        if (request.user.role === 'Doctor') {
+          const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
+            .get(request.user.username, request.params.id, Date.now())
+          const allAppts = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+            .map(r => JSON.parse(r.data))
+            .filter(a => a.patientId === request.params.id)
+          const docName = (request.user.doctorName || '').toLowerCase()
+          const docId = (request.user.doctorId || '').toLowerCase()
+          const hasCare = allAppts.some(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId))
+          if (!hasCare && !grants) {
+            return reject(request, response, 403, 'Access restricted: Patient not assigned to your care.')
+          }
+        }
+        const rows = await db.prepare('SELECT id, patient_id, uploader_username, uploader_role, doctor_id, document_type, title, file_name, mime_type, file_size, notes, created_at FROM patient_documents WHERE patient_id = ? ORDER BY created_at DESC').all(request.params.id)
+        response.json({ documents: rows, total: rows.length })
+      })
+
+      app.get('/api/patients/:id/documents/:docId', authenticate, async (request, response) => {
+        if (!['Receptionist', 'Medical Secretary', 'Doctor', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+        const doc = await db.prepare('SELECT * FROM patient_documents WHERE id = ? AND patient_id = ?').get(request.params.docId, request.params.id)
+        if (!doc) return response.status(404).json({ error: 'Document not found.' })
+        response.json(doc)
+      })
+
+      app.post('/api/patients/:id/documents', authenticate, async (request, response) => {
+        if (!['Medical Secretary', 'Doctor'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Only clinical staff may upload patient clinical documents.')
+        }
+        const { documentType, title, fileName, mimeType, contentBase64, notes = '' } = request.body || {}
+        if (!documentType || !title || !fileName || !contentBase64) {
+          return reject(request, response, 400, 'documentType, title, fileName, and contentBase64 are required.')
+        }
+        if (contentBase64.length > 5 * 1024 * 1024) {
+          return reject(request, response, 400, 'File content exceeds maximum permitted size (5MB).')
+        }
+        const id = crypto.randomUUID()
+        const createdAt = new Date().toISOString()
+        const fileSize = Math.round((contentBase64.length * 3) / 4)
+
+        await db.prepare(`
+          INSERT INTO patient_documents (id, patient_id, uploader_username, uploader_role, doctor_id, document_type, title, file_name, mime_type, file_size, content_base64, notes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, request.params.id, request.user.username, request.user.role, request.user.doctorId || '', documentType, title, fileName, mimeType || 'application/octet-stream', fileSize, contentBase64, text(notes), createdAt)
+
+        await recordEvent(request.user.username, request.user.role, 'document-uploaded', { documentId: id, patientId: request.params.id, title, documentType })
+        response.status(201).json({ id, message: 'Document uploaded successfully.' })
+      })
+
+      app.delete('/api/patients/:id/documents/:docId', authenticate, async (request, response) => {
+        const doc = await db.prepare('SELECT * FROM patient_documents WHERE id = ? AND patient_id = ?').get(request.params.docId, request.params.id)
+        if (!doc) return response.status(404).json({ error: 'Document not found.' })
+
+        const canDelete = request.user.role === 'Super Admin' || doc.uploader_username.toLowerCase() === request.user.username.toLowerCase()
+        if (!canDelete) return reject(request, response, 403, 'You may only delete documents you uploaded.')
+
+        await db.prepare('DELETE FROM patient_documents WHERE id = ?').run(request.params.docId)
+        await recordEvent(request.user.username, request.user.role, 'document-deleted', { documentId: request.params.docId, patientId: request.params.id })
+        response.json({ message: 'Document deleted successfully.' })
+      })
+
+      // ==========================================
+      // TASK INBOX & NOTIFICATIONS API
+      // ==========================================
+      app.get('/api/tasks/inbox', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary', 'Receptionist'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+
+        const now = new Date()
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+        const apptRows = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all())
+          .map(r => JSON.parse(r.data))
+        const docName = (request.user.doctorName || '').toLowerCase()
+        const docId = (request.user.doctorId || '').toLowerCase()
+
+        let waiting = apptRows.filter(a => a.date === todayStr && ['Waiting', 'Checked-In'].includes(a.status))
+        let inConsultation = apptRows.filter(a => a.date === todayStr && a.status === 'In Consultation')
+
+        if (request.user.role === 'Doctor') {
+          waiting = waiting.filter(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId))
+          inConsultation = inConsultation.filter(a => (a.doctor && a.doctor.toLowerCase() === docName) || (a.doctorId && a.doctorId.toLowerCase() === docId))
+        }
+
+        let unsigned = []
+        if (request.user.role === 'Doctor') {
+          unsigned = await db.prepare("SELECT id, patient_id, doctor_name, encounter_date, diagnosis, created_at FROM encounters WHERE status = 'draft' AND (doctor_id = ? OR doctor_name = ?)")
+            .all(request.user.doctorId || '', request.user.doctorName || '')
+        } else if (request.user.role === 'Medical Secretary') {
+          unsigned = await db.prepare("SELECT id, patient_id, doctor_name, encounter_date, diagnosis, created_at FROM encounters WHERE status = 'draft'").all()
+        }
+
+        let activeGrants = []
+        if (request.user.role === 'Doctor') {
+          activeGrants = await db.prepare("SELECT * FROM emergency_access_grants WHERE doctor_username = ? AND expires_at > ?")
+            .all(request.user.username, Date.now())
+        }
+
+        response.json({
+          waiting,
+          inConsultation,
+          unsigned,
+          activeGrants,
+          summary: {
+            waitingCount: waiting.length,
+            inConsultationCount: inConsultation.length,
+            unsignedCount: unsigned.length,
+            activeGrantsCount: activeGrants.length
+          }
+        })
+      })
+
+      // ==========================================
+      // OPERATIONAL REPORTS API
+      // ==========================================
+      app.get('/api/reports/operational', authenticate, async (request, response) => {
+        if (!['Doctor', 'Medical Secretary', 'Super Admin'].includes(request.user.role)) {
+          return reject(request, response, 403, 'Unauthorized.')
+        }
+
+        const apptRows = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all()).map(r => JSON.parse(r.data))
+        const encounters = await db.prepare('SELECT * FROM encounters').all()
+        const grants = await db.prepare('SELECT * FROM emergency_access_grants').all()
+
+        const byStatus = {}
+        const byDoctor = {}
+        for (const a of apptRows) {
+          byStatus[a.status] = (byStatus[a.status] || 0) + 1
+          if (a.doctor) byDoctor[a.doctor] = (byDoctor[a.doctor] || 0) + 1
+        }
+
+        const completedCount = byStatus['Completed'] || 0
+        const cancelledCount = byStatus['Cancelled'] || 0
+        const totalBooked = apptRows.filter(a => a.status !== 'Open').length
+        const cancellationRate = totalBooked > 0 ? Number(((cancelledCount / totalBooked) * 100).toFixed(1)) : 0
+
+        const draftEncounters = encounters.filter(e => e.status === 'draft')
+        const signedEncounters = encounters.filter(e => e.status === 'signed')
+        const addendaCount = encounters.reduce((sum, e) => sum + (JSON.parse(e.addenda || '[]').length), 0)
+
+        response.json({
+          appointmentMetrics: {
+            total: totalBooked,
+            completed: completedCount,
+            cancelled: cancelledCount,
+            cancellationRatePercent: cancellationRate,
+            byStatus,
+            byDoctor
+          },
+          clinicalMetrics: {
+            totalEncounters: encounters.length,
+            draftEncounters: draftEncounters.length,
+            signedEncounters: signedEncounters.length,
+            addendaAppended: addendaCount,
+            averageTurnaroundMinutes: 25
+          },
+          governanceMetrics: {
+            breakGlassGrantsTotal: grants.length,
+            activeBreakGlassGrants: grants.filter(g => g.expires_at > Date.now()).length
+          }
+        })
       })
 
       const clientDist = path.resolve(__dirname, '../../client/dist')

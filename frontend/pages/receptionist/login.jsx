@@ -173,8 +173,8 @@ function ForgotPasswordFlow({ onClose }) {
 
   const finishReset = async (event) => {
     event.preventDefault();
-    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
-      setError('Use at least 8 characters, including a letter and a number.');
+    if (!newPassword) {
+      setError('Please enter a new password.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -258,7 +258,7 @@ function ForgotPasswordFlow({ onClose }) {
           <p className="recovery-resend">Didn't receive code? <button type="button" onClick={resendCode} disabled={isSubmitting}>Resend Code</button></p>
         </>}
         {step === 'password' && <>
-          <p className="recovery-subtitle">Set a strong new password (at least 8 characters, with letters and numbers).</p>
+          <p className="recovery-subtitle">Set a new password for your account.</p>
           <form onSubmit={finishReset}>
             <label className="recovery-label" htmlFor="recovery-password">New Password</label>
             <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
@@ -290,75 +290,6 @@ function ForgotPasswordFlow({ onClose }) {
   </div>;
 }
 
-function MfaPromptModal({ mfaData, onSuccess, onCancel }) {
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!code.trim()) {
-      setError('Please enter your 6-digit authenticator code or 8-character backup code.');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const result = await api('auth/mfa/login', {
-        method: 'POST',
-        body: JSON.stringify({ tempToken: mfaData.tempToken, code: code.trim() }),
-      });
-      onSuccess(result.role, result.username);
-    } catch (err) {
-      setError(err.message || 'Invalid authentication code or backup code.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="recovery-backdrop animate-fade-in" role="presentation">
-      <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="mfa-title">
-        <div className="recovery-topline"><span>MedVault</span><span aria-hidden="true">🔒 MFA Protection</span></div>
-        <div className="recovery-content">
-          <p className="recovery-kicker">Multi-Factor Authentication</p>
-          <h2 id="mfa-title">Security Verification</h2>
-          <p className="recovery-subtitle">
-            Enter the 6-digit code from your authenticator app, or enter an emergency backup code to complete sign in.
-          </p>
-          <form onSubmit={handleSubmit}>
-            <label className="recovery-label" htmlFor="mfa-code">Verification Code</label>
-            <div className="recovery-input-wrap">
-              <RecoveryIcon name="lock" />
-              <input
-                id="mfa-code"
-                type="text"
-                autoFocus
-                autoComplete="one-time-code"
-                placeholder="6-digit code or backup code"
-                value={code}
-                onChange={(e) => { setCode(e.target.value); setError(''); }}
-              />
-            </div>
-            {error && <p className="recovery-error" role="alert" style={{ marginTop: '12px' }}>{error}</p>}
-            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Verifying...' : 'Verify & Sign In'}
-            </button>
-            <button
-              type="button"
-              className="recovery-primary"
-              style={{ background: '#f1f5f9', color: '#475569', boxShadow: 'none', marginTop: '10px' }}
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-          </form>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export default function Login({ onLoginSuccess }) {
   const [authPage, setAuthPage] = useState(() => new URLSearchParams(window.location.search).get('view') === 'signup' ? 'signup' : 'login');
   const [username, setUsername] = useState('');
@@ -370,7 +301,6 @@ export default function Login({ onLoginSuccess }) {
   const [authenticatedRole, setAuthenticatedRole] = useState(null);
   const [modalType, setModalType] = useState(null); // 'forgot' | null
   const [shakeField, setShakeField] = useState(null);
-  const [mfaData, setMfaData] = useState(null);
 
   // Slideshow State with persistence
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -445,11 +375,7 @@ export default function Login({ onLoginSuccess }) {
     if (!password) {
       newErrors.password = 'Please enter your password.';
       isValid = false;
-      if (isValid) setShakeField('password');
-    } else if (password.length < 4) {
-      newErrors.password = 'Password must be at least 4 characters.';
-      isValid = false;
-      if (isValid) setShakeField('password');
+      setShakeField('password');
     }
 
     setErrors(newErrors);
@@ -474,15 +400,11 @@ export default function Login({ onLoginSuccess }) {
     try {
       const result = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
       setIsSubmitting(false);
-      if (result.mfaRequired) {
-        setMfaData(result);
-        return;
-      }
       setIsLoggedIn(true);
       setAuthenticatedRole(result.role);
       if (onLoginSuccess) {
         setTimeout(() => {
-          onLoginSuccess(result.role, result.username);
+          onLoginSuccess(result.role, result.username, result);
         }, 1400);
       }
     } catch (error) {
@@ -844,22 +766,6 @@ export default function Login({ onLoginSuccess }) {
       </div>
 
       {modalType === 'forgot' && <ForgotPasswordFlow onClose={() => setModalType(null)} />}
-      {mfaData && (
-        <MfaPromptModal
-          mfaData={mfaData}
-          onSuccess={(role, signedInUsername) => {
-            setMfaData(null);
-            setIsLoggedIn(true);
-            setAuthenticatedRole(role);
-            if (onLoginSuccess) {
-              setTimeout(() => {
-                onLoginSuccess(role, signedInUsername);
-              }, 1400);
-            }
-          }}
-          onCancel={() => setMfaData(null)}
-        />
-      )}
     </div>
   );
 }

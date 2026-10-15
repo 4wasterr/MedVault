@@ -36,23 +36,27 @@ The recovery targets are operational acceptance targets, not measured service gu
 
 ## Access control matrix
 
-| Operation | Super Admin | Receptionist | Medical Secretary |
-| --- | --- | --- | --- |
-| Staff registration approval, creation, role changes, deactivation | Allow | Deny | Deny |
-| Doctor profile and secretary assignments | Allow | Deny | Deny |
-| Multi-Factor Authentication (TOTP / Backup codes) | Enforced | Supported | Supported |
-| Password reset & single-use expiring token verification | Allow (self/admin) | Allow (self) | Allow (self) |
-| Aggregate dashboard counts | Allow | Staff dashboard | Staff dashboard |
-| Patient and clinical record read | Deny | Minimum Necessary (demographics & booking intake; clinical notes redacted) | Full clinical access |
-| Patient duplicate review and merge | Deny | Allow | Allow |
-| Patient demographics and booking management | Deny | Allow (validated rules & 30-min slots) | Allow |
-| Clinical history, consultation, vitals, notes, visit progress | Deny | Deny write | Allow |
-| Doctor schedule changes | Deny | Deny | Allow for assigned doctors; unassigned doctors remain shared |
-| Import old browser records | Deny | Deny | Strict validation (schema allowlist & invariant checks) |
-| Incremental state synchronization (`/api/sync`) | Deny | Allow (role-filtered delta) | Allow (role-filtered delta) |
-| Security health and audit metadata | Allow | Deny | Deny |
+| Operation | Super Admin | Receptionist | Medical Secretary | Doctor |
+| --- | --- | --- | --- | --- |
+| Staff registration approval, creation, role changes, deactivation | Allow | Deny | Deny | Deny |
+| Doctor profile and secretary assignments | Allow | Deny | Deny | Deny |
+| Multi-Factor Authentication (TOTP / Backup codes) | Enforced | Supported | Supported | Supported |
+| Password reset & single-use expiring token verification | Allow (self/admin) | Allow (self) | Allow (self) | Allow (self) |
+| Aggregate dashboard counts | Allow | Staff dashboard | Staff dashboard | Doctor clinical queue |
+| Patient and clinical record read | Deny | Minimum Necessary (demographics & booking intake; clinical notes redacted) | Full clinical access | Doctor-scoped (assigned patients & active emergency access only; unassigned 403) |
+| Emergency Break-Glass PHI elevation (`/api/privacy/break-glass`) | Deny | Deny | Deny | Allow (audited 24-hour grant with mandatory clinical justification) |
+| Patient duplicate review and merge | Deny | Allow | Allow | Allow |
+| Patient demographics and booking management | Deny | Allow (validated rules & 30-min slots) | Allow | Update assigned appointments only |
+| Clinical history, consultation, vitals, notes, visit progress | Deny | Deny write | Allow | Full clinical authority (SOAP, diagnoses, treatment plan, prescriptions) |
+| Clinical encounter signing & lock (`/api/doctor/encounters/:id/sign`) | Deny | Deny | Draft only | Authorize & sign (SHA-256 sealed, immutable record) |
+| Timestamped Addenda (`/api/doctor/encounters/:id/addenda`) | Deny | Deny | Deny | Allow (cryptographically chained to encounter hash) |
+| Clinical Documents & Lab Results (`/api/patients/:id/documents`) | Allow (admin audit) | Deny clinical | Allow | Allow (assigned patients or break-glass) |
+| Doctor schedule changes | Deny | Deny | Allow for assigned doctors; unassigned doctors remain shared | Deny |
+| Import old browser records | Deny | Deny | Strict validation (schema allowlist & invariant checks) | Deny |
+| Incremental state synchronization (`/api/sync`) | Deny | Allow (role-filtered delta) | Allow (role-filtered delta) | Allow (doctor-scoped delta) |
+| Security health and audit metadata | Allow | Deny | Deny | Deny |
 
-All private routes verify the signed JWT, stored session, MFA status, and current approved account before applying the role rules. Public endpoints are limited to health, CSRF bootstrap, sign-in, MFA login gate, password recovery verification, and pending staff registration. Invalid routes return 404. Minimum necessary PHI access is enforced: receptionists receive redacted demographic views (`?minimum=1`) omitting detailed clinical history and consultation notes, while medical secretaries retain clinical access.
+All private routes verify the signed JWT, stored session, MFA status, and current approved account before applying the role rules. Public endpoints are limited to health, CSRF bootstrap, sign-in, MFA login gate, password recovery verification, and pending staff registration. Invalid routes return 404. Minimum necessary PHI access is strictly enforced: receptionists receive redacted demographic views (`?minimum=1`) omitting detailed clinical history and consultation notes; medical secretaries access intake and draft notes; doctors are cryptographically and query-scoped to their assigned patients and emergency break-glass sessions; and Super Admins manage system accounts and audit journals without routine clinical exposure.
 
 ## Application controls
 

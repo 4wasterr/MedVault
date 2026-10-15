@@ -71,7 +71,7 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
       <h2 id="admin-account-title">{editing ? 'Edit Staff Account' : 'Create Staff Account'}</h2><p>Staff can sign in after an admin creates or approves their account.</p>
       <form onSubmit={save}><div className="medsec-form-grid">
         <label className="medsec-field"><span>Username *</span><input required minLength="3" maxLength="32" value={form.username} disabled={!!editing} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
-        <label className="medsec-field"><span>{editing ? 'New Password (optional)' : 'Password *'}</span><input type="password" required={!editing} minLength="8" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+        <label className="medsec-field"><span>{editing ? 'New Password (optional)' : 'Password *'}</span><input type="password" required={!editing} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
         <label className="medsec-field"><span>First Name *</span><input required value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} /></label>
         <label className="medsec-field"><span>Middle Name</span><input value={form.middleName} onChange={(event) => setForm({ ...form, middleName: event.target.value })} /></label>
         <label className="medsec-field"><span>Last Name *</span><input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>

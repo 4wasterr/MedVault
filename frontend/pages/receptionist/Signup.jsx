@@ -26,8 +26,8 @@ export default function Signup({ onBack }) {
       setError('Passwords do not match.');
       return;
     }
-    if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
-      setError('Use at least 8 characters, including a letter and a number.');
+    if (!form.password) {
+      setError('Please enter a password.');
       return;
     }
     setSubmitting(true);
@@ -65,17 +65,16 @@ export default function Signup({ onBack }) {
                 value={form.username} onChange={(event) => update('username', event.target.value)} placeholder="Choose a username" /></label>
             <div className="signup-field signup-field-empty" aria-hidden="true" />
             <label className="signup-field"><span>Password *</span><div className="signup-password-wrap">
-              <input required minLength={8} maxLength={128} autoComplete="new-password" type={showPassword ? 'text' : 'password'}
+              <input required maxLength={128} autoComplete="new-password" type={showPassword ? 'text' : 'password'}
                 value={form.password} onChange={(event) => update('password', event.target.value)} placeholder="Create a password" />
               <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button>
             </div></label>
             <label className="signup-field"><span>Confirm password *</span><div className="signup-password-wrap">
-              <input required minLength={8} maxLength={128} autoComplete="new-password" type={showConfirm ? 'text' : 'password'}
+              <input required maxLength={128} autoComplete="new-password" type={showConfirm ? 'text' : 'password'}
                 value={form.confirmPassword} onChange={(event) => update('confirmPassword', event.target.value)} placeholder="Repeat your password" />
               <button type="button" onClick={() => setShowConfirm((visible) => !visible)} aria-label={showConfirm ? 'Hide confirmation' : 'Show confirmation'}>{showConfirm ? 'Hide' : 'Show'}</button>
             </div></label>
           </div>
-          <p className="signup-help">Use at least 8 characters with a letter and a number.</p>
 
           <h2>Personal details</h2>
           <div className="signup-grid">
