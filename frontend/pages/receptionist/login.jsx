@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './login.css';
-import doctorImg from './images/doctor.png';
-import slideClipboard from './images/slide_clipboard.png';
-import slideNurses from './images/slide_nurses.png';
-import slideXray from './images/slide_xray.png';
-import slideSurgery from './images/slide_surgery.png';
+import doctorImg from '../images/doctor.png';
+import slideClipboard from '../images/slide_clipboard.png';
+import slideNurses from '../images/slide_nurses.png';
+import slideXray from '../images/slide_xray.png';
+import slideSurgery from '../images/slide_surgery.png';
 import { api } from '../../client/src/sharedState';
 import Signup from './Signup';
 
@@ -71,107 +71,24 @@ const SLIDES = [
   },
 ];
 
-function RecoveryIcon({ name }) {
-  if (name === 'mail') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-    <rect x="3" y="5" width="18" height="14" rx="3" /><path d="m4 7 8 6 8-6" />
-  </svg>;
-  if (name === 'lock') return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-    <rect x="5" y="10" width="14" height="11" rx="2.5" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
-  </svg>;
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-    <path d="M2.5 12s3.5-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
-    <circle cx="12" cy="12" r="2.5" />
-  </svg>;
+function RecoveryEyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" width="18" height="18">
+      <path d="M2.5 12s3.5-5.5 9.5-5.5 9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
 }
 
-function ForgotPasswordFlow({ onClose }) {
-  const [step, setStep] = useState('email');
-  const [email, setEmail] = useState('');
-  const [digits, setDigits] = useState(['', '', '', '', '', '']);
-  const [resetToken, setResetToken] = useState('');
+function ForcedPasswordChangeModal({ username, tempPassword, onSuccess, onCancel }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const digitRefs = useRef([]);
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  const sendCode = async (event) => {
-    event.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await api('auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
-      setDigits(['', '', '', '', '', '']);
-      setStep('verify');
-      requestAnimationFrame(() => digitRefs.current[0]?.focus());
-    } catch (err) {
-      setError(err.message || 'Unable to process password reset request.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const updateDigit = (index, value) => {
-    const digit = value.replace(/\D/g, '').slice(-1);
-    setDigits((current) => current.map((item, itemIndex) => itemIndex === index ? digit : item));
-    setError('');
-    if (digit && index < 5) digitRefs.current[index + 1]?.focus();
-  };
-
-  const pasteCode = (event) => {
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pasted) return;
-    event.preventDefault();
-    setDigits(Array.from({ length: 6 }, (_, index) => pasted[index] || ''));
-    setError('');
-    digitRefs.current[Math.min(pasted.length, 5)]?.focus();
-  };
-
-  const verifyCode = async (event) => {
-    event.preventDefault();
-    const code = digits.join('');
-    if (code.length < 6) {
-      setError('Please enter the complete 6-digit verification code.');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const result = await api('auth/verify-reset-code', { method: 'POST', body: JSON.stringify({ email, code }) });
-      setResetToken(result.resetToken);
-      setStep('password');
-    } catch (err) {
-      setError(err.message || 'Invalid or expired verification code.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const resendCode = async () => {
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await api('auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
-      setDigits(['', '', '', '', '', '']);
-      digitRefs.current[0]?.focus();
-    } catch (err) {
-      setError(err.message || 'Unable to resend verification code.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const finishReset = async (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!newPassword) {
       setError('Please enter a new password.');
@@ -181,113 +98,99 @@ function ForgotPasswordFlow({ onClose }) {
       setError('The passwords do not match.');
       return;
     }
+    if (newPassword === tempPassword) {
+      setError('Your new password cannot be the same as the temporary password.');
+      return;
+    }
     setError('');
     setIsSubmitting(true);
     try {
-      await api('auth/reset-password', {
+      const result = await api('auth/force-change-password', {
         method: 'POST',
-        body: JSON.stringify({ email, resetToken, newPassword, confirmPassword }),
+        body: JSON.stringify({
+          username,
+          currentPassword: tempPassword,
+          newPassword,
+          confirmPassword,
+        }),
       });
-      setNewPassword('');
-      setConfirmPassword('');
-      setStep('complete');
+      onSuccess(result);
     } catch (err) {
-      setError(err.message || 'Unable to reset password.');
+      setError(err.message || 'Unable to update password. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const goBack = () => {
-    setError('');
-    if (step === 'email' || step === 'complete') onClose();
-    else setStep(step === 'password' ? 'verify' : 'email');
-  };
+  return (
+    <div className="recovery-backdrop animate-fade-in" role="presentation" onMouseDown={(e) => {
+      if (e.target === e.currentTarget) onCancel();
+    }}>
+      <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="force-password-title">
+        <div className="recovery-topline">
+          <span>MedVault Security</span>
+          <span aria-hidden="true">🔒 Password Required</span>
+        </div>
+        <div className="recovery-content">
+          <p className="recovery-kicker">Security Requirement</p>
+          <h2 id="force-password-title">Set New Password</h2>
+          <p className="recovery-subtitle">
+            An administrator has reset your password. You must set a new permanent password for <strong>@{username}</strong> before accessing your dashboard.
+          </p>
+          <form onSubmit={handleSubmit}>
+            <label className="recovery-label" htmlFor="force-new-password">New Password</label>
+            <div className="recovery-input-wrap">
+              <input
+                id="force-new-password"
+                type={showNewPassword ? 'text' : 'password'}
+                required
+                autoComplete="new-password"
+                autoFocus
+                placeholder="Enter your new password"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setError(''); }}
+              />
+              <button
+                type="button"
+                className="recovery-eye"
+                onClick={() => setShowNewPassword((v) => !v)}
+                aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+              >
+                <RecoveryEyeIcon />
+              </button>
+            </div>
 
-  const title = {
-    email: 'Forgot Password',
-    verify: 'Verify your account',
-    password: 'Create New Password',
-    complete: 'Password Reset Complete',
-  }[step];
+            <label className="recovery-label" htmlFor="force-confirm-password">Confirm New Password</label>
+            <div className="recovery-input-wrap">
+              <input
+                id="force-confirm-password"
+                type={showConfirmPassword ? 'text' : 'password'}
+                required
+                autoComplete="new-password"
+                placeholder="Confirm your new password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }}
+              />
+              <button
+                type="button"
+                className="recovery-eye"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                aria-label={showConfirmPassword ? 'Hide confirmation' : 'Show confirmation'}
+              >
+                <RecoveryEyeIcon />
+              </button>
+            </div>
 
-  return <div className="recovery-backdrop animate-fade-in" role="presentation" onMouseDown={(event) => {
-    if (event.target === event.currentTarget) onClose();
-  }}>
-    <section className="recovery-panel animate-slide-up" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-      <div className="recovery-topline"><span>MedVault</span><span aria-hidden="true">🔒 Security</span></div>
-      <div className="recovery-nav">
-        <button type="button" className="recovery-back" onClick={goBack} aria-label={step === 'email' ? 'Back to login' : 'Previous step'}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" /></svg>
-        </button>
-        <span className="recovery-brand"><span aria-hidden="true">✚</span> MedVault</span>
-      </div>
-      <div className="recovery-content" key={step}>
-        <p className="recovery-kicker">Secure account access</p>
-        <h2 id="recovery-title">{title}</h2>
-        {step === 'email' && <>
-          <p className="recovery-subtitle">Enter your registered email address to receive a secure 6-digit verification code.</p>
-          <form onSubmit={sendCode}>
-            <label className="recovery-label" htmlFor="recovery-email">Email Address</label>
-            <div className="recovery-input-wrap"><RecoveryIcon name="mail" />
-              <input id="recovery-email" type="email" required autoComplete="email" autoFocus placeholder="Enter your email"
-                value={email} onChange={(event) => setEmail(event.target.value)} />
-            </div>
+            {error && <p className="recovery-error" role="alert">{error}</p>}
+
             <button className="recovery-primary" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Sending Code...' : 'Send Verification Code'}
+              {isSubmitting ? 'Updating Password...' : 'Save New Password & Continue'}
             </button>
           </form>
-        </>}
-        {step === 'verify' && <>
-          <p className="recovery-subtitle">Enter the 6-digit verification code sent to <strong>{email}</strong>.</p>
-          <form onSubmit={verifyCode}>
-            <div className="recovery-otp" role="group" aria-label="Six-digit verification code">
-              {digits.map((digit, index) => <input key={index} ref={(node) => { digitRefs.current[index] = node; }}
-                aria-label={`Digit ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]*" autoComplete={index === 0 ? 'one-time-code' : 'off'}
-                maxLength={1} value={digit} onChange={(event) => updateDigit(index, event.target.value)}
-                onPaste={pasteCode} onKeyDown={(event) => {
-                  if (event.key === 'Backspace' && !digit && index > 0) digitRefs.current[index - 1]?.focus();
-                  if (event.key === 'ArrowLeft' && index > 0) digitRefs.current[index - 1]?.focus();
-                  if (event.key === 'ArrowRight' && index < 5) digitRefs.current[index + 1]?.focus();
-                }} />)}
-            </div>
-            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Verifying...' : 'Verify Code'}
-            </button>
-          </form>
-          <p className="recovery-resend">Didn't receive code? <button type="button" onClick={resendCode} disabled={isSubmitting}>Resend Code</button></p>
-        </>}
-        {step === 'password' && <>
-          <p className="recovery-subtitle">Set a new password for your account.</p>
-          <form onSubmit={finishReset}>
-            <label className="recovery-label" htmlFor="recovery-password">New Password</label>
-            <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
-              <input id="recovery-password" type={showNewPassword ? 'text' : 'password'} required autoComplete="new-password"
-                placeholder="Enter your new password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setError(''); }} />
-              <button type="button" className="recovery-eye" onClick={() => setShowNewPassword((visible) => !visible)}
-                aria-label={showNewPassword ? 'Hide password' : 'Show password'}><RecoveryIcon name="eye" /></button>
-            </div>
-            <label className="recovery-label" htmlFor="recovery-confirm">Confirm New Password</label>
-            <div className="recovery-input-wrap"><RecoveryIcon name="lock" />
-              <input id="recovery-confirm" type={showConfirmPassword ? 'text' : 'password'} required autoComplete="new-password"
-                placeholder="Confirm your new password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setError(''); }} />
-              <button type="button" className="recovery-eye" onClick={() => setShowConfirmPassword((visible) => !visible)}
-                aria-label={showConfirmPassword ? 'Hide confirmation' : 'Show confirmation'}><RecoveryIcon name="eye" /></button>
-            </div>
-            <button className="recovery-primary" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Updating Password...' : 'Save New Password'}
-            </button>
-          </form>
-        </>}
-        {step === 'complete' && <div className="recovery-complete">
-          <span className="recovery-complete-icon" aria-hidden="true">✓</span>
-          <p>Your password has been reset successfully. You can now log in to MedVault with your new credentials.</p>
-          <button className="recovery-primary" type="button" onClick={onClose}>Back to Login</button>
-        </div>}
-        {error && <p className="recovery-error" role="alert">{error}</p>}
-      </div>
-    </section>
-  </div>;
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export default function Login({ onLoginSuccess }) {
@@ -299,7 +202,7 @@ export default function Login({ onLoginSuccess }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authenticatedRole, setAuthenticatedRole] = useState(null);
-  const [modalType, setModalType] = useState(null); // 'forgot' | null
+  const [forcedResetData, setForcedResetData] = useState(null); // { username, tempPassword, role }
   const [shakeField, setShakeField] = useState(null);
 
   // Slideshow State with persistence
@@ -400,6 +303,12 @@ export default function Login({ onLoginSuccess }) {
     try {
       const result = await api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
       setIsSubmitting(false);
+
+      if (result.mustChangePassword) {
+        setForcedResetData({ username: result.username || username, tempPassword: password, role: result.role });
+        return;
+      }
+
       setIsLoggedIn(true);
       setAuthenticatedRole(result.role);
       if (onLoginSuccess) {
@@ -410,6 +319,17 @@ export default function Login({ onLoginSuccess }) {
     } catch (error) {
       setIsSubmitting(false);
       setErrors({ username: '', password: '', general: error.message });
+    }
+  };
+
+  const handleForcedPasswordSuccess = (result) => {
+    setForcedResetData(null);
+    setIsLoggedIn(true);
+    setAuthenticatedRole(result.role);
+    if (onLoginSuccess) {
+      setTimeout(() => {
+        onLoginSuccess(result.role, result.username, result);
+      }, 1000);
     }
   };
 
@@ -667,17 +587,6 @@ export default function Login({ onLoginSuccess }) {
                   )}
                 </div>
 
-                {/* Forgot Password Link */}
-                <div className="forgot-password-row animate-item-4">
-                  <button
-                    type="button"
-                    className="forgot-password-link"
-                    onClick={() => setModalType('forgot')}
-                  >
-                    Forgot Password
-                  </button>
-                </div>
-
                 {/* Submit Button */}
                 <div className="submit-btn-row animate-item-5">
                   <button
@@ -765,7 +674,14 @@ export default function Login({ onLoginSuccess }) {
         )}
       </div>
 
-      {modalType === 'forgot' && <ForgotPasswordFlow onClose={() => setModalType(null)} />}
+      {forcedResetData && (
+        <ForcedPasswordChangeModal
+          username={forcedResetData.username}
+          tempPassword={forcedResetData.tempPassword}
+          onSuccess={handleForcedPasswordSuccess}
+          onCancel={() => setForcedResetData(null)}
+        />
+      )}
     </div>
   );
 }

@@ -175,46 +175,65 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       assert.equal(reuseBackup.status, 401)
     })
 
-    await t.test('4. Password recovery with single-use expiring token and bcrypt update', async () => {
-      const email = 'user1@medvault.local'
-      const forgotRes = await request('/api/auth/forgot-password', '', { email })
-      assert.equal(forgotRes.status, 200)
-      assert.match(forgotRes.body.message, /password reset code has been sent/i)
+    await t.test('4. Admin-initiated temporary password reset and forced password change workflow', async () => {
+      // A) Self-serve password reset from login screen is disabled
+      const forgotRes = await request('/api/auth/forgot-password', '', { email: 'user1@medvault.local' })
+      assert.equal(forgotRes.status, 403)
+      assert.match(forgotRes.body.error, /self-service password reset is disabled/i)
 
-      const lastCodeObj = globalThis.__LAST_RESET_CODE__
-      assert.ok(lastCodeObj)
-      assert.equal(lastCodeObj.email, email)
-      const resetCode = lastCodeObj.code
+      // B) Admin logs in and resets user password from management dashboard
+      const resetRes = await request('/api/admin/accounts/user1/reset-password', adminCookie, {})
+      assert.equal(resetRes.status, 200)
+      assert.equal(resetRes.body.success, true)
+      assert.equal(resetRes.body.mustChangePassword, true)
+      const tempPassword = resetRes.body.temporaryPassword
+      assert.ok(tempPassword)
+      assert.match(tempPassword, /^TempPass-\d+$/)
 
-      // Verify reset code
-      const verifyCodeRes = await request('/api/auth/verify-reset-code', '', { email, code: resetCode })
-      assert.equal(verifyCodeRes.status, 200)
-      assert.ok(verifyCodeRes.body.resetToken)
-      const resetToken = verifyCodeRes.body.resetToken
+      // C) User logs in with temporary credentials
+      const tempLogin = await request('/api/login', '', { username: 'user1', password: tempPassword })
+      assert.equal(tempLogin.status, 200)
+      assert.equal(tempLogin.body.mustChangePassword, true)
 
-      // Set new password
+      // D) Forced password change: Cannot reuse temporary password
+      const samePassRes = await request('/api/auth/force-change-password', '', {
+        username: 'user1',
+        currentPassword: tempPassword,
+        newPassword: tempPassword,
+        confirmPassword: tempPassword,
+      })
+      assert.equal(samePassRes.status, 400)
+      assert.match(samePassRes.body.error, /cannot be identical/i)
+
+      // E) Forced password change: Passwords mismatch
+      const mismatchRes = await request('/api/auth/force-change-password', '', {
+        username: 'user1',
+        currentPassword: tempPassword,
+        newPassword: 'NewSecurePassword123',
+        confirmPassword: 'MismatchPassword999',
+      })
+      assert.equal(mismatchRes.status, 400)
+      assert.match(mismatchRes.body.error, /do not match/i)
+
+      // F) Forced password change: Successful update
       const newPassword = 'NewSecurePassword123'
-      const resetRes = await request('/api/auth/reset-password', '', {
-        email,
-        resetToken,
+      const forceChangeRes = await request('/api/auth/force-change-password', '', {
+        username: 'user1',
+        currentPassword: tempPassword,
         newPassword,
         confirmPassword: newPassword,
       })
-      assert.equal(resetRes.status, 200)
+      assert.equal(forceChangeRes.status, 200)
+      assert.equal(forceChangeRes.body.success, true)
+      assert.equal(forceChangeRes.body.role, 'Receptionist')
+      assert.ok(forceChangeRes.cookie)
 
-      // Verify sign in with new password
+      // G) User can now sign in normally with new permanent password
       const newLogin = await request('/api/login', '', { username: 'user1', password: newPassword })
       assert.equal(newLogin.status, 200)
       assert.equal(newLogin.body.role, 'Receptionist')
-
-      // Token cannot be re-used
-      const reuseToken = await request('/api/auth/reset-password', '', {
-        email,
-        resetToken,
-        newPassword: 'AnotherPassword456',
-        confirmPassword: 'AnotherPassword456',
-      })
-      assert.equal(reuseToken.status, 400)
+      assert.equal(newLogin.body.mustChangePassword, undefined)
+      currentRecCookie = newLogin.cookie
     })
 
     await t.test('5. Duplicate patient detection and merge API', async () => {

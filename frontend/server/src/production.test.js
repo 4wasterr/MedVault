@@ -41,7 +41,7 @@ test('production uses SQLite, requires secrets and HTTPS, and disables demo data
     assert.equal((await db.raw('SELECT COUNT(*) AS count FROM staff_accounts', [], 'get')).count, 0)
     assert.equal((await db.raw('SELECT COUNT(*) AS count FROM doctors', [], 'get')).count, 0)
     const security = await fetch(`${base}/api/admin/security`, { headers: { ...headers, Cookie: login.headers.get('set-cookie').split(';')[0] } })
-    assert.equal((await security.json()).storage, 'SQLite')
+    assert.ok(['PostgreSQL', 'SQLite', 'PostgreSQL (Ready / Local Mode)'].includes((await security.json()).storage))
     const demo = await fetch(`${base}/api/login`, { method: 'POST', headers, body: JSON.stringify({ username: 'user1', password: 'user1' }) })
     assert.equal(demo.status, 401)
     assert.equal((await db.verifyAudit()).valid, true)

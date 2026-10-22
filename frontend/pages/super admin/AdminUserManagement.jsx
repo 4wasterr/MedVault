@@ -17,31 +17,58 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [resetModalData, setResetModalData] = useState(null);
+  const [copied, setCopied] = useState(false);
+
   const visible = useMemo(() => accounts.filter((item) => (filter === 'all' || item.status === filter) &&
     `${item.username} ${fullName(item)} ${item.email} ${item.phone} ${item.address} ${item.role}`.toLowerCase().includes(search.trim().toLowerCase())), [accounts, filter, search]);
+
   const startCreate = () => { setForm(blank); setEditing(''); setOpen(true); setError(''); };
   const startEdit = (account) => { setForm({ ...account, password: '' }); setEditing(account.username); setOpen(true); setError(''); };
+
   const run = async (operation, success) => {
     setBusy(true); setError(''); setMessage('');
     try { await operation(); await onRefresh(); setMessage(success); return true; }
     catch (requestError) { setError(requestError.message); return false; }
     finally { setBusy(false); }
   };
+
   const save = async (event) => {
     event.preventDefault();
-        const problem = validateStaffForm(form, { editing: !!editing });
+    const problem = validateStaffForm(form, { editing: !!editing });
     if (problem) { setError(problem); return; }
     const valid = await run(() => api(editing ? `admin/accounts/${encodeURIComponent(editing)}` : 'admin/accounts', {
       method: editing ? 'PATCH' : 'POST', body: JSON.stringify(form),
     }), editing ? 'Account updated.' : 'Staff account created.');
     if (valid) { setOpen(false); setEditing(''); setForm(blank); }
   };
+
   const review = (account, decision) => run(() => api(`admin/accounts/${encodeURIComponent(account.username)}/decision`, {
     method: 'POST', body: JSON.stringify({ decision }),
   }), decision === 'approve' ? 'Account approved.' : 'Request declined.');
+
   const toggle = (account) => run(() => api(`admin/accounts/${encodeURIComponent(account.username)}`, {
     method: 'PATCH', body: JSON.stringify({ status: account.status === 'deactivated' ? 'approved' : 'deactivated' }),
   }), account.status === 'deactivated' ? 'Account reactivated.' : 'Account deactivated.');
+
+  const handleResetUserPassword = async (account) => {
+    if (!window.confirm(`Generate a temporary reset password for @${account.username}? This user will be forced to change their password on next login.`)) {
+      return;
+    }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const res = await api(`admin/accounts/${encodeURIComponent(account.username)}/reset-password`, {
+        method: 'POST',
+      });
+      setResetModalData({ username: account.username, temporaryPassword: res.temporaryPassword });
+      setMessage(`Temporary password generated for @${account.username}.`);
+      await onRefresh();
+    } catch (err) {
+      setError(err.message || 'Unable to reset user password.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const columns = [
     { key: 'name', label: 'Staff Name', value: fullName, className: 'admin-grid-name', render: account => <><strong>{fullName(account)}</strong>{account.system && <small>System account</small>}</> },
@@ -55,7 +82,11 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
       {account.system ? <span className="medsec-muted">Managed by system</span> : <>
         {account.status === 'pending' && <><button type="button" className="medsec-btn" disabled={busy} aria-label={`Approve ${account.username}`} onClick={() => review(account, 'approve')}>Approve</button><button type="button" className="medsec-btn danger" disabled={busy} aria-label={`Decline ${account.username}`} onClick={() => review(account, 'reject')}>Decline</button></>}
         {account.status === 'rejected' && <button type="button" className="medsec-btn secondary" disabled={busy} aria-label={`Approve ${account.username}`} onClick={() => review(account, 'approve')}>Approve</button>}
-        {['approved', 'deactivated'].includes(account.status) && <><button type="button" className="medsec-btn secondary" disabled={busy} aria-label={`Edit ${account.username}`} onClick={() => startEdit(account)}>Edit</button><button type="button" className={`medsec-btn ${account.status === 'approved' ? 'danger' : 'secondary'}`} disabled={busy} aria-label={`${account.status === 'approved' ? 'Deactivate' : 'Reactivate'} ${account.username}`} onClick={() => toggle(account)}>{account.status === 'approved' ? 'Deactivate' : 'Reactivate'}</button></>}
+        {['approved', 'deactivated'].includes(account.status) && <>
+          <button type="button" className="medsec-btn secondary" disabled={busy} aria-label={`Edit ${account.username}`} onClick={() => startEdit(account)}>Edit</button>
+          <button type="button" className="medsec-btn outline" disabled={busy} aria-label={`Reset password for ${account.username}`} onClick={() => handleResetUserPassword(account)}>Reset Password</button>
+          <button type="button" className={`medsec-btn ${account.status === 'approved' ? 'danger' : 'secondary'}`} disabled={busy} aria-label={`${account.status === 'approved' ? 'Deactivate' : 'Reactivate'} ${account.username}`} onClick={() => toggle(account)}>{account.status === 'approved' ? 'Deactivate' : 'Reactivate'}</button>
+        </>}
       </>}
     </div> },
   ];
@@ -67,6 +98,7 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
     {error && <p className="medsec-error" role="alert">{error}</p>}{message && <p className="medsec-notice" role="status">{message}</p>}
     <AdminDataGrid rows={visible} columns={columns} rowKey={account => account.username} label="Staff accounts" itemLabel="accounts" resetKey={`${filter}|${search}`}
       emptyMessage={accounts.length ? 'No accounts match your search and status filter.' : 'No staff accounts yet. Create an account to get started.'} />
+    
     {open && <div className="medsec-modal-backdrop" role="presentation" onClick={() => setOpen(false)}><div className="medsec-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-title" onClick={(event) => event.stopPropagation()}>
       <h2 id="admin-account-title">{editing ? 'Edit Staff Account' : 'Create Staff Account'}</h2><p>Staff can sign in after an admin creates or approves their account.</p>
       <form onSubmit={save}><div className="medsec-form-grid">
@@ -81,5 +113,40 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
         <label className="medsec-field wide"><span>Address *</span><input required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label>
       </div>{error && <p className="medsec-error" role="alert">{error}</p>}<div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" className="medsec-btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Create Account'}</button></div></form>
     </div></div>}
+
+    {resetModalData && (
+      <div className="medsec-modal-backdrop" role="presentation" onClick={() => setResetModalData(null)}>
+        <div className="medsec-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title" onClick={(e) => e.stopPropagation()}>
+          <h2 id="reset-modal-title">Temporary Password Generated</h2>
+          <p>
+            A temporary reset password has been generated for <strong>@{resetModalData.username}</strong>:
+          </p>
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '16px', margin: '16px 0', textAlign: 'center' }}>
+            <span style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: 'monospace', letterSpacing: '0.05em', color: '#0369a1' }}>
+              {resetModalData.temporaryPassword}
+            </span>
+          </div>
+          <p className="medsec-muted" style={{ fontSize: '0.9rem', marginBottom: '16px' }}>
+            🔒 Provide this password to the staff member. When they log in, MedVault will <strong>force them to set a new password</strong> before dashboard access is permitted.
+          </p>
+          <div className="medsec-actions">
+            <button
+              type="button"
+              className="medsec-btn secondary"
+              onClick={() => {
+                navigator.clipboard?.writeText(resetModalData.temporaryPassword);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? '✓ Copied!' : 'Copy Password'}
+            </button>
+            <button type="button" className="medsec-btn" onClick={() => setResetModalData(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </section>;
 }

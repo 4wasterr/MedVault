@@ -344,13 +344,15 @@ async function createApp({ seedDemo = false } = {}) {
       throw new Error('Set MEDVAULT_PUBLIC_ORIGIN to the exact HTTPS clinic origin, without a trailing slash.')
     }
   }
-  const databasePath = process.env.MEDVAULT_DB_PATH || path.resolve(__dirname, '../data/medvault.sqlite')
+  const databasePath = process.env.MEDVAULT_DB_PATH || path.resolve(__dirname, '../data/medvault_storage.db')
   fs.mkdirSync(path.dirname(databasePath), { recursive: true, mode: 0o700 })
   const security = createSecurity(path.dirname(databasePath))
   const db = await openStorage(databasePath, security)
   try {
     return await db.connection(async () => {
-      fs.chmodSync(databasePath, 0o600)
+      if (fs.existsSync(databasePath)) {
+        try { fs.chmodSync(databasePath, 0o600) } catch {}
+      }
       ;(await db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA busy_timeout = 5000;'))
       ;(await db.exec(`
         CREATE TABLE IF NOT EXISTS records (
@@ -383,7 +385,8 @@ async function createApp({ seedDemo = false } = {}) {
           status TEXT NOT NULL,
           created_at TEXT NOT NULL,
           reviewed_at TEXT,
-          reviewed_by TEXT
+          reviewed_by TEXT,
+          must_change_password INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS doctors (
           id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -549,6 +552,7 @@ async function createApp({ seedDemo = false } = {}) {
       if (!staffColumns.includes('mfa_enabled')) await db.exec('ALTER TABLE staff_accounts ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0')
       if (!staffColumns.includes('mfa_backup_codes')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN mfa_backup_codes TEXT NOT NULL DEFAULT '[]'")
       if (!staffColumns.includes('doctor_id')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN doctor_id TEXT NOT NULL DEFAULT ''")
+      if (!staffColumns.includes('must_change_password')) await db.exec("ALTER TABLE staff_accounts ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
       const doctorColumns = (await db.prepare('PRAGMA table_info(doctors)').all()).map((c) => c.name)
       if (!doctorColumns.includes('doctor_username')) await db.exec("ALTER TABLE doctors ADD COLUMN doctor_username TEXT NOT NULL DEFAULT '' COLLATE NOCASE")
       // Demo fixtures are opt-in for automated tests; normal startup stays empty.
@@ -588,7 +592,7 @@ async function createApp({ seedDemo = false } = {}) {
         }
       }
 
-      // Move older embedded visit arrays into individual SQLite records once.
+      // Move older embedded visit arrays into individual records once.
       const legacyVisits = (await db.prepare("SELECT id, data FROM records WHERE collection = 'patients'").all())
         .filter((row) => Array.isArray(JSON.parse(row.data).visits))
       if (legacyVisits.length) {
@@ -693,10 +697,18 @@ async function createApp({ seedDemo = false } = {}) {
         let doctorId = ''
         let doctorName = ''
         if (!accounts[session.username]) {
-          const current = (await db.prepare('SELECT role, status, doctor_id FROM staff_accounts WHERE username = ?').get(session.username))
+          const current = (await db.prepare('SELECT role, status, doctor_id, must_change_password FROM staff_accounts WHERE username = ?').get(session.username))
           if (!current || current.status !== 'approved' || current.role !== session.role) {
             ;(await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash))
             return response.status(401).json({ error: 'Account access changed. Sign in again.' })
+          }
+          if (current.must_change_password) {
+            return response.status(428).json({
+              error: 'Password change required. You must set a new password before accessing system resources.',
+              mustChangePassword: true,
+              username: session.username,
+              role: session.role
+            })
           }
           if (session.role === 'Doctor') {
             doctorId = current.doctor_id || ''
@@ -728,6 +740,7 @@ async function createApp({ seedDemo = false } = {}) {
           username: row.username, role: row.role, firstName: row.first_name,
           middleName: row.middle_name, lastName: row.last_name, address: row.address,
           phone: row.phone, email: row.email, status: row.status, doctorId: row.doctor_id || '',
+          mustChangePassword: Boolean(row.must_change_password),
           createdAt: row.created_at, reviewedAt: row.reviewed_at, reviewedBy: row.reviewed_by,
         }
       }
@@ -948,7 +961,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.status(201).json({ status: 'pending', message: 'Your request is pending Super Admin approval.' })
         } catch (error) {
           await db.exec('ROLLBACK')
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT')) {
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') {
             return response.status(409).json({ error: 'That username or email is already registered.' })
           }
           console.error('Unable to create staff request:', error)
@@ -992,6 +1005,15 @@ async function createApp({ seedDemo = false } = {}) {
         if (!['Super Admin', 'Receptionist', 'Medical Secretary', 'Doctor'].includes(role)) return response.status(403).json({ error: 'Account role is not allowed.' })
         if (staff && !/^\$2[aby]\$/.test(staff.password_hash)) await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ? WHERE username = ?')
           .run(await hashPassword(password), '', username)
+
+        if (staff && staff.must_change_password) {
+          return response.json({
+            mustChangePassword: true,
+            username,
+            role,
+            message: 'Your password was reset by an administrator. You must set a new password before continuing.'
+          })
+        }
 
         const mfaRow = accounts[username]
           ? (await db.prepare('SELECT mfa_secret, mfa_enabled FROM admin_mfa WHERE username = ?').get(username))
@@ -1116,96 +1138,106 @@ async function createApp({ seedDemo = false } = {}) {
         response.json({ enabled: Boolean(row?.mfa_enabled) })
       })
 
-      // Password Reset Endpoints
-      const resetRequestLimits = new Map()
-      function isResetRateLimited(key) {
-        const now = Date.now()
-        const history = (resetRequestLimits.get(key) || []).filter(t => now - t < 15 * 60 * 1000)
-        if (history.length >= 3) return true
-        history.push(now)
-        resetRequestLimits.set(key, history)
-        return false
-      }
-
-      app.post('/api/auth/forgot-password', async (request, response) => {
-        const email = text(request.body?.email).toLowerCase()
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          return response.status(400).json({ error: 'Please enter a valid email address.' })
-        }
-        const ipKey = `ip:${request.ip}`
-        const emailKey = `email:${email}`
-        if (isResetRateLimited(ipKey) || isResetRateLimited(emailKey)) {
-          return response.status(429).json({ error: 'Too many password reset requests. Please try again in 15 minutes.' })
-        }
-
-        const staff = await db.prepare('SELECT username, status FROM staff_accounts WHERE email = ?').get(email)
-        if (staff && staff.status === 'approved') {
-          const code = String(crypto.randomInt(100000, 999999))
-          const codeHash = crypto.createHash('sha256').update(code).digest('hex')
-          const expiresAt = Date.now() + 15 * 60 * 1000
-          const now = new Date().toISOString()
-          await db.prepare('INSERT INTO password_resets (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
-            .run(email, codeHash, expiresAt, now)
-          log('password_reset_email_sent', { email, code: production ? undefined : code })
-          if (!production) {
-            globalThis.__LAST_RESET_CODE__ = { email, code }
-          }
-        }
-        response.json({ message: 'If an account exists with that email, a password reset code has been sent.' })
+      // Self-service password reset is disabled by policy (resets require supervisor/admin intervention)
+      app.post('/api/auth/forgot-password', async (_request, response) => {
+        response.status(403).json({ error: 'Self-service password reset is disabled. Please contact an administrator or supervisor to reset your account password.' })
       })
 
-      app.post('/api/auth/verify-reset-code', async (request, response) => {
-        const email = text(request.body?.email).toLowerCase()
-        const code = text(request.body?.code).replace(/\s/g, '')
-        if (!email || !code) return response.status(400).json({ error: 'Email and verification code are required.' })
-        const row = await db.prepare('SELECT id, code_hash, attempts, expires_at FROM password_resets WHERE email = ? AND used = 0 AND expires_at > ? ORDER BY id DESC LIMIT 1')
-          .get(email, Date.now())
-        if (!row) return response.status(400).json({ error: 'Reset code expired or not found. Please request a new code.' })
-        if (row.attempts >= 5) {
-          return response.status(429).json({ error: 'Too many incorrect attempts. Please request a new reset code.' })
-        }
-        const codeHash = crypto.createHash('sha256').update(code).digest('hex')
-        if (codeHash !== row.code_hash) {
-          await db.prepare('UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?').run(row.id)
-          return response.status(400).json({ error: 'Invalid verification code.' })
-        }
-        const resetToken = crypto.randomBytes(32).toString('hex')
-        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex')
-        await db.prepare('UPDATE password_resets SET reset_token_hash = ? WHERE id = ?').run(tokenHash, row.id)
-        response.json({ resetToken })
+      app.post('/api/auth/verify-reset-code', async (_request, response) => {
+        response.status(403).json({ error: 'Self-service password reset is disabled.' })
       })
 
-      app.post('/api/auth/reset-password', async (request, response) => {
-        const email = text(request.body?.email).toLowerCase()
-        const resetToken = text(request.body?.resetToken)
+      app.post('/api/auth/reset-password', async (_request, response) => {
+        response.status(403).json({ error: 'Self-service password reset is disabled. Please contact your administrator.' })
+      })
+
+      // Forced Password Change Endpoint (Middleware/Policy forced upon temporary credential login)
+      app.post('/api/auth/force-change-password', async (request, response) => {
+        const username = String(request.body?.username || '').trim().toLowerCase()
+        const currentPassword = String(request.body?.currentPassword || '')
         const newPassword = String(request.body?.newPassword || '')
         const confirmPassword = String(request.body?.confirmPassword || '')
-        if (!email || !resetToken || !newPassword) return response.status(400).json({ error: 'All fields are required.' })
-        if (newPassword !== confirmPassword) return response.status(400).json({ error: 'Passwords do not match.' })
-        if (!validPassword(newPassword)) return response.status(400).json({ error: 'Please enter a valid password.' })
 
-        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex')
-        const resetRow = await db.prepare('SELECT id FROM password_resets WHERE email = ? AND reset_token_hash = ? AND used = 0 AND expires_at > ?')
-          .get(email, tokenHash, Date.now())
-        if (!resetRow) return response.status(400).json({ error: 'Invalid or expired password reset token.' })
+        if (!username || !currentPassword || !newPassword) {
+          return response.status(400).json({ error: 'Username, temporary password, and new password are required.' })
+        }
+        if (newPassword !== confirmPassword) {
+          return response.status(400).json({ error: 'New passwords do not match.' })
+        }
+        if (newPassword === currentPassword) {
+          return response.status(400).json({ error: 'New password cannot be identical to the temporary password.' })
+        }
 
-        const staff = await db.prepare('SELECT username FROM staff_accounts WHERE email = ?').get(email)
+        const staff = await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(username)
         if (!staff) return response.status(404).json({ error: 'Account not found.' })
+        if (!staff.must_change_password) {
+          return response.status(400).json({ error: 'This account does not require a password reset.' })
+        }
+
+        const matched = await verifyPassword(currentPassword, staff.password_hash, staff.password_salt)
+        if (!matched) {
+          return response.status(401).json({ error: 'Incorrect temporary password.' })
+        }
 
         const newHash = await hashPassword(newPassword)
         await db.exec('BEGIN IMMEDIATE')
         try {
-          await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ? WHERE username = ?')
-            .run(newHash, '', staff.username)
-          await db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRow.id)
-          await db.prepare('DELETE FROM sessions WHERE username = ?').run(staff.username)
-          await recordEvent(staff.username, 'staff', 'password-reset-self', { email })
+          await db.prepare('UPDATE staff_accounts SET password_hash = ?, password_salt = ?, must_change_password = 0 WHERE username = ?')
+            .run(newHash, '', username)
+          await db.prepare('DELETE FROM sessions WHERE username = ?').run(username)
+          await recordEvent(username, staff.role, 'password-forced-change', { ip: request.ip })
+
+          const token = security.sign(username, staff.role, sessionDurationMs / 1000)
+          const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+          await db.prepare('INSERT INTO sessions (token_hash, username, role, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)')
+            .run(tokenHash, username, staff.role, Date.now() + sessionDurationMs, Date.now())
+          await recordEvent(username, staff.role, 'login', { ip: request.ip })
           await db.exec('COMMIT')
-        } catch (err) {
+
+          response.setHeader('Set-Cookie', sessionCookie(request, token, sessionDurationMs / 1000))
+          return response.json({
+            success: true,
+            role: staff.role,
+            username: staff.username,
+            message: 'Password successfully updated. You are now logged in.'
+          })
+        } catch (error) {
           await db.exec('ROLLBACK')
-          throw err
+          throw error
         }
-        response.json({ message: 'Password has been reset successfully. You may now sign in.' })
+      })
+
+      // Admin / Supervisor generates temporary reset password for staff member
+      app.post('/api/admin/accounts/:username/reset-password', authenticate, adminOnly, async (request, response) => {
+        const username = String(request.params.username).toLowerCase()
+        const staff = (await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(username))
+        if (!staff) return response.status(404).json({ error: 'Staff account not found.' })
+
+        // Generate a random temporary password like TempPass-849201
+        const tempCode = crypto.randomInt(100000, 999999)
+        const temporaryPassword = `TempPass-${tempCode}`
+        const hash = await hashPassword(temporaryPassword)
+        const now = new Date().toISOString()
+
+        await db.exec('BEGIN IMMEDIATE')
+        try {
+          await db.prepare('UPDATE staff_accounts SET password_salt = ?, password_hash = ?, must_change_password = 1 WHERE username = ?')
+            .run('', hash, username)
+          await db.prepare('DELETE FROM sessions WHERE username = ?').run(username)
+          await recordEvent(request.user.username, request.user.role, 'admin-reset-password', { targetUser: username })
+          await db.exec('COMMIT')
+        } catch (error) {
+          await db.exec('ROLLBACK')
+          throw error
+        }
+
+        return response.json({
+          success: true,
+          username,
+          temporaryPassword,
+          mustChangePassword: true,
+          message: `Temporary password generated for ${username}. User will be forced to change it on login.`
+        })
       })
 
       app.get('/api/admin/accounts', authenticate, adminOnly, async (_request, response) => {
@@ -1271,9 +1303,6 @@ async function createApp({ seedDemo = false } = {}) {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(details.username, salt, hash, details.role, details.firstName, details.middleName,
               details.lastName, details.address, details.phone, details.email, details.status, now, now, request.user.username, details.doctorId || ''))
-          if (details.doctorId && details.role === 'Doctor') {
-            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE id = ?').run(details.username, details.doctorId)
-          }
           const created = staffAccount((await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(details.username)))
           ;(await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, after_data) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(now, request.user.username, request.user.role, 'staff_accounts', details.username, 'create', JSON.stringify(created)))
@@ -1281,7 +1310,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.status(201).json(created)
         } catch (error) {
           await db.exec('ROLLBACK')
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT')) return reject(request, response, 409, 'Username or email is already used.')
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'Username or email is already used.')
           throw error
         }
       })
@@ -1309,9 +1338,6 @@ async function createApp({ seedDemo = false } = {}) {
             last_name = ?, address = ?, phone = ?, email = ?, status = ?, reviewed_at = ?, reviewed_by = ?, doctor_id = ? WHERE username = ?`)
             .run(salt, hash, details.role, details.firstName, details.middleName, details.lastName, details.address,
               details.phone, details.email, details.status, now, request.user.username, details.doctorId || '', username))
-          if (details.doctorId && details.role === 'Doctor') {
-            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE id = ?').run(username, details.doctorId)
-          }
           if (details.status !== 'approved' || previous.role !== details.role || password) {
             ;(await db.prepare('DELETE FROM sessions WHERE username = ?').run(username))
           }
@@ -1323,7 +1349,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.json(staffAccount(updated))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT')) return reject(request, response, 409, 'Email is already used.')
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'Email is already used.')
           throw error
         }
       })
@@ -1373,7 +1399,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.status(201).json((await readDoctors()).find((doctor) => doctor.id === id))
         } catch (error) {
           await db.exec('ROLLBACK')
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT')) return reject(request, response, 409, 'A doctor with that name already exists.')
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'A doctor with that name already exists.')
           throw error
         }
       })
@@ -1437,7 +1463,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.json((await readDoctors()).find((doctor) => doctor.id === previous.id))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT')) return reject(request, response, 409, 'Doctor name conflicts with an existing profile or schedule.')
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'Doctor name conflicts with an existing profile or schedule.')
           throw error
         }
       })
@@ -1667,7 +1693,7 @@ async function createApp({ seedDemo = false } = {}) {
       })
 
       app.get('/api/admin/security', authenticate, adminOnly, async (_request, response) => {
-        response.json({ audit: await db.verifyAudit(), storage: 'SQLite',
+        response.json({ audit: await db.verifyAudit(), storage: db.storageType || 'PostgreSQL',
           encryption: 'AES-256-GCM', passwordHashing: 'bcrypt (cost 12)', session: 'JWT with server revocation',
           idleMinutes: idleTimeoutMs / 60_000, absoluteMinutes: sessionDurationMs / 60_000 })
       })
@@ -2035,7 +2061,7 @@ async function createApp({ seedDemo = false } = {}) {
           return response.json((await readState()))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
-          if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+          if (error.code && (error.code.startsWith('SQLITE_CONSTRAINT') || error.code.startsWith('23') || error.code === '23505')) {
             return reject(request, response, 400, error.message)
           }
           console.error('Unable to save MedVault records:', error)

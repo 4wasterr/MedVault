@@ -7,7 +7,7 @@ async function run() {
   let fixture, server, db
   if (local) {
     fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'medvault-load-'))
-    process.env.MEDVAULT_DB_PATH = path.join(fixture, 'test.sqlite')
+    process.env.MEDVAULT_DB_PATH = path.join(fixture, 'test_storage.db')
     const application = await require('../src/index').createApp({ seedDemo: true })
     db = application.db
     server = application.app.listen(0, '127.0.0.1')

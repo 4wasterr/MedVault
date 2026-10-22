@@ -1,139 +1,98 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('recovery: state machine step progression', () => {
-  const _STEPS = ['email', 'verify-code', 'reset-password', 'success'];
+test('recovery: policy blocks self-service reset from login screen', () => {
+  // Policy rule: End users cannot self-serve a reset from the login screen
+  const canSelfServeResetFromLogin = false;
+  assert.equal(canSelfServeResetFromLogin, false);
 
-  class RecoveryFlowState {
-    constructor() {
-      this.step = 'email';
-      this.email = '';
-      this.resetToken = null;
-      this.error = null;
+  const handleSelfServeAttempt = () => ({
+    status: 403,
+    error: 'Self-service password reset is disabled. Please contact an administrator or supervisor.',
+  });
+
+  const response = handleSelfServeAttempt();
+  assert.equal(response.status, 403);
+  assert.match(response.error, /self-service password reset is disabled/i);
+});
+
+test('recovery: admin generates temporary password with must_change_password flag', () => {
+  function generateAdminTemporaryReset(username, adminRole) {
+    if (adminRole !== 'Super Admin') {
+      throw new Error('Only administrators can generate temporary reset credentials.');
     }
+    const tempCode = Math.floor(100000 + Math.random() * 900000);
+    return {
+      username,
+      temporaryPassword: `TempPass-${tempCode}`,
+      must_change_password: 1,
+    };
+  }
 
-    submitEmail(email) {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        this.error = 'Please enter a valid email address.';
-        return false;
-      }
-      this.email = email;
-      this.error = null;
-      this.step = 'verify-code';
-      return true;
+  const resetResult = generateAdminTemporaryReset('nurse1', 'Super Admin');
+  assert.equal(resetResult.username, 'nurse1');
+  assert.match(resetResult.temporaryPassword, /^TempPass-\d{6}$/);
+  assert.equal(resetResult.must_change_password, 1);
+
+  // Non-admin cannot generate reset
+  assert.throws(() => generateAdminTemporaryReset('nurse1', 'Receptionist'), /Only administrators/);
+});
+
+test('recovery: login with temporary credentials forces password change', () => {
+  function evaluateLoginState(userAccount) {
+    if (userAccount.must_change_password === 1) {
+      return {
+        authenticated: false,
+        mustChangePassword: true,
+        prompt: 'Password change required before accessing system.',
+      };
     }
+    return {
+      authenticated: true,
+      mustChangePassword: false,
+    };
+  }
 
-    submitCode(code, serverToken) {
-      const cleanCode = String(code || '').replace(/\D/g, '');
-      if (cleanCode.length !== 6) {
-        this.error = 'Code must be exactly 6 digits.';
-        return false;
-      }
-      this.resetToken = serverToken;
-      this.error = null;
-      this.step = 'reset-password';
-      return true;
-    }
+  const userWithTempPass = { username: 'nurse1', must_change_password: 1 };
+  const loginState = evaluateLoginState(userWithTempPass);
+  assert.equal(loginState.mustChangePassword, true);
+  assert.equal(loginState.authenticated, false);
 
-    submitPassword(newPass, confirmPass) {
-      if (newPass !== confirmPass) {
-        this.error = 'Passwords do not match.';
-        return false;
+  const regularUser = { username: 'nurse1', must_change_password: 0 };
+  const regularLogin = evaluateLoginState(regularUser);
+  assert.equal(regularLogin.mustChangePassword, false);
+  assert.equal(regularLogin.authenticated, true);
+});
+
+test('recovery: forced password change validates mismatch and clears flag', () => {
+  class ForcedPasswordValidator {
+    static validate(tempPassword, newPassword, confirmPassword) {
+      if (!newPassword || !confirmPassword) {
+        return { valid: false, error: 'Password fields cannot be empty.' };
       }
-      if (newPass.length < 8) {
-        this.error = 'Password must be at least 8 characters long.';
-        return false;
+      if (newPassword !== confirmPassword) {
+        return { valid: false, error: 'The passwords do not match.' };
       }
-      this.error = null;
-      this.step = 'success';
-      return true;
+      if (newPassword === tempPassword) {
+        return { valid: false, error: 'Your new password cannot be the same as the temporary password.' };
+      }
+      return { valid: true, error: null };
     }
   }
 
-  const flow = new RecoveryFlowState();
-  assert.equal(flow.step, 'email');
+  const tempPass = 'TempPass-894201';
 
-  // Invalid email rejected
-  assert.equal(flow.submitEmail('notanemail'), false);
-  assert.equal(flow.step, 'email');
-  assert.ok(flow.error);
+  // Empty rejected
+  assert.equal(ForcedPasswordValidator.validate(tempPass, '', '').valid, false);
 
-  // Valid email proceeds to verify-code
-  assert.ok(flow.submitEmail('user@medvault.local'));
-  assert.equal(flow.step, 'verify-code');
-  assert.equal(flow.error, null);
+  // Mismatch rejected
+  assert.equal(ForcedPasswordValidator.validate(tempPass, 'PassA', 'PassB').valid, false);
 
-  // Invalid code rejected (not 6 digits)
-  assert.equal(flow.submitCode('123'), false);
-  assert.equal(flow.step, 'verify-code');
+  // Same as temporary rejected
+  assert.equal(ForcedPasswordValidator.validate(tempPass, tempPass, tempPass).valid, false);
 
-  // Valid 6-digit code advances to reset-password
-  assert.ok(flow.submitCode('123456', 'tok_mock_reset_token'));
-  assert.equal(flow.step, 'reset-password');
-  assert.equal(flow.resetToken, 'tok_mock_reset_token');
-
-  // Mismatched passwords rejected
-  assert.equal(flow.submitPassword('NewPass123!', 'DifferentPass123!'), false);
-  assert.equal(flow.step, 'reset-password');
-
-  // Short password rejected
-  assert.equal(flow.submitPassword('Short1!', 'Short1!'), false);
-  assert.equal(flow.step, 'reset-password');
-
-  // Valid password advances to success
-  assert.ok(flow.submitPassword('SecurePassword2026!', 'SecurePassword2026!'));
-  assert.equal(flow.step, 'success');
-});
-
-test('recovery: 6-digit OTP formatting and input sanitization', () => {
-  const sanitizeOtp = (raw) => String(raw || '').replace(/\D/g, '').slice(0, 6);
-
-  assert.equal(sanitizeOtp('123-456'), '123456');
-  assert.equal(sanitizeOtp(' 12 34 56 '), '123456');
-  assert.equal(sanitizeOtp('123456789'), '123456'); // capped at 6
-  assert.equal(sanitizeOtp('abc'), '');
-  assert.equal(sanitizeOtp('12a34b5c'), '12345');
-});
-
-test('recovery: anti-enumeration generic response verification', () => {
-  // Ensure the response message shown to the user is identical regardless of whether email exists
-  const getSubmissionMessage = () =>
-    'If an account is associated with this email address, a password reset code has been sent.';
-
-  const messageForExisting = getSubmissionMessage();
-  const messageForNonExisting = getSubmissionMessage();
-  assert.equal(messageForExisting, messageForNonExisting);
-  assert.ok(messageForExisting.includes('associated with this email'));
-});
-
-test('recovery: failed attempt rate-limit tracking', () => {
-  class AttemptTracker {
-    constructor(maxAttempts = 5) {
-      this.attempts = 0;
-      this.maxAttempts = maxAttempts;
-      this.lockedUntil = 0;
-    }
-
-    recordFailure() {
-      this.attempts += 1;
-      if (this.attempts >= this.maxAttempts) {
-        this.lockedUntil = Date.now() + 15 * 60 * 1000; // 15 min lockout
-        return false;
-      }
-      return true;
-    }
-
-    isLocked() {
-      return Date.now() < this.lockedUntil;
-    }
-  }
-
-  const tracker = new AttemptTracker(3);
-  assert.equal(tracker.isLocked(), false);
-  assert.ok(tracker.recordFailure()); // 1
-  assert.equal(tracker.isLocked(), false);
-  assert.ok(tracker.recordFailure()); // 2
-  assert.equal(tracker.isLocked(), false);
-  assert.equal(tracker.recordFailure(), false); // 3 -> locked
-  assert.ok(tracker.isLocked());
+  // Valid new password accepted
+  const validResult = ForcedPasswordValidator.validate(tempPass, 'NurseSecret2026', 'NurseSecret2026');
+  assert.equal(validResult.valid, true);
+  assert.equal(validResult.error, null);
 });
