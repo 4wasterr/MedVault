@@ -3,6 +3,7 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { auditDigest } = require('./security')
 const { Pool } = require('pg')
+const { ensurePostgresSchema } = require('./postgres-schema')
 
 // Load .env from common root or server paths if not already loaded
 for (const envPath of [
@@ -11,7 +12,7 @@ for (const envPath of [
   path.resolve(process.cwd(), '.env'),
 ]) {
   if (fs.existsSync(envPath)) {
-    try { require('dotenv').config({ path: envPath }) } catch {}
+    require('dotenv').config({ path: envPath, quiet: true })
   }
 }
 
@@ -88,6 +89,9 @@ function translateQuery(sql) {
 }
 
 function getPostgresConfig() {
+  // Unit tests must never write fixtures into a configured clinic database.
+  if (process.env.MEDVAULT_STORAGE === 'sqlite' ||
+      (process.env.NODE_TEST_CONTEXT && process.env.MEDVAULT_TEST_POSTGRES !== '1')) return null
   if (process.env.DATABASE_URL || process.env.MEDVAULT_PG_URL) {
     return {
       connectionString: process.env.DATABASE_URL || process.env.MEDVAULT_PG_URL,
@@ -102,7 +106,7 @@ function getPostgresConfig() {
       host: process.env.PGHOST || 'localhost',
       port: Number(process.env.PGPORT || 5432),
       user: process.env.PGUSER || 'medvault_user',
-      password: process.env.PGPASSWORD || 'medvault_secure_password_2026',
+      password: process.env.PGPASSWORD,
       database: process.env.PGDATABASE || 'medvault',
       ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false,
       max: 20,
@@ -156,6 +160,15 @@ async function createPostgresStorage(pgConfig, security) {
       const res = await client.query(querySql, queryParams)
       if (mode === 'exec') return res
       if (mode === 'run') return { changes: res.rowCount || 0 }
+      // PostgreSQL returns BIGINT (including COUNT and epoch timestamps) as text.
+      // Preserve the numeric API contract without rounding values outside JS's safe range.
+      for (const field of res.fields.filter(field => field.dataTypeID === 20)) {
+        for (const row of res.rows) {
+          if (row[field.name] !== null && Number.isSafeInteger(Number(row[field.name]))) {
+            row[field.name] = Number(row[field.name])
+          }
+        }
+      }
       if (mode === 'get') return res.rows[0]
       return res.rows // 'all' or 'iterate'
     } catch (err) {
@@ -189,6 +202,7 @@ async function createPostgresStorage(pgConfig, security) {
       state.transaction = true
     }
     try {
+      await raw('LOCK TABLE audit_events IN SHARE ROW EXCLUSIVE MODE', [], 'exec')
       const prev = await raw('SELECT entry_hash FROM audit_events ORDER BY id DESC LIMIT 1', [], 'get')
       entry.prev_hash = prev?.entry_hash || ''
       entry.entry_hash = auditDigest(entry)
@@ -375,7 +389,7 @@ async function createLocalFallbackStorage(filename, security) {
   }
 
   const db = {
-    storageType: 'PostgreSQL (Ready / Local Mode)',
+    storageType: 'SQLite',
     connection,
     middleware: (request, response, next) => {
       connection(() => new Promise(resolve => {
@@ -451,50 +465,24 @@ async function createLocalFallbackStorage(filename, security) {
   return db
 }
 
-async function ensurePostgresSchema(client) {
-  try {
-    const res = await client.query(`
-      SELECT 1 FROM information_schema.tables 
-      WHERE table_schema = 'public' AND table_name = 'records'
-    `)
-    if (res.rowCount === 0) {
-      console.log('[MedVault Database] Initializing PostgreSQL schema (tables not found in public schema)...')
-      const schemaPath = path.resolve(__dirname, '../sql/schema.sql')
-      if (fs.existsSync(schemaPath)) {
-        const schemaSql = fs.readFileSync(schemaPath, 'utf8')
-        await client.query(schemaSql)
-        console.log('[MedVault Database] PostgreSQL schema initialized successfully (16 tables active).')
-      }
-    }
-  } catch (err) {
-    console.warn(`[MedVault Database] Automatic schema check notice: ${err.message}`)
-  }
-}
-
-// Unified openStorage: tries PostgreSQL first if configured, else safe local fallback
+// A configured PostgreSQL connection is authoritative: never silently save elsewhere.
 async function openStorage(filename, security) {
   const pgConfig = getPostgresConfig()
   if (pgConfig) {
+    const probePool = new Pool(pgConfig)
+    let client
     try {
-      const probePool = new Pool({ ...pgConfig, connectionTimeoutMillis: 3000 })
-      const client = await probePool.connect()
-      await client.query('SELECT 1')
-      await ensurePostgresSchema(client)
-      client.release()
-      await probePool.end()
-
-      const targetDb = pgConfig.connectionString 
-        ? pgConfig.connectionString.replace(/:([^:@]+)@/, ':****@')
-        : `${pgConfig.user}@${pgConfig.host}:${pgConfig.port}/${pgConfig.database}`
-      console.log(`[MedVault Database] ACTIVE: Connected to PostgreSQL (${targetDb}). All records are saved to PostgreSQL.`)
-      return await createPostgresStorage(pgConfig, security)
+      client = await probePool.connect()
+      const tables = await ensurePostgresSchema(client)
+      const { rows: [target] } = await client.query('SELECT current_database() AS database, current_user AS username')
+      console.log(`[MedVault Database] PostgreSQL active: ${target.database} as ${target.username}; ${tables.length} tables verified.`)
     } catch (err) {
-      console.warn(`\n[MedVault Database WARNING] --------------------------------------------------`)
-      console.warn(`[MedVault Database WARNING] Could NOT connect to PostgreSQL (${err.message})!`)
-      console.warn(`[MedVault Database WARNING] MedVault is running in SAFE LOCAL FALLBACK mode.`)
-      console.warn(`[MedVault Database WARNING] Changes made in UI will NOT reflect in PostgreSQL until connected.`)
-      console.warn(`[MedVault Database WARNING] --------------------------------------------------\n`)
+      throw new Error(`PostgreSQL initialization failed: ${err.message}. Check frontend/server/.env and the Linux Mint VM.`, { cause: err })
+    } finally {
+      if (client) client.release()
+      await probePool.end()
     }
+    return createPostgresStorage(pgConfig, security)
   }
 
   return await createLocalFallbackStorage(filename, security)

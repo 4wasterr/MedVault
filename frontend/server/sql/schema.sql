@@ -3,19 +3,15 @@
 -- Platform: Linux Mint / Ubuntu Linux / Enterprise PostgreSQL 14+
 -- ====================================================================
 
--- 1. EXTENSIONS & COLLATIONS
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- 1. COLLATIONS (UUIDs and encryption are provided by the API)
 
 -- Case-insensitive collation for usernames, emails, and doctor names
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_collation WHERE collname = 'nocase') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_collation c JOIN pg_namespace n ON n.oid = c.collnamespace
+                   WHERE c.collname = 'nocase' AND n.nspname = current_schema()) THEN
         CREATE COLLATION nocase (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
     END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        NULL; -- Gracefully ignore if ICU collation already exists or unavailable in container
 END $$;
 
 -- 2. CORE DOCUMENT & SESSION TABLES
@@ -26,6 +22,7 @@ CREATE TABLE IF NOT EXISTS records (
     rowid BIGSERIAL,
     PRIMARY KEY (collection, id)
 );
+ALTER TABLE records ADD COLUMN IF NOT EXISTS rowid BIGSERIAL;
 CREATE INDEX IF NOT EXISTS idx_records_collection ON records (collection);
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -35,6 +32,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at BIGINT NOT NULL,
     last_seen_at BIGINT NOT NULL DEFAULT 0
 );
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at BIGINT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions (username);
 
@@ -44,7 +42,6 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     last_attempt BIGINT NOT NULL,
     locked_until BIGINT NOT NULL DEFAULT 0
 );
-
 -- 3. CRYPTOGRAPHIC TAMPER-EVIDENT AUDIT TRAIL
 CREATE TABLE IF NOT EXISTS audit_events (
     id BIGSERIAL PRIMARY KEY,
@@ -59,6 +56,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
     prev_hash VARCHAR(64) NOT NULL DEFAULT '',
     entry_hash VARCHAR(64) NOT NULL DEFAULT ''
 );
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS before_data TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS after_data TEXT;
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS entry_hash VARCHAR(64) NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_events (occurred_at, id);
 CREATE INDEX IF NOT EXISTS idx_audit_user_time ON audit_events (username, occurred_at);
@@ -104,9 +105,16 @@ CREATE TABLE IF NOT EXISTS staff_accounts (
     doctor_id VARCHAR(128) NOT NULL DEFAULT '',
     must_change_password INTEGER NOT NULL DEFAULT 0
 );
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS mfa_backup_codes TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS doctor_id VARCHAR(128) NOT NULL DEFAULT '';
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_staff_status ON staff_accounts (status);
 CREATE INDEX IF NOT EXISTS idx_staff_email ON staff_accounts (email);
 CREATE INDEX IF NOT EXISTS idx_staff_doctor ON staff_accounts (doctor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_username_nocase ON staff_accounts (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_email_nocase ON staff_accounts (lower(email));
 
 CREATE TABLE IF NOT EXISTS doctors (
     id VARCHAR(128) PRIMARY KEY,
@@ -119,9 +127,11 @@ CREATE TABLE IF NOT EXISTS doctors (
     created_at VARCHAR(35) NOT NULL,
     doctor_username VARCHAR(100) NOT NULL DEFAULT ''
 );
+ALTER TABLE doctors ADD COLUMN IF NOT EXISTS doctor_username VARCHAR(100) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_doctors_active ON doctors (active);
 CREATE INDEX IF NOT EXISTS idx_doctors_username ON doctors (doctor_username);
 CREATE INDEX IF NOT EXISTS idx_doctors_secretary ON doctors (secretary_username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_doctors_name_nocase ON doctors (lower(name));
 
 CREATE TABLE IF NOT EXISTS visit_records (
     patient_id VARCHAR(128) NOT NULL,

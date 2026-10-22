@@ -1,5 +1,9 @@
 # MedVault deployment with SQLite
 
+For the current Windows application connected to PostgreSQL in Linux Mint, use
+[the PostgreSQL guide](../docs/POSTGRESQL.md). This document covers the older SQLite
+Docker deployment, including its SQLite-specific backups.
+
 The current roles and SQLite database are retained. PostgreSQL installation, containers, drivers and migration are deferred. These files prepare an Ubuntu HTTPS deployment; they do not change the current Windows machine or publish the application.
 
 ## Prepare the Ubuntu host

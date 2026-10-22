@@ -353,8 +353,8 @@ async function createApp({ seedDemo = false } = {}) {
       if (fs.existsSync(databasePath)) {
         try { fs.chmodSync(databasePath, 0o600) } catch {}
       }
-      ;(await db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA busy_timeout = 5000;'))
-      ;(await db.exec(`
+      if (db.storageType === 'SQLite') await db.exec(`
+        PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; PRAGMA busy_timeout = 5000;
         CREATE TABLE IF NOT EXISTS records (
           collection TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
           PRIMARY KEY (collection, id)
@@ -536,7 +536,7 @@ async function createApp({ seedDemo = false } = {}) {
           FOREIGN KEY (patient_id) REFERENCES patients_rel(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_documents_pat ON patient_documents (patient_id);
-      `))
+      `)
       const auditColumns = (await db.prepare('PRAGMA table_info(audit_events)').all()).map((column) => column.name)
       if (!auditColumns.includes('before_data')) (await db.exec('ALTER TABLE audit_events ADD COLUMN before_data TEXT'))
       if (!auditColumns.includes('after_data')) (await db.exec('ALTER TABLE audit_events ADD COLUMN after_data TEXT'))
@@ -923,7 +923,10 @@ async function createApp({ seedDemo = false } = {}) {
         return null
       }
 
-      app.get('/api/health', async (_request, response) => response.json({ status: 'ok', message: 'MedVault API is running' }))
+      app.get('/api/health', async (_request, response) => {
+        await db.raw('SELECT 1')
+        response.json({ status: 'ok', message: 'MedVault API is running', storage: db.storageType })
+      })
 
       app.post('/api/register', async (request, response) => {
         const username = String(request.body?.username || '').trim().toLowerCase()
