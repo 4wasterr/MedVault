@@ -21,6 +21,11 @@ export async function api(path, options = {}) {
   const critical = changing && !['activity', 'logout'].includes(path);
   if (critical) pendingActions++;
   try {
+  // Keep this mode check here so production builds can omit the demo adapter.
+  if (typeof import.meta.env !== 'undefined' && import.meta.env.MODE === 'demo') {
+    const { demoApi } = await import('./demoApi.js');
+    return await demoApi(path, options);
+  }
   const protection = changing ? { 'X-CSRF-Token': await getCsrfToken() } : {};
   const response = await fetch(`/api/${path}`, {
     credentials: 'same-origin',

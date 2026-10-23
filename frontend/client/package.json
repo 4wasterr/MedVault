@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode demo",
+    "demo": "vite --mode demo",
+    "dev:full": "vite",
     "build": "vite build",
     "lint": "oxlint src",
     "test": "node --test \"src/*.test.js\"",

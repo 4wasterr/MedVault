@@ -46,7 +46,7 @@ async function serviceStatus(name) {
 const [clientStatus, apiStatus] = await Promise.all([serviceStatus('client'), serviceStatus('api')])
 if (clientStatus === 'occupied' || apiStatus === 'occupied') {
   const port = clientStatus === 'occupied' ? 5173 : 5000
-  console.error(`Port ${port} is occupied by a service that is not serving this MedVault app. Close that service, then run npm run dev again.`)
+  console.error(`Port ${port} is occupied by a service that is not serving this MedVault app. Close that service, then run npm run dev:full again.`)
   process.exitCode = 1
 } else if (clientStatus === 'running' && apiStatus === 'running') {
   console.log(`MedVault is already running at ${clientUrl}`)

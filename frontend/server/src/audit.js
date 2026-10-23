@@ -9,7 +9,7 @@ const groups = {
   appointments: { 'Booking details': ['doctor', 'date', 'time', 'type', 'room'], 'Patient details': ['patientId', 'patientName', 'age', 'sex', 'contact', 'address', 'emergencyName', 'emergencyContact'],
     'Booking status': ['status'], 'Visit progress': ['visitStatus'], Notes: ['notes'] },
   schedules: { 'Schedule details': ['doctor', 'date', 'start', 'end'], 'Blocked slots': ['blocked'] },
-  staff_accounts: { 'Profile details': ['firstName', 'middleName', 'lastName', 'address', 'phone', 'email'], Role: ['role'], 'Account status': ['status'] },
+  staff_accounts: { 'Profile details': ['username', 'firstName', 'middleName', 'lastName', 'address', 'phone', 'email'], Role: ['role'], 'Account status': ['status'] },
   doctors: { 'Doctor profile': ['name', 'specialty', 'phone', 'email'], 'Secretary assignment': ['secretaryUsername', 'secretary_username'], 'Active status': ['active'] },
   visit_records: { 'Visit details': ['date', 'doctor', 'type'], 'Clinical details': ['summary', 'diagnosis', 'treatment', 'followUp', 'vitalsSummary', 'notes'] },
 }

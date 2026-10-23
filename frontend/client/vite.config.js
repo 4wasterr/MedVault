@@ -24,7 +24,7 @@ function resolveImagesPlugin() {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), resolveImagesPlugin()],
   resolve: {
     dedupe: ['react', 'react-dom'],
@@ -35,12 +35,12 @@ export default defineConfig({
     ],
   },
   server: {
-    port: 5173,
-    strictPort: true,
+    port: mode === 'demo' ? 5174 : 5173,
+    strictPort: mode !== 'demo',
     open: false,
     fs: { allow: [path.resolve(__dirname, '..')] },
-    proxy: {
+    proxy: mode === 'demo' ? {} : {
       '/api': { target: 'http://127.0.0.1:5000', changeOrigin: false },
     },
   },
-})
+}))

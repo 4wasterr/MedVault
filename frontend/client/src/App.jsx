@@ -11,6 +11,7 @@ import AdminDashboard from '../../pages/super admin/AdminDashboard';
 import { DraftScope } from './useDraftState';
 import { draftKey, readDraft, writeDraft } from './draftStorage';
 import { api, applyChanges, changesBetween, emptyState } from './sharedState';
+import { isDemo } from './demoMode';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -46,6 +47,7 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
   const [legacyAvailable, setLegacyAvailable] = useState(() => {
+    if (isDemo) return false;
     try { return ['medvault_patients', 'medvault_appointments', 'medvault_schedules'].some((key) => localStorage.getItem(key)); }
     catch { return false; }
   });
@@ -136,7 +138,7 @@ export default function App() {
       persistPending(serverState, merged);
       markSaveBlocked(false);
       setSyncMessage('');
-      setSaveStatus('Changes saved to the shared server.');
+      setSaveStatus(isDemo ? 'Changes saved for this preview. Refresh to reset.' : 'Changes saved to the shared server.');
     } catch (error) {
       if (userRef.current !== session) return;
       setSaveStatus('');
@@ -424,6 +426,12 @@ export default function App() {
   </div>;
 
   return <DraftScope.Provider key={currentUsername || 'signup'} value={currentUser + ':' + (currentUsername || 'signup')}><ErrorBoundary>
+    {isDemo && <aside className="medvault-demo-banner" aria-label="Frontend demo information">
+      <div><strong>Frontend demo</strong><span>Fictional data only. Changes reset when you refresh.</span>
+        {!currentUser && <p>Logins: <code>demo.receptionist</code>, <code>demo.secretary</code>, <code>demo.admin</code> &middot; Password: <code>DemoPass123!</code></p>}
+      </div>
+      <button type="button" onClick={() => window.location.reload()}>Reset demo</button>
+    </aside>}
     {draftStorageFailed && <div className="medvault-sync-alert" role="alert">Browser storage is unavailable or full. Keep this page open until your changes are saved to the server.</div>}
     {isMedicalSecretary && legacyAvailable && <div className="medvault-import-alert" role="status">
       <span>Records from the previous browser-only version are available here. Importing replaces shared records before clinical changes have been made.</span>

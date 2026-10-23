@@ -8,7 +8,7 @@ const { openStorage } = require('./storage')
 const { createSecurity, hashPassword, verifyPassword, installProtection, production } = require('./security')
 const { listAudit, AuditQueryError } = require('./audit')
 const mfa = require('./mfa')
-const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProblem: sharedVitalProblem, VISIT_TYPES, RELATIONSHIPS } = require('../../shared/formRules.mjs')
+const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProblem: sharedVitalProblem, VISIT_TYPES, RELATIONSHIPS, passwordProblem, nameProblem, SPECIALTIES } = require('../../shared/formRules.mjs')
 // ===== VALIDATIONS (added) =====
 function todayDateString() {
   return process.env.MEDVAULT_TODAY || clinicToday()
@@ -179,7 +179,6 @@ function filterSchedulesForRole(schedules, user, doctors = []) {
   }
   return schedules
 }
-const PERSON_NAME = /^[\p{L}\p{M}]+(?:[\s.'’ -][\p{L}\p{M}]+)*$/u
 const SEXES = ['', 'Female', 'Male', 'Other']
 const TEXT_LIMIT = 2000
 
@@ -242,7 +241,7 @@ function validatePatient(after, before = null, { legacyImport = false } = {}) {
   if (!same(was.email, after.email) && after.email && !isPublicEmail(after.email)) return 'Use a supported public email domain such as gmail.com, yahoo.com, or outlook.com.'
   if (!same(was.emergencyRelationship, after.emergencyRelationship) && text(after.emergencyRelationship) && !RELATIONSHIPS.includes(after.emergencyRelationship)) return 'Choose a valid emergency contact relationship.'
   const name = text(after.name)
-  if (!same(was.name, after.name) && !PERSON_NAME.test(name)) return 'Patient name may only contain letters, spaces and . \' -'
+  if (!same(was.name, after.name) && nameProblem(name, { max: 160 })) return nameProblem(name, { max: 160 })
   if (!same(was.sex, after.sex) && !SEXES.includes(text(after.sex))) return 'Sex must be Female, Male or Other.'
   if (!same(was.age, after.age) && text(after.age) !== '') {
     const age = Number(after.age)
@@ -258,7 +257,7 @@ function validatePatient(after, before = null, { legacyImport = false } = {}) {
   if (!same(was.contact, after.contact) && text(after.contact) && !phoneValid(after.contact)) return 'Contact number is not a valid phone number.'
   if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !phoneValid(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
   if (!same(was.address, after.address) && text(after.address).length > 300) return 'Address must be 300 characters or fewer.'
-  if (!same(was.emergencyName, after.emergencyName) && text(after.emergencyName).length > 160) return 'Emergency contact name must be 160 characters or fewer.'
+  if (!same(was.emergencyName, after.emergencyName) && nameProblem(after.emergencyName, { max: 160, optional: true })) return nameProblem(after.emergencyName, { max: 160, optional: true })
   if (after.vitals !== undefined && (!after.vitals || typeof after.vitals !== 'object' || Array.isArray(after.vitals))) return 'Vitals must contain named measurements.'
   if (after.vitals && !same(was.vitals, after.vitals)) {
     for (const key of Object.keys(after.vitals)) {
@@ -308,7 +307,8 @@ function validateAppointment(after, before = null) {
 
   if ((before === null || was.status === 'Open' || !same(was.contact, after.contact)) && !isPHMobile(after.contact)) return 'Contact number is required and must use +639XXXXXXXXX.'
   if ((!before || !same(was.type, after.type)) && !VISIT_TYPES.includes(after.type)) return 'Choose a standard visit type.'
-  if (!same(was.patientName, after.patientName) && (!text(after.patientName) || text(after.patientName).length > 160)) return 'Appointment needs a patient name of at most 160 characters.'
+  if (!same(was.patientName, after.patientName) && nameProblem(after.patientName, { max: 160 })) return nameProblem(after.patientName, { max: 160 })
+  if (!same(was.emergencyName, after.emergencyName) && nameProblem(after.emergencyName, { max: 160, optional: true })) return nameProblem(after.emergencyName, { max: 160, optional: true })
   if (!same(was.contact, after.contact) && text(after.contact) && !validPatientPhone(after.contact)) return 'Appointment contact number is not a valid phone number.'
   if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !validPatientPhone(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
   if (!same(was.type, after.type) && (!text(after.type) || text(after.type).length > 100)) return 'Visit type is required (100 characters or fewer).'
@@ -936,10 +936,11 @@ async function createApp({ seedDemo = false } = {}) {
         const email = String(request.body?.email || '').trim().toLowerCase()
         const role = String(request.body?.role || '')
         const doctorId = String(request.body?.doctorId || '').trim()
+        if (passwordProblem(password)) return response.status(400).json({ error: passwordProblem(password) })
         if (!/^[a-z][a-z0-9._-]{2,31}$/.test(username) || accounts[username] ||
           !password || Buffer.byteLength(password, 'utf8') > 72 ||
           password !== confirmPassword || !['Receptionist', 'Medical Secretary'].includes(role) ||
-          !firstName || firstName.length > 80 || middleName.length > 80 || !lastName || lastName.length > 80 ||
+          nameProblem(firstName) || nameProblem(middleName, { optional: true }) || nameProblem(lastName) ||
           !address || address.length > 300 || !isPHMobile(phone) ||
           !isPublicEmail(email)) {
           return response.status(400).json({ error: 'Check the required details and role.' })
@@ -1163,6 +1164,7 @@ async function createApp({ seedDemo = false } = {}) {
         if (newPassword !== confirmPassword) {
           return response.status(400).json({ error: 'New passwords do not match.' })
         }
+        if (passwordProblem(newPassword)) return response.status(400).json({ error: passwordProblem(newPassword) })
         if (newPassword === currentPassword) {
           return response.status(400).json({ error: 'New password cannot be identical to the temporary password.' })
         }
@@ -1275,21 +1277,21 @@ async function createApp({ seedDemo = false } = {}) {
         if (!/^[a-z][a-z0-9._-]{2,31}$/.test(details.username) ||
           !['Receptionist', 'Medical Secretary', 'Super Admin'].includes(details.role) ||
           !['approved', 'deactivated'].includes(details.status) ||
-          !details.firstName || details.firstName.length > 80 || details.middleName.length > 80 ||
-          !details.lastName || details.lastName.length > 80 || !details.address || details.address.length > 300 ||
+          nameProblem(details.firstName) || nameProblem(details.middleName, { optional: true }) ||
+          nameProblem(details.lastName) || !details.address || details.address.length > 300 ||
           ((!current.username || details.phone !== current.phone) && !isPHMobile(details.phone)) ||
           ((!current.username || details.email !== current.email) && !isPublicEmail(details.email))) return null
         return details
       }
 
       function validPassword(password) {
-        return typeof password === 'string' && password.length > 0 && Buffer.byteLength(password, 'utf8') <= 72
+        return typeof password === 'string' && !passwordProblem(password)
       }
 
       app.post('/api/admin/accounts', authenticate, adminOnly, async (request, response) => {
         const details = accountDetails(request.body || {})
         const password = String(request.body?.password || '')
-        if (!details || !validPassword(password) || accounts[details.username]) {
+        if (!details || !validPassword(password) || password !== request.body?.confirmPassword || accounts[details.username]) {
           return reject(request, response, 400, 'Check account details and password.')
         }
         const salt = ''
@@ -1314,14 +1316,17 @@ async function createApp({ seedDemo = false } = {}) {
         }
       })
 
-      app.patch('/api/admin/accounts/:username', authenticate, adminOnly, async (request, response) => {
-        const username = String(request.params.username).toLowerCase()
+      async function updateAccount(request, response, username, own = false) {
         const previous = (await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(username))
         if (!previous) return response.status(404).json({ error: 'Staff account not found.' })
-        const details = accountDetails({ ...request.body, username }, previous)
+        const body = own ? Object.fromEntries(['username', 'firstName', 'middleName', 'lastName', 'address', 'phone', 'email'].filter(key => key in request.body).map(key => [key, request.body[key]])) : request.body
+        const details = accountDetails(body, previous)
         const password = String(request.body?.password || '')
-        if (!details || (password && !validPassword(password))) return reject(request, response, 400, 'Check account details and password.')
-                  if (selfLockout(request.user.username, username, details)) {
+        if (!details || (password && (!validPassword(password) || password !== request.body?.confirmPassword))) return reject(request, response, 400, 'Check account details, password policy, and password confirmation.')
+        const renaming = details.username !== username
+        if (renaming && (accounts[details.username] || await db.prepare('SELECT username FROM staff_accounts WHERE username = ?').get(details.username))) return reject(request, response, 409, 'Username is already used.')
+        if (own && (renaming || password) && !await verifyPassword(String(request.body?.currentPassword || ''), previous.password_hash, previous.password_salt)) return reject(request, response, 400, 'Enter your current password to change your username or password.')
+        if (selfLockout(request.user.username, username, details)) {
           return reject(request, response, 409, 'You cannot deactivate your own account or remove your own Super Admin role.')
         }
         if ((details.status !== 'approved' || details.role !== 'Medical Secretary') &&
@@ -1333,24 +1338,48 @@ async function createApp({ seedDemo = false } = {}) {
         const now = new Date().toISOString()
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
-          ;(await db.prepare(`UPDATE staff_accounts SET password_salt = ?, password_hash = ?, role = ?, first_name = ?, middle_name = ?,
+          ;(await db.prepare(`UPDATE staff_accounts SET username = ?, password_salt = ?, password_hash = ?, role = ?, first_name = ?, middle_name = ?,
             last_name = ?, address = ?, phone = ?, email = ?, status = ?, reviewed_at = ?, reviewed_by = ?, doctor_id = ? WHERE username = ?`)
-            .run(salt, hash, details.role, details.firstName, details.middleName, details.lastName, details.address,
+            .run(details.username, salt, hash, details.role, details.firstName, details.middleName, details.lastName, details.address,
               details.phone, details.email, details.status, now, request.user.username, details.doctorId || '', username))
-          if (details.status !== 'approved' || previous.role !== details.role || password) {
-            ;(await db.prepare('DELETE FROM sessions WHERE username = ?').run(username))
+          if (renaming) {
+            await db.prepare('UPDATE doctors SET secretary_username = ? WHERE secretary_username = ?').run(details.username, username)
+            await db.prepare('UPDATE doctors SET doctor_username = ? WHERE doctor_username = ?').run(details.username, username)
+            await db.prepare('UPDATE emergency_access_grants SET doctor_username = ? WHERE doctor_username = ?').run(details.username, username)
+            await db.prepare('DELETE FROM login_attempts WHERE username = ? OR username = ?').run(username, details.username)
           }
-          const updated = (await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(username))
+          let replacementToken
+          if (details.status !== 'approved' || previous.role !== details.role || password || renaming) {
+            ;(await db.prepare('DELETE FROM sessions WHERE username = ?').run(username))
+            if (request.user.username === username && details.status === 'approved') {
+              replacementToken = security.sign(details.username, details.role, sessionDurationMs / 1000)
+              await db.prepare('INSERT INTO sessions (token_hash, username, role, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)')
+                .run(crypto.createHash('sha256').update(replacementToken).digest('hex'), details.username, details.role, Date.now() + sessionDurationMs, Date.now())
+            }
+          }
+          const updated = (await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(details.username))
           ;(await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(now, request.user.username, request.user.role, 'staff_accounts', username, 'update', JSON.stringify(staffAccount(previous)), JSON.stringify(staffAccount(updated))))
+            .run(now, request.user.username, request.user.role, 'staff_accounts', details.username, 'update', JSON.stringify(staffAccount(previous)), JSON.stringify(staffAccount(updated))))
           if (password) await recordEvent(request.user.username, request.user.role, 'password-reset', {}, 'staff_accounts', username)
           ;(await db.exec('COMMIT'))
+          if (replacementToken) response.setHeader('Set-Cookie', sessionCookie(request, replacementToken, sessionDurationMs / 1000))
           return response.json(staffAccount(updated))
         } catch (error) {
           ;(await db.exec('ROLLBACK'))
-          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'Email is already used.')
+          if (String(error.code).startsWith('SQLITE_CONSTRAINT') || String(error.code).startsWith('23') || error.code === '23505') return reject(request, response, 409, 'Username or email is already used.')
           throw error
         }
+      }
+
+      app.patch('/api/admin/accounts/:username', authenticate, adminOnly, async (request, response) => updateAccount(request, response, String(request.params.username).toLowerCase()))
+      app.get('/api/profile', authenticate, async (request, response) => {
+        response.setHeader('Cache-Control', 'no-store')
+        const row = await db.prepare('SELECT * FROM staff_accounts WHERE username = ?').get(request.user.username)
+        response.json(row ? staffAccount(row) : { username: request.user.username, role: request.user.role, system: true })
+      })
+      app.patch('/api/profile', authenticate, async (request, response) => {
+        if (accounts[request.user.username]) return response.status(400).json({ error: 'The bootstrap account is managed by deployment configuration. Create a staff account to manage a personal profile.' })
+        return updateAccount(request, response, request.user.username, true)
       })
 
       app.get('/api/admin/doctors', authenticate, adminOnly, async (_request, response) => {
@@ -1358,7 +1387,7 @@ async function createApp({ seedDemo = false } = {}) {
         response.json((await readDoctors()))
       })
 
-      async function doctorDetails(body) {
+      async function doctorDetails(body, previous = null) {
         const details = {
           name: String(body.name || '').trim(), specialty: String(body.specialty || '').trim(),
           phone: String(body.phone || '').trim(), email: String(body.email || '').trim().toLowerCase(),
@@ -1366,7 +1395,7 @@ async function createApp({ seedDemo = false } = {}) {
           doctorUsername: String(body.doctorUsername || '').trim().toLowerCase(),
           active: body.active !== false,
         }
-        if (!details.name || details.name.length > 100 || details.specialty.length > 100 ||
+        if (nameProblem(details.name, { max: 100 }) || ((!previous || details.specialty !== previous.specialty) && !SPECIALTIES.includes(details.specialty)) ||
           details.phone.length > 30 || details.email.length > 254 ||
           (details.email && !isPublicEmail(details.email)) || (details.phone && !isPHMobile(details.phone))) return null
         if (details.secretaryUsername) {
@@ -1410,7 +1439,7 @@ async function createApp({ seedDemo = false } = {}) {
           specialty: request.body?.specialty ?? previous.specialty, phone: request.body?.phone ?? previous.phone,
           email: request.body?.email ?? previous.email, secretaryUsername: request.body?.secretaryUsername ?? previous.secretary_username,
           doctorUsername: request.body?.doctorUsername ?? previous.doctor_username,
-          active: request.body?.active ?? Boolean(previous.active) })
+          active: request.body?.active ?? Boolean(previous.active) }, previous)
         if (!details) return reject(request, response, 400, 'Check doctor details and assigned secretary.')
         const now = new Date().toISOString()
         ;(await db.exec('BEGIN IMMEDIATE'))

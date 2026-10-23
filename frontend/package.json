@@ -4,9 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "npm run demo --prefix client",
+    "dev:full": "node scripts/dev.mjs",
+    "demo": "npm run demo --prefix client",
     "server": "npm run dev --prefix server",
-    "client": "npm run dev --prefix client",
+    "client": "npm run dev:full --prefix client",
     "build": "npm run build --prefix client"
   },
   "keywords": [],

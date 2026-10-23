@@ -1,9 +1,5 @@
 import { draftKey, readDraft, writeDraft } from './draftStorage.js';
 
-let pendingActions = 0;
-export function startCriticalAction() { pendingActions += 1; }
-export function finishCriticalAction() { pendingActions = Math.max(0, pendingActions - 1); }
-export function criticalActionsPending() { return pendingActions > 0; }
 const memory = new Map();
 export function formBlockers(scope, storage) {
   return memory.get(scope) || readDraft(storage, draftKey(scope, 'form-errors'), {});

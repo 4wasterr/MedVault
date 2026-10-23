@@ -1,4 +1,6 @@
-const PREFIX = 'medvault:draft:v1:';
+import { isDemo, demoDraftPrefix } from './demoMode.js';
+
+const PREFIX = isDemo ? demoDraftPrefix : 'medvault:draft:v1:';
 const secrets = new Set(['password', 'confirmPassword', 'newPassword', 'currentPassword', 'temporaryPassword', 'token']);
 export const draftKey = (scope, name) => `${PREFIX}${encodeURIComponent(scope)}:${encodeURIComponent(name)}`;
 export function readDraft(storage, key, fallback) {

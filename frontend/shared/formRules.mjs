@@ -1,30 +1,8 @@
 export const VISIT_TYPES = ['New Consultation', 'Follow-up', 'Routine Checkup', 'Emergency'];
 export const SPECIALTIES = ['Cardiologist', 'Gastroenterologist', 'General Health', 'Pulmonology', 'Neurology', 'Gynecology', 'Pediatrics'];
-export const NAME_PATTERN = "[\\p{L}][\\p{L}\\p{M} .’'\\-]*";
-export const USERNAME_PATTERN = '[A-Za-z][A-Za-z0-9._\\-]{2,31}';
-export const PASSWORD_GUIDANCE = 'Use at least 8 characters with an uppercase letter, a lowercase letter, a number, and a special character.';
-export function passwordProblem(value) {
-  const password = String(value ?? '');
-  if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9\s]/.test(password)) return PASSWORD_GUIDANCE;
-  if (new TextEncoder().encode(password).length > 72) return 'Password must be 72 UTF-8 bytes or fewer.';
-  return null;
-}
-export function nameProblem(value, { required = true, label = 'Name', maxLength = 160 } = {}) {
-  const name = String(value ?? '').trim();
-  if (!name) return required ? `${label} is required.` : null;
-  return name.length > maxLength || !/^[\p{L}][\p{L}\p{M} .’'\-]*$/u.test(name) || !/[\p{L}\p{M}.]$/u.test(name)
-    ? `${label} must contain letters, spaces, apostrophes, periods, or hyphens only.` : null;
-}
-export function usernameProblem(value) {
-  return /^[A-Za-z][A-Za-z0-9._-]{2,31}$/.test(String(value ?? '')) ? null : 'Username must start with a letter and contain 3–32 letters, numbers, dots, underscores, or hyphens.';
-}
-export function staffNamesProblem(record) {
-  return nameProblem(record.firstName, { label: 'First name', maxLength: 80 }) || nameProblem(record.middleName, { required: false, label: 'Middle name', maxLength: 80 }) || nameProblem(record.lastName, { label: 'Last name', maxLength: 80 });
-}
-export const SPECIALTIES = ['Cardiologist', 'Gastroenterologist', 'General Health', 'Pulmonology', 'Neurology', 'Gynecology', 'Pediatrics'];
 export const USERNAME_PATTERN = '[A-Za-z][A-Za-z0-9._\\-]{2,31}';
 // Allow real names, including accents, apostrophes, initials, and hyphenated names.
-export const NAME_PATTERN = "[\\p{L}\\p{M}]+(?:[ .’'\\-][\\p{L}\\p{M}]+)*\\.?";
+export const NAME_PATTERN = "[\\p{L}\\p{M}]+\\.?(?:[ ’'\\-][\\p{L}\\p{M}]+\\.?)*";
 export const NAME_GUIDANCE = 'Use letters, spaces, apostrophes, hyphens, or periods for initials; numbers and other symbols are not allowed.';
 export const PASSWORD_GUIDANCE = 'Use at least 8 characters with an uppercase letter, a lowercase letter, a number, and a special character.';
 export const isPersonName = value => new RegExp(`^(?:${NAME_PATTERN})$`, 'u').test(String(value ?? '').trim());
@@ -34,10 +12,18 @@ export function passwordProblem(value) {
   if (new TextEncoder().encode(password).length > 72) return 'Password must be at most 72 UTF-8 bytes.';
   return null;
 }
-export function nameProblem(value, { optional = false, max = 80 } = {}) {
-  if (!String(value ?? '').trim()) return optional ? null : 'Name is required.';
+export function nameProblem(value, { optional = false, max = 80, required, maxLength, label = 'Name' } = {}) {
+  optional = required === undefined ? optional : !required;
+  max = maxLength ?? max;
+  if (!String(value ?? '').trim()) return optional ? null : `${label} is required.`;
   if (String(value).trim().length > max) return `Name must be at most ${max} characters.`;
   return isPersonName(value) ? null : NAME_GUIDANCE;
+}
+export function usernameProblem(value) {
+  return new RegExp('^' + USERNAME_PATTERN + '$').test(String(value ?? '')) ? null : 'Start with a letter; use 3-32 letters, numbers, dots, underscores, or hyphens.';
+}
+export function staffNamesProblem(record) {
+  return nameProblem(record.firstName, { label: 'First name' }) || nameProblem(record.middleName, { optional: true, label: 'Middle name' }) || nameProblem(record.lastName, { label: 'Last name' });
 }
 export function staffProblems(staff, { editing = false, signup = false } = {}) {
   const problems = {};

@@ -9,7 +9,7 @@ The remaining SQLite deployment notes describe local storage when PostgreSQL is 
 Use Node.js 24 or newer.
 
 1. Install the existing project dependencies with `npm install` in `frontend`, `frontend/client`, and `frontend/server` if needed.
-2. Run `npm run dev` from the repository root for the Vite UI and API together. In PowerShell, run `npm.cmd run dev` if `npm.ps1` is blocked. The launcher reuses an existing MedVault frontend or API instead of failing on its port.
+2. Run `npm run dev:full` from the repository root for the Vite UI and API together. In PowerShell, run `npm.cmd run dev:full` if `npm.ps1` is blocked. The launcher reuses an existing MedVault frontend or API instead of failing on its port. For a frontend preview without the API or database, use `npm run dev` instead.
 3. To serve the built UI locally, run `npm run build` from the repository root, then `npm start --prefix frontend/server`. Open `http://127.0.0.1:5000`. The API binds to loopback by default; use `HOST=0.0.0.0` only for a controlled development LAN. For production HTTPS, follow [the SQLite deployment guide](../deploy/README.md).
 
 Fresh local installations keep only the bootstrap Super Admin login: `user3` / `user3`. Override these credentials with `MEDVAULT_ADMIN_USERNAME` and `MEDVAULT_ADMIN_PASSWORD`. Create Receptionist and Medical Secretary accounts through User Management, or use signup and approve the requests as the Super Admin. No demo staff accounts are created during normal startup.
@@ -23,4 +23,3 @@ The server checks signed, revocable JWT sessions and existing role permissions, 
 If the previous browser-only version stored records on this computer, sign in as the medical secretary and use **Import Browser Records**. Import is available before shared clinical records have been changed. The browser copy stays in place if import fails.
 
 The [security scope, role matrix, risk assessment and verification results](../docs/SECURITY.md) explain the controls and remaining host acceptance checks. Encrypted SQLite backup and restore commands are included in `frontend/server/scripts/backup.cjs`; the deployment guide covers the daily cron job and recovery. Production requires `NODE_ENV=production`, `MEDVAULT_PUBLIC_ORIGIN`, encryption/JWT key files and a strong bootstrap password. The default bootstrap login and local HTTP remain for development.
-

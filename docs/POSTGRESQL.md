@@ -27,7 +27,7 @@ From the repository root in PowerShell:
 npm.cmd run db:setup
 npm.cmd run db:verify
 npm.cmd run test:postgres
-npm.cmd run dev
+npm.cmd run dev:full
 ```
 
 `db:setup` creates missing tables, indexes, and audit protections in a transaction
