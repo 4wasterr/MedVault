@@ -1,10 +1,10 @@
 import React from 'react';
 import './PatientIntakeFields.css';
-import { PHONE_PATTERN, RELATIONSHIPS, formatPhone, phoneInput } from '../../shared/formRules.mjs';
+import { PHONE_PATTERN, RELATIONSHIPS, ageFromBirthday, formatPhone, phoneInput } from '../../shared/formRules.mjs';
 
 export default function PatientIntakeFields({ value, onChange, className = 'ap-form-input' }) {
   return <>
-    <label>Age *<input aria-label="Age" className={className} type="number" required min="0" max="130" step="1" value={value.age ?? ''} onChange={e => onChange('age', e.target.value)} /></label>
+    <label>Age *<input aria-label="Age" className={className} type="number" required min="0" max="130" step="1" readOnly={Boolean(value.birthday)} value={value.birthday ? ageFromBirthday(value.birthday) ?? '' : value.age ?? ''} onChange={e => onChange('age', e.target.value)} /></label>
     <fieldset className="ap-emergency-contact-fields">
       <legend>Emergency contact information</legend>
       <div className="ap-form-grid-2">

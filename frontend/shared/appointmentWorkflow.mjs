@@ -12,10 +12,16 @@ export const APPOINTMENT_TRANSITIONS = {
 // Clinical progress can still be present on older records using two status fields.
 export function appointmentStage(appointment) {
   if (!appointment) return '';
-  if (['Open', 'Cancelled', 'Completed'].includes(appointment.status)) return appointment.status;
-  if (['In Consultation', 'Completed'].includes(appointment.visitStatus)) return appointment.visitStatus;
+  const terminal = status => /^(done|completed)$/i.test(status || '') ? 'Completed' :
+    /^cancelled$/i.test(status || '') ? 'Cancelled' : /^no[ -]?show$/i.test(status || '') ? 'No-Show' : '';
+  if (terminal(appointment.status)) return terminal(appointment.status);
+  if (appointment.status === 'Open') return 'Open';
+  if (terminal(appointment.visitStatus)) return terminal(appointment.visitStatus);
+  if (appointment.visitStatus === 'In Consultation') return appointment.visitStatus;
   return appointment.status || appointment.visitStatus || 'Confirmed';
 }
+
+export const isTerminalAppointment = appointment => ['Completed', 'Cancelled', 'No-Show'].includes(appointmentStage(appointment));
 
 export function canUndoCheckIn(appointment) {
   return appointment?.status === 'Checked-In' && appointmentStage(appointment) === 'Checked-In';

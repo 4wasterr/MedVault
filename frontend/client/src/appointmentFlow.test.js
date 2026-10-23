@@ -114,7 +114,7 @@ test('actual appointment forms keep existing patient intake visible, match speci
     assert.match(rendered, /0 years old/);
     assert.match(rendered, /Parent/);
     assert.match(rendered, /aria-label="Age"/);
-    assert.match(rendered, /That time is booked or blocked in Doctor Schedules/);
+    assert.match(rendered, /doctor already has an appointment or reserved slot during this time window/);
     assert.doesNotMatch(rendered, /View Full Patient Profile|Drafts are saved/);
     save('appointments:showNewModal', false);
     const progressRows = renderToString(React.createElement(DraftScope.Provider, { value: scope }, React.createElement(Appointment, {

@@ -1,4 +1,4 @@
-import { formatPhone, normalizeSpecialty } from '../../shared/formRules.mjs';
+import { ageFromBirthday, formatPhone, normalizeSpecialty } from '../../shared/formRules.mjs';
 import { findDuplicatePatient } from '../../shared/patientIdentity.mjs';
 
 export const doctorSpecialty = doctor => normalizeSpecialty(doctor?.specialty);
@@ -16,7 +16,7 @@ export function selectBookingPatient(form, patient) {
     ...form,
     patientId: patient?.id || '',
     patientName: patient?.name || '',
-    age: patient?.age ?? '',
+    age: ageFromBirthday(patient?.birthday) ?? patient?.age ?? '',
     birthday: patient?.birthday || '',
     contact: patient?.contact || '',
     emergencyName: patient?.emergencyName || '',
@@ -31,7 +31,8 @@ export function bookingPatient(form, existingPatient, newId, createdAt = new Dat
       id: newId, name: form.patientName.trim(), sex: '', birthday: '', address: '',
       status: 'Waiting', createdAt, vitals: {}, medical: {}, appointments: [],
     }),
-    age: form.age,
+    age: ageFromBirthday(form.birthday || existingPatient?.birthday) ?? form.age,
+    birthday: form.birthday || existingPatient?.birthday || '',
     contact: formatPhone(form.contact),
     emergencyName: form.emergencyName,
     emergencyContact: formatPhone(form.emergencyContact),
@@ -46,7 +47,7 @@ export function updatePatientBooking(patients, patient, appointment) {
   };
   const update = current => ({
     ...current,
-    age: patient.age, contact: patient.contact,
+    age: patient.age, birthday: patient.birthday, contact: patient.contact,
     emergencyName: patient.emergencyName, emergencyContact: patient.emergencyContact,
     emergencyRelationship: patient.emergencyRelationship,
     appointments: [history, ...(current.appointments || []).filter(entry =>

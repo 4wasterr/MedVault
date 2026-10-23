@@ -152,15 +152,17 @@ test('shared records, role authorization, conflicts, and persistence', async () 
       { collection: 'schedules', id: 'Dr. Cruz|2026-10-01', before: null, after: schedule },
     ] })).status, 200)
     assert.equal((await request('/api/state', receptionist.cookie)).body.schedules['Dr. Cruz|2026-10-01'].blocked['12:00'], 'Lunch')
-    const terminalAppointment = { ...appointment, id: 'APPT-terminal', time: '10:00 AM' }
+    let terminalAppointment = { ...appointment, id: 'APPT-terminal', time: '10:00 AM' }
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: terminalAppointment.id, before: null, after: terminalAppointment },
     ] })).status, 200)
+    terminalAppointment = (await request('/api/state', receptionist.cookie)).body.appointments.find(item => item.id === terminalAppointment.id)
     const completedAppointment = { ...terminalAppointment, status: 'Completed', visitStatus: 'Completed' }
-    const arrivedAppointment = { ...terminalAppointment, status: 'Checked-In' }
+    let arrivedAppointment = { ...terminalAppointment, status: 'Checked-In' }
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: terminalAppointment.id, before: terminalAppointment, after: arrivedAppointment },
     ] })).status, 200)
+    arrivedAppointment = (await request('/api/state', receptionist.cookie)).body.appointments.find(item => item.id === terminalAppointment.id)
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'appointments', id: terminalAppointment.id, before: arrivedAppointment, after: completedAppointment },
     ] })).status, 200)
@@ -201,12 +203,14 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/state', receptionist.cookie)).body.patients.find((item) => item.id === patient.id).visits[0].doctor, 'Dr. Final')
     assert.equal((await request('/api/state', receptionist.cookie)).body.patients.find((item) => item.id === patient.id).consultation.doctor, 'Dr. Final')
     assert.equal((await db.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE collection = 'visit_records' AND action = 'doctor-rename'").get()).count, 1)
-    const cancelled = { ...appointment, status: 'Cancelled', cancelledAt: new Date().toISOString() }
+    const currentAppointment = (await request('/api/state', receptionist.cookie)).body.appointments.find(item => item.id === appointment.id)
+    let cancelled = { ...currentAppointment, status: 'Cancelled', cancelledAt: new Date().toISOString() }
     const openSlot = { ...appointment, id: 'APPT-open-test', patientId: null, patientName: '*Available Slot*', status: 'Open' }
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
-      { collection: 'appointments', id: appointment.id, before: appointment, after: cancelled },
+      { collection: 'appointments', id: appointment.id, before: currentAppointment, after: cancelled },
       { collection: 'appointments', id: openSlot.id, before: null, after: openSlot },
     ] })).status, 200)
+    cancelled = (await request('/api/state', receptionist.cookie)).body.appointments.find(item => item.id === appointment.id)
     assert.equal((await request('/api/state', secretary.cookie)).body.appointments.find((item) => item.id === appointment.id).status, 'Cancelled')
     assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
       { collection: 'appointments', id: appointment.id, before: cancelled, after: null },

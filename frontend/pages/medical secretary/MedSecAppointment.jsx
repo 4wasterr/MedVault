@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import { useDraftState } from '../../client/src/useDraftState';
 import { demographicsProblem, normalizeVisitType, VISIT_TYPES, SPECIALTIES, ROOMS, normalizeRoom, specialtyLabel, formatPhone } from '../../shared/formRules.mjs';
-import { isBookingUnavailable, patientVisits, availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
+import { patientVisits, availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
 import { validateBooking } from './medsecData';
-import { appointmentStage, canUndoCheckIn } from '../../shared/appointmentWorkflow.mjs';
+import { appointmentStage, canUndoCheckIn, isTerminalAppointment } from '../../shared/appointmentWorkflow.mjs';
+import { appointmentConflict, isDoctorActive, doctorDisplayName, CLINIC_OPEN, LAST_APPOINTMENT } from '../../shared/schedulingRules.mjs';
+import { isPatientArchived } from '../../shared/patientArchive.mjs';
+import { filterAppointmentQueue, appointmentBadgeClass } from '../../shared/appointmentQueue.mjs';
 
 const emptyForm = (doctor = '', specialty = '') => ({ patientId: '', doctor, specialty, room: 'Room 1', date: todayISO(), time: '', type: 'New Consultation', notes: '' });
 const progress = ['Confirmed', 'Checked-In', 'In Consultation', 'Completed'];
@@ -12,7 +15,7 @@ const progress = ['Confirmed', 'Checked-In', 'In Consultation', 'Completed'];
 export default function MedSecAppointment({
   onNavigate, onLogout, patients = [], setPatients, appointments = [], setAppointments, schedules = {}, doctors: managedDoctors = [], onRecordView,
 }) {
-  const activeDoctors = managedDoctors.filter((doctor) => doctor.active).map((doctor) => doctor.name);
+  const activeDoctors = managedDoctors.filter(isDoctorActive).map((doctor) => doctor.name);
   const doctorSpecialty = (name) => managedDoctors.find((doctor) => doctor.name === name)?.specialty || '';
   const [selectedId, setSelectedId] = useDraftState('secretary-booking:selectedId', null);
   const [search, setSearch] = useState('');
@@ -23,33 +26,26 @@ export default function MedSecAppointment({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
-
+  const filtered = useMemo(() => filterAppointmentQueue(appointments, {
+    view: 'all', search, date: dateFilter, doctors: managedDoctors,
+  }).filter(item => statusFilter === 'All' || appointmentStage(item) === statusFilter), [appointments, managedDoctors, search, dateFilter, statusFilter]);
   const selected = appointments.find((item) => item.id === selectedId);
   const selectedStage = appointmentStage(selected);
   const progressStage = selectedStage === 'Waiting' ? 'Checked-In' : selectedStage;
   useEffect(() => {
     let cancelled = false;
-    queueMicrotask(() => { if (!cancelled && selectedId) void onRecordView?.('appointments', selectedId, 'apptInfo'); });
+    queueMicrotask(() => { if (!cancelled && selected) void onRecordView?.('appointments', selectedId, 'apptInfo'); });
     return () => { cancelled = true; };
-  }, [selectedId, onRecordView]);
+  }, [selectedId, Boolean(selected), onRecordView]);
   const linkedPatient = patients.find((item) => item.id === selected?.patientId);
-  const filtered = useMemo(() => appointments.filter((item) => {
-    const query = search.toLowerCase().trim();
-    const matchesSearch = !query || `${item.patientName} ${item.doctor} ${item.id} ${item.type} ${specialtyLabel(item.specialty || doctorSpecialty(item.doctor))}`.toLowerCase().includes(query);
-    const matchesDate = !dateFilter || dateKey(item.date) === dateFilter;
-    const status = appointmentStage(item);
-    return matchesSearch && matchesDate && (statusFilter === 'All' || status === statusFilter);
-  }).sort((a, b) => `${dateKey(b.date)} ${timeKey(b.time)}`.localeCompare(`${dateKey(a.date)} ${timeKey(a.time)}`)), [appointments, managedDoctors, search, dateFilter, statusFilter]);
-
-  const formSlots = availableSlots(schedules, appointments, form.doctor, form.date, formMode?.id);
+  const formSlots = availableSlots(schedules, appointments, form.doctor, form.date, formMode?.id, form.room);
   const currentSchedule = getSchedule(schedules, form.doctor, form.date);
   const formSpecialty = form.specialty || doctorSpecialty(form.doctor);
   const eligibleDoctors = activeDoctors.filter((doctor) => doctorSpecialty(doctor) === formSpecialty);
   const formPatient = patients.find((patient) => patient.id === form.patientId);
   const liveProblem = formPatient ? demographicsProblem({ ...formPatient, birthday: dateKey(formPatient.birthday) }) ||
     (form.time && form.date ? validateBooking({ ...form, patientName: formPatient.name, contact: formPatient.contact }, { checkDate: true }) ||
-      (isBookingUnavailable(schedules, appointments, form.doctor, form.date, form.time, formMode?.id)
-        ? 'Choose a time within the doctor operating hours, without overlapping bookings or blocked periods.' : '') : '') : '';
+      appointmentConflict({ ...form, id: formMode?.id }, appointments, schedules, { doctors: managedDoctors }) : '') : '';
 
   const startForm = (mode, appointment) => {
     setFormMode({ kind: mode, id: appointment?.id || null, snapshot: appointment || null });
@@ -70,15 +66,15 @@ export default function MedSecAppointment({
     }
     const patient = patients.find((item) => item.id === form.patientId);
     if (!patient) { setError('Choose a patient profile.'); return; }
+    if (isPatientArchived(patient)) { setError('Restore this archived patient before booking.'); return; }
     if (!SPECIALTIES.includes(formSpecialty)) { setError('Choose a visit specialty.'); return; }
     if (doctorSpecialty(form.doctor) !== formSpecialty) { setError('Choose a doctor in the selected visit specialty.'); return; }
     const patientProblem = demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
     if (patientProblem) { setError(`${patientProblem} Update the linked patient profile before booking.`); return; }
     const bookingProblem = validateBooking({ ...form, patientName: patient.name, contact: patient.contact }, { checkDate: true });
     if (bookingProblem) { setError(bookingProblem); return; }
-    if (isBookingUnavailable(schedules, appointments, form.doctor, form.date, form.time, formMode?.id)) {
-      setError('Choose a time within the doctor operating hours, without overlapping bookings or blocked periods.'); return;
-    }
+    const conflict = appointmentConflict({ ...form, id: formMode?.id }, appointments, schedules, { doctors: managedDoctors });
+    if (conflict) { setError(conflict); return; }
     const id = existing?.id || createRecordId('APPT');
     const booking = {
       ...existing, id, patientId: patient.id, patientName: patient.name, age: patient.age, sex: patient.sex,
@@ -107,6 +103,10 @@ export default function MedSecAppointment({
     if (currentIndex < 0) return;
     if (currentIndex >= progress.length - 1) return;
     const next = progress[currentIndex + 1];
+    if (next === 'In Consultation') {
+      const conflict = appointmentConflict({ ...selected, status: next, visitStatus: next }, appointments, schedules, { doctors: managedDoctors });
+      if (conflict) { setError(conflict); setMessage(''); return; }
+    }
     setAppointments((items) => items.map((item) => item.id === selected.id ? { ...item, status: next,
       visitStatus: ['Confirmed', 'Checked-In', 'Waiting'].includes(next) ? 'Waiting' : next } : item));
     if (selected.patientId && !['Checked-In', 'Waiting'].includes(next)) {
@@ -138,7 +138,7 @@ export default function MedSecAppointment({
         return updated;
       }));
     }
-    setMessage(next === 'Completed' ? 'Visit completed and saved in Visit History.' : next === 'Checked-In'
+    setError(''); setMessage(next === 'Completed' ? 'Visit completed and saved in Visit History.' : next === 'Checked-In'
       ? 'Patient checked in. Reception and the clinic queue share this arrival status.' : `Visit moved to ${next}.`);
   };
 
@@ -195,10 +195,10 @@ export default function MedSecAppointment({
         <div className="medsec-panel-heading"><h2>Bookings <span className="medsec-badge">{filtered.length}</span></h2>
           <button type="button" className="medsec-btn" onClick={() => startForm('new')}>+ New Booking</button></div>
         <div className="medsec-form-grid medsec-filters">
-          <label className="medsec-field wide"><span>Search bookings</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Patient, doctor, ID, or type" /></label>
+          <label className="medsec-field wide"><span>Search bookings</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Patient, doctor, ID, or type" /></label>
           <label className="medsec-field"><span>Date</span><input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label>
           <label className="medsec-field"><span>Visit status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            {['All', 'Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Open', 'Cancelled'].map((value) => <option key={value}>{value}</option>)}
+            {['All', 'Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Open', 'Cancelled', 'No-Show'].map((value) => <option key={value}>{value}</option>)}
           </select></label>
         </div>
         <div className="medsec-list">
@@ -206,8 +206,8 @@ export default function MedSecAppointment({
             const status = appointmentStage(item);
             return <button key={item.id} type="button" className={`medsec-list-item ${selectedId === item.id ? 'active' : ''}`}
               onClick={() => { setSelectedId(item.id); setFormMode(null); setError(''); setMessage(''); }}>
-              <span><strong>{item.patientName || 'Open slot'}</strong><small>{displayDate(item.date)} · {displayTime(item.time)} · {item.doctor}</small></span>
-              <span className={`medsec-badge ${status === 'Completed' ? 'completed' : status === 'In Consultation' ? 'consultation' : ''}`}>{status}</span>
+              <span><strong>{status === 'Open' ? 'Open slot' : item.patientName || 'Unlinked patient'}</strong><small>{displayDate(item.date)} · {displayTime(item.time)} · {doctorDisplayName(item.doctor, managedDoctors)}</small></span>
+              <span className={`medsec-badge ${appointmentBadgeClass(item)}`}>{status}</span>
             </button>;
           })}
           {!filtered.length && <p className="medsec-muted">No bookings match these filters.</p>}
@@ -228,7 +228,7 @@ export default function MedSecAppointment({
               </select></label>
               <label className="medsec-field"><span>Visit specialty *</span><select required value={formSpecialty} onChange={(event) => {
                 const specialty = event.target.value;
-                const doctor = managedDoctors.find((item) => item.active && item.specialty === specialty)?.name || '';
+                const doctor = managedDoctors.find((item) => isDoctorActive(item) && item.specialty === specialty)?.name || '';
                 setError(''); setForm({ ...form, specialty, doctor, time: '' });
               }}><option value="">Select visit specialty</option>{SPECIALTIES.map((specialty) => <option key={specialty} value={specialty}>{specialtyLabel(specialty)}</option>)}</select></label>
               <label className="medsec-field"><span>Doctor *</span><select required value={form.doctor} onChange={(event) => { setError(''); setForm({ ...form, doctor: event.target.value, time: '' }); }}>
@@ -237,7 +237,7 @@ export default function MedSecAppointment({
                   .map((doctor) => <option key={doctor}>{doctor}</option>)}
               </select></label>
               <label className="medsec-field"><span>Date *</span><input type="date" required min={todayISO()} value={form.date} onChange={(event) => { setError(''); setForm({ ...form, date: event.target.value, time: '' }); }} /></label>
-              <label className="medsec-field"><span>Time *</span><input type="time" step="60" required value={form.time} onChange={event => { setError(''); setForm({ ...form, time: event.target.value }); }} /></label>
+              <label className="medsec-field"><span>Time *</span><input type="time" step="60" min={CLINIC_OPEN} max={LAST_APPOINTMENT} required value={form.time} onChange={event => { setError(''); setForm({ ...form, time: event.target.value }); }} /></label>
               <label className="medsec-field"><span>Visit type *</span><select required value={form.type} onChange={event => { setError(''); setForm({ ...form, type: event.target.value }); }}>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></label>
               <label className="medsec-field"><span>Room assignment</span><select aria-label="Room assignment" value={normalizeRoom(form.room)} onChange={event => setForm({ ...form, room: event.target.value })}>{ROOMS.map(room => <option key={room}>{room}</option>)}</select></label>
               <label className="medsec-field wide"><span>Booking notes</span><textarea maxLength={2000} value={form.notes} onChange={(event) => { setError(''); setForm({ ...form, notes: event.target.value }); }} /></label>
@@ -256,9 +256,9 @@ export default function MedSecAppointment({
               {selected.status !== 'Open' && selected.status !== 'Cancelled' && visitStatus(selected) !== 'Completed' &&
                 <button type="button" className="medsec-btn danger" onClick={() => setCancelTarget(selected)}>Cancel Appointment</button>}
             </div></div>
-          <span className={`medsec-badge ${appointmentStage(selected) === 'Completed' ? 'completed' : appointmentStage(selected) === 'In Consultation' ? 'consultation' : ''}`}>{appointmentStage(selected)}</span>
+          <span className={`medsec-badge ${appointmentBadgeClass(selected)}`}>{appointmentStage(selected)}</span>
           <div className="medsec-info-row"><span>Date and time</span><span>{displayDate(selected.date)} · {displayTime(selected.time)}</span></div>
-          <div className="medsec-info-row"><span>Doctor</span><span>{selected.doctor}</span></div>
+          <div className="medsec-info-row"><span>Doctor</span><span>{doctorDisplayName(selected.doctor, managedDoctors)}</span></div>
           <div className="medsec-info-row"><span>Visit specialty</span><span>{specialtyLabel(selected.specialty || doctorSpecialty(selected.doctor)) || 'Not specified'}</span></div>
           <div className="medsec-info-row"><span>Visit type</span><span>{selected.type}</span></div>
           <div className="medsec-info-row"><span>Room</span><span>{selected.room || 'To be assigned'}</span></div>
@@ -273,9 +273,9 @@ export default function MedSecAppointment({
             <div className="medsec-section-divider" />
             {linkedPatient ? <div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => onNavigate('patients', { patientId: linkedPatient.id,
               tab: visitStatus(selected) === 'Completed' ? 'visits' : 'consultation' })}>Open Linked Patient Visit</button></div>
-              : <label className="medsec-field"><span>Link a patient profile</span><select value="" onChange={(event) => linkPatient(event.target.value)}><option value="">Choose a patient</option>
+              : !isTerminalAppointment(selected) && <label className="medsec-field"><span>Link a patient profile</span><select value="" onChange={(event) => linkPatient(event.target.value)}><option value="">Choose a patient</option>
                 {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} ({patient.id})</option>)}</select></label>}
-            {selected.status !== 'Cancelled' && <>
+            {!isTerminalAppointment(selected) && <>
               <h3>Visit progress</h3>
               <div className="medsec-progress">{progress.map((step, index) => <React.Fragment key={step}>
                 {index > 0 && <span aria-hidden="true">→</span>}
@@ -293,8 +293,9 @@ export default function MedSecAppointment({
               <button type="button" className="medsec-btn secondary" onClick={() => startForm('edit', selected)}>Edit / Reschedule</button>
             </div>}
           </>}
-          {message && <p className="medsec-notice" role="status">{message}</p>}
         </> : <div><h2>Select a booking</h2><p className="medsec-muted">Choose an appointment to view its linked patient and update the visit.</p></div>}
+        {message && <p className="medsec-notice" role="status">{message}</p>}
+        {!formMode && error && <p className="medsec-error" role="alert">{error}</p>}
       </section>
     </div>
     {cancelTarget && <div className="medsec-modal-backdrop" role="presentation" onClick={() => setCancelTarget(null)}>

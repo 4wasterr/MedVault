@@ -111,11 +111,29 @@ export function contactProblem(record, { required = true } = {}) {
   return null;
 }
 export function demographicsProblem(record, today = clinicToday()) {
+  const problem = ageProblem(record, today);
+  if (problem) return problem;
+  return contactProblem(record);
+}
+export function ageFromBirthday(birthday, today = clinicToday()) {
+  if (!validISODate(birthday) || !validISODate(today)) return null;
+  const [year, month, day] = birthday.split('-').map(Number);
+  const [currentYear, currentMonth, currentDay] = today.split('-').map(Number);
+  return currentYear - year - (currentMonth < month || (currentMonth === month && currentDay < day) ? 1 : 0);
+}
+export function withBirthday(record, birthday, today = clinicToday()) {
+  const age = ageFromBirthday(birthday, today);
+  return { ...record, birthday, ...(age !== null ? { age } : {}) };
+}
+export function ageProblem(record, today = clinicToday()) {
   if (record.age === undefined || record.age === null || String(record.age).trim() === '') return 'Age is required.';
   const age = Number(record.age);
   if (!/^\d+$/.test(String(record.age)) || !Number.isInteger(age) || age > 130) return 'Age must be a whole number from 0 to 130.';
   if (record.birthday && (!validISODate(record.birthday) || record.birthday > today || record.birthday < '1900-01-01')) return 'Birthday must be a valid date from 1900 through today.';
-  return contactProblem(record);
+  const calculated = record.birthday ? ageFromBirthday(record.birthday, today) : null;
+  if (calculated !== null && calculated > 130) return 'Age must be a whole number from 0 to 130.';
+  if (calculated !== null && age !== calculated) return `Age must match the date of birth (${calculated} years).`;
+  return null;
 }
 export function vitalProblem(key, raw) {
   if (raw === undefined || raw === null || raw === '') return null;

@@ -22,7 +22,7 @@ test('API enforces required demographics, clinical ranges, precise times, and st
   try {
     const secretary = await send('login', '', { username: 'user2', password: 'user2' })
     const reception = await send('login', '', { username: 'user1', password: 'user1' })
-    const patient = { id: 'PTNT-validation', name: 'Validation Patient', age: '35', birthday: '1990-01-01',
+    const patient = { id: 'PTNT-validation', name: 'Validation Patient', age: require('../../shared/formRules.mjs').ageFromBirthday('1990-01-01'), birthday: '1990-01-01',
       contact: '+639171234567', email: 'patient@gmail.com', emergencyContact: '+639181234567', emergencyRelationship: 'Sibling',
       vitals: {}, medical: {}, appointments: [] }
     const createPatient = after => send('changes', secretary.cookie, { changes: [{ collection: 'patients', id: patient.id, before: null, after }] })
@@ -54,7 +54,7 @@ test('API enforces required demographics, clinical ranges, precise times, and st
     const booked = await saveBooking(booking)
     assert.equal(booked.status, 200, JSON.stringify(booked.body))
     assert.equal((await saveBooking({ ...booking, id: 'APPT-overlap', time: '09:46' })).status, 409)
-    const schedule = { doctor: booking.doctor, date: booking.date, start: '08:07', end: '17:13', blocked: {}, blockedPeriods: [{ start: '11:07', end: '11:16', reason: 'Unavailable' }] }
+    const schedule = { doctor: booking.doctor, date: booking.date, start: '08:07', end: '17:00', blocked: {}, blockedPeriods: [{ start: '11:07', end: '11:16', reason: 'Unavailable' }] }
     assert.equal((await send('changes', secretary.cookie, { changes: [{ collection: 'schedules', id: `${booking.doctor}|${booking.date}`, before: null, after: schedule }] })).status, 200)
     assert.equal((await saveBooking({ ...booking, id: 'APPT-block-overlap', time: '10:45' })).status, 409)
     assert.equal((await saveBooking({ ...booking, id: 'APPT-after-block', time: '11:16' })).status, 200)

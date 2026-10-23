@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
 import { useDraftState } from '../../client/src/useDraftState';
-import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VITAL_RULES, VISIT_TYPES, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
+import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VITAL_RULES, VISIT_TYPES, ageFromBirthday, withBirthday, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
 import { dateKey, patientVisits, todayISO, validatePatientRecord } from './medsecData';
+import PatientArchiveControls, { matchesPatientArchive } from '../components/PatientArchiveControls';
+import { isPatientArchived, setPatientArchived } from '../../shared/patientArchive.mjs';
+import { compareRecordsNewestFirst } from '../../shared/recordOrdering.mjs';
 
 const tabs = [
   ['personal', 'Personal'], ['vitals', 'Vitals'], ['medicalHistory', 'Medical History'],
@@ -13,7 +16,7 @@ const tabs = [
 function preparePatient(patient) {
   if (!patient) return null;
   return {
-    ...patient, birthday: dateKey(patient.birthday),
+    ...patient, birthday: dateKey(patient.birthday), age: ageFromBirthday(dateKey(patient.birthday)) ?? patient.age,
     vitals: { bp: '', hr: '', temp: '', respRate: '', spo2: '', weight: '', height: '', measuredAt: '', measuredBy: '', suppliedBy: '', ...patient.vitals },
     medicalHistory: {
       conditions: patient.medicalHistory?.conditions ?? patient.medical?.history ?? '',
@@ -47,7 +50,9 @@ export default function MedSecPatientRecords({
   const selectedId = selectedPatientId || lastSelectedId;
   const [activeTab, setActiveTab] = useDraftState('records:activeTab:' + (selectedPatientId || selectedId || 'none') + ':' + initialTab, initialTab);
   const [search, setSearch] = useState('');
-  const [draft, setDraft] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':draft', () => preparePatient(patients.find((item) => item.id === selectedPatientId)));
+  const [archiveFilter, setArchiveFilter] = useState('Active');
+  const [patientDraft, setDraft] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':draft', () => preparePatient(patients.find((item) => item.id === selectedPatientId)));
+  const draft = patientDraft?.birthday ? withBirthday(patientDraft, dateKey(patientDraft.birthday)) : patientDraft;
   const [basePatient, setBasePatient] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':basePatient', () => patients.find((item) => item.id === selectedPatientId) || null);
   const [noteText, setNoteText] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':noteText', '');
   const [message, setMessage] = useState('');
@@ -72,11 +77,11 @@ export default function MedSecPatientRecords({
     return () => { cancelled = true; };
   }, [patient, dirty]);
   const filtered = useMemo(() => patients.filter((item) =>
-    `${item.id} ${item.name} ${item.contact || ''}`.toLowerCase().includes(search.toLowerCase())
-  ), [patients, search]);
+    matchesPatientArchive(item, archiveFilter) && `${item.id} ${item.name} ${item.contact || ''}`.toLowerCase().includes(search.toLowerCase())
+  ).sort(compareRecordsNewestFirst), [patients, search, archiveFilter]);
   const linkedCount = appointments.filter((item) => item.patientId === selectedId && item.status !== 'Open').length;
 
-  const update = (key, value) => { setDirty(true); setDraft((current) => ({ ...current, [key]: value })); };
+  const update = (key, value) => { setDirty(true); setDraft((current) => key === 'birthday' ? withBirthday(current, value) : { ...current, [key]: value }); };
   const updateGroup = (group, key, value) => { setDirty(true); setDraft((current) => ({ ...current, [group]: { ...current[group], [key]: value } })); };
   const updateVisit = (index, key, value) => { setDirty(true); setDraft((current) => ({ ...current,
     visits: current.visits.map((visit, visitIndex) => visitIndex === index ? { ...visit, [key]: value } : visit),
@@ -132,6 +137,7 @@ export default function MedSecPatientRecords({
     <div className="medsec-grid">
       <section className="medsec-panel" aria-label="Patient list">
         <h2>Patients <span className="medsec-badge">{patients.length}</span></h2>
+        <PatientArchiveControls value={archiveFilter} onChange={setArchiveFilter} />
         <label className="medsec-field" style={{ marginBottom: 16 }}><span>Find patient</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, ID, or contact" />
         </label>
@@ -153,6 +159,15 @@ export default function MedSecPatientRecords({
             <span className="medsec-muted">{draft.age ?? '—'} years · {draft.sex || 'Not specified'} · {linkedCount} linked booking(s)</span></div>
             <button type="button" className="medsec-btn secondary" onClick={() => navigate('appointments')}>View Appointments</button>
           </div>
+          <button type="button" className="medsec-btn secondary" disabled={dirty} onClick={() => {
+            if (!patient) return;
+            const archived = !isPatientArchived(patient);
+            const updated = setPatientArchived(patient, archived);
+            setPatients(items => items.map(item => item.id === patient.id ? updated : item));
+            setDraft(preparePatient(updated)); setBasePatient(updated);
+            setArchiveFilter(archived ? 'Archived' : 'Active');
+            setMessage(archived ? 'Patient archived.' : 'Patient restored to active records.');
+          }}>{isPatientArchived(patient) ? 'Restore Patient' : 'Archive Patient'}</button>
           <div className="medsec-tabs" role="tablist" aria-label="Patient record sections">
             {tabs.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key}
               className={`medsec-tab ${activeTab === key ? 'active' : ''}`} onClick={() => { setActiveTab(key); setMessage(''); }}>{label}</button>)}
@@ -161,7 +176,7 @@ export default function MedSecPatientRecords({
           {activeTab === 'personal' && <><div className="medsec-form-grid">
             <Field label="Full name" value={draft.name} onChange={(value) => update('name', value)} />
             <Field label="Birthday" type="date" min="1900-01-01" max={todayISO()} value={draft.birthday} onChange={(value) => update('birthday', value)} />
-            <Field label="Age (years) *" required type="number" min="0" max="130" step="1" value={draft.age} onChange={(value) => update('age', value)} />
+            <Field label="Age (years) *" required type="number" min="0" max="130" step="1" readOnly={Boolean(draft.birthday)} value={draft.birthday ? ageFromBirthday(draft.birthday) ?? '' : draft.age} onChange={(value) => update('age', value)} />
             <label className="medsec-field"><span>Sex</span><select value={draft.sex || ''} onChange={(event) => update('sex', event.target.value)}><option value="">Select</option><option>Female</option><option>Male</option><option>Other</option></select></label>
             <Field label="Contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={draft.contact} onChange={(value) => update('contact', value)} />
             <Field label="Email" type="email" value={draft.email} onChange={value => update('email', value)} placeholder="name@gmail.com" />

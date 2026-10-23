@@ -82,8 +82,9 @@ test('existing patients can be booked from canonical and polling snapshots witho
     assert.equal((await request('changes', secretary.cookie, { changes: [
       { collection: 'appointments', id: legacyBooking.id, before: null, after: legacyBooking },
     ] })).status, 200)
+    const legacySnapshot = (await request('state', secretary.cookie)).body.appointments.find(item => item.id === legacyBooking.id)
     assert.equal((await request('changes', secretary.cookie, { changes: [
-      { collection: 'appointments', id: legacyBooking.id, before: legacyBooking, after: { ...legacyBooking, notes: 'Updated note' } },
+      { collection: 'appointments', id: legacyBooking.id, before: legacySnapshot, after: { ...legacySnapshot, notes: 'Updated note' } },
     ] })).status, 200)
     await db.prepare('UPDATE doctors SET specialty = ? WHERE name = ?').run('General Health', booking.doctor)
     const refreshedBooking = (await request('state', secretary.cookie)).body.appointments.find(item => item.id === booking.id)

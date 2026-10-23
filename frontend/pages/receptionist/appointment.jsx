@@ -8,11 +8,12 @@ import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, ROOMS, normaliz
 import { bookingPatient, selectBookingPatient, updatePatientBooking, doctorSpecialty, appointmentSpecialty, appointmentStatusClass, duplicateBookingPatient } from '../../client/src/appointmentBooking';
 import { duplicatePatientMessage } from '../../shared/patientIdentity.mjs';
 import { appointmentStage, canUndoCheckIn } from '../../shared/appointmentWorkflow.mjs';
-import { isBookingUnavailable, createRecordId, dateKey, displayDate, displayTime, timeKey, todayISO } from '../medical secretary/medsecData';
+import { createRecordId, dateKey, displayDate, displayTime, timeKey, todayISO } from '../medical secretary/medsecData';
 import { validateBooking, validateContactDetails } from '../medical secretary/medsecData';
+import { appointmentConflict, isDoctorActive, doctorDisplayName, CLINIC_OPEN, LAST_APPOINTMENT } from '../../shared/schedulingRules.mjs';
+import { isPatientArchived } from '../../shared/patientArchive.mjs';
 
 const canModifyBooking = (appointment) => ['Confirmed', 'Checked-In', 'Waiting'].includes(appointmentStage(appointment));
-const unavailableTimeMessage = 'That time is booked or blocked in Doctor Schedules. Choose another available time.';
 
 
 export default function Appointment({
@@ -33,11 +34,10 @@ export default function Appointment({
 
   const [localAppointments, setLocalAppointments] = useState([]);
   const appointments = sharedAppointments ?? localAppointments;
-  const activeDoctorNames = doctors.filter((doctor) => doctor.active).map((doctor) => doctor.name);
+  const activeDoctorNames = doctors.filter(isDoctorActive).map((doctor) => doctor.name);
   const doctorNames = [...new Set([...activeDoctorNames, ...appointments.map((item) => item.doctor).filter(Boolean)])];
   const setAppointments = setSharedAppointments ?? setLocalAppointments;
 
-  const unavailable = (doctor, date, time, excludeId) => isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId);
 
   const [selectedAppointment, setSelectedAppointment] = useDraftState('appointments:selectedAppointment', null);
 
@@ -272,11 +272,13 @@ export default function Appointment({
     if (form.patientId && !patients.some(patient => patient.id === form.patientId)) return 'This patient is no longer available. Select a patient again.';
     const duplicate = duplicateBookingPatient(form, patients);
     if (duplicate) return duplicatePatientMessage(duplicate);
-    const doctor = doctors.find(item => item.active && item.name === form.doctor);
+    const doctor = doctors.find(item => isDoctorActive(item) && item.name === form.doctor);
     if (!doctor || doctorSpecialty(doctor) !== appointmentSpecialty(form, doctors)) return 'Choose an active doctor for the selected specialty.';
     const problem = validateBooking({ ...form, ...(slot ? { date: slot.date, time: slot.time } : {}) });
     if (problem) return problem;
-    if (unavailable(form.doctor, slot?.date || form.date, slot?.time || form.time, slot?.id)) return unavailableTimeMessage;
+    if (isPatientArchived(patients.find(patient => patient.id === form.patientId))) return 'Restore this archived patient before booking.';
+    const conflict = appointmentConflict({ ...form, room: normalizeRoom(form.room || slot?.room), ...(slot ? { date: slot.date, time: slot.time, id: slot.id } : {}) }, appointments, schedules, { doctors });
+    if (conflict) return conflict;
     const patient = bookingPatient(form, patients.find(item => item.id === form.patientId));
     return demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
   };
@@ -296,8 +298,10 @@ export default function Appointment({
 
   const liveNewBookingIssue = bookingIssue(newForm);
   const liveSlotBookingIssue = targetSlot ? bookingIssue(bookForm, targetSlot) : null;
-  const newBookingFeedback = bookingConflict || ((newBookingAttempted || liveNewBookingIssue === unavailableTimeMessage) ? liveNewBookingIssue : '');
-  const slotBookingFeedback = bookingConflict || ((slotBookingAttempted || liveSlotBookingIssue === unavailableTimeMessage) ? liveSlotBookingIssue : '');
+  const newBookingFeedback = bookingConflict || (newBookingAttempted ? liveNewBookingIssue :
+    newForm.doctor && newForm.date && newForm.time ? appointmentConflict(newForm, appointments, schedules, { doctors }) : '');
+  const slotBookingFeedback = bookingConflict || (slotBookingAttempted ? liveSlotBookingIssue :
+    targetSlot ? appointmentConflict({ ...bookForm, room: normalizeRoom(bookForm.room || targetSlot.room), id: targetSlot.id, date: targetSlot.date, time: targetSlot.time }, appointments, schedules, { doctors }) : '');
 
   const handleBookSlotSubmit = (e) => {
     e.preventDefault();
@@ -399,12 +403,11 @@ export default function Appointment({
     }
     const bookingProblem = validateBooking(editForm);
     if (bookingProblem) { showToast(bookingProblem); return; }
-    if (appointmentSpecialty(editForm, doctors) !== doctorSpecialty(doctors.find(doctor => doctor.name === editForm.doctor))) {
+    if (!doctors.some(doctor => isDoctorActive(doctor) && doctor.name === editForm.doctor) || appointmentSpecialty(editForm, doctors) !== doctorSpecialty(doctors.find(doctor => doctor.name === editForm.doctor))) {
       showToast('Choose a doctor for the selected specialty.'); return;
     }
-    if (unavailable(editForm.doctor, editForm.date, editForm.time, editForm.id)) {
-      showToast('That slot is booked or blocked in Doctor Schedules.'); return;
-    }
+    const conflict = appointmentConflict(editForm, appointments, schedules, { doctors });
+    if (conflict) { showToast(conflict); return; }
     setAppointments((prev) =>
       prev.map((a) => (a.id === editForm.id ? { ...editForm, room: normalizeRoom(editForm.room) } : a))
     );
@@ -1122,7 +1125,7 @@ export default function Appointment({
                           <div className="ap-col-type">
                             <span className="ap-type-title">{appt.type}</span>
                             <span className="ap-type-doc">{specialtyLabel(appointmentSpecialty(appt, doctors))}</span>
-                            <span className="ap-type-doc">{appt.doctor}</span>
+                            <span className="ap-type-doc">{doctorDisplayName(appt.doctor, doctors)}</span>
                           </div>
 
                           {/* Status Badge */}
@@ -1224,7 +1227,7 @@ export default function Appointment({
                                 <span className="ap-cal-meta-line">
                                   <span>{appt.type}</span>
                                   <span>•</span>
-                                  <span>{appt.doctor}</span>
+                                  <span>{doctorDisplayName(appt.doctor, doctors)}</span>
                                   <span>•</span>
                                   <span>{appt.room}</span>
                                 </span>
@@ -1374,7 +1377,7 @@ export default function Appointment({
                       <div className="ap-summary-meta">
                         {selectedAppointment.type} • {selectedAppointment.room}
                       </div>
-                      <div className="ap-summary-doc">{selectedAppointment.doctor}</div>
+                      <div className="ap-summary-doc">{doctorDisplayName(selectedAppointment.doctor, doctors)}</div>
                     </div>
                   </div>
 
@@ -1426,7 +1429,7 @@ export default function Appointment({
 
                         <div className="ap-info-item">
                           <span className="ap-info-lbl">Attending Physician</span>
-                          <span className="ap-info-val">{selectedAppointment.doctor}</span>
+                          <span className="ap-info-val">{doctorDisplayName(selectedAppointment.doctor, doctors)}</span>
                         </div>
 
                         <div className="ap-info-item">
@@ -1838,7 +1841,7 @@ export default function Appointment({
 
                 <div className="ap-form-field">
                   <label className="ap-form-label">Time</label>
-                  <input type="time" step="60" required className="ap-form-input" value={timeKey(editForm.time)} onChange={e => setEditForm({ ...editForm, time: e.target.value })} />
+                  <input type="time" step="60" min={CLINIC_OPEN} max={LAST_APPOINTMENT} required className="ap-form-input" value={timeKey(editForm.time)} onChange={e => setEditForm({ ...editForm, time: e.target.value })} />
 
                 </div>
 
@@ -1850,7 +1853,7 @@ export default function Appointment({
                     onChange={(e) => setEditForm({ ...editForm, doctor: e.target.value })}
                   >
                     <option value="">Select doctor</option>
-                    {doctorNames.filter(name => doctorSpecialty(doctors.find(doctor => doctor.name === name)) === appointmentSpecialty(editForm, doctors))
+                    {activeDoctorNames.filter(name => doctorSpecialty(doctors.find(doctor => doctor.name === name)) === appointmentSpecialty(editForm, doctors))
                       .map((doctor) => <option key={doctor} value={doctor}>{doctor}</option>)}
                   </select>
                 </div>
@@ -1883,7 +1886,7 @@ export default function Appointment({
                   <label className="ap-form-label">Visit specialty *</label>
                   <select aria-label="Visit specialty" required className="ap-form-select" value={appointmentSpecialty(editForm, doctors)} onChange={event => {
                     const specialty = event.target.value;
-                    setEditForm({ ...editForm, specialty, doctor: doctors.find(doctor => doctor.active && doctorSpecialty(doctor) === specialty)?.name || '' });
+                    setEditForm({ ...editForm, specialty, doctor: doctors.find(doctor => isDoctorActive(doctor) && doctorSpecialty(doctor) === specialty)?.name || '' });
                   }}>{SPECIALTIES.map(item => <option key={item} value={item}>{specialtyLabel(item)}</option>)}</select>
                 </div>
 

@@ -6,10 +6,12 @@ import { selectBookingPatient, doctorSpecialty, appointmentSpecialty, duplicateB
 import { duplicatePatientMessage } from '../../shared/patientIdentity.mjs';
 import { dateKey, timeKey, todayISO } from '../medical secretary/medsecData';
 import '../receptionist/appointment.css';
+import { CLINIC_OPEN, LAST_APPOINTMENT, isDoctorActive } from '../../shared/schedulingRules.mjs';
+import { isPatientArchived } from '../../shared/patientArchive.mjs';
 
 export default function AppointmentBookingFields({ form, setForm, patients, doctors, slot }) {
   const specialty = appointmentSpecialty(form, doctors);
-  const matchingDoctors = doctors.filter(doctor => doctor.active && doctorSpecialty(doctor) === specialty);
+  const matchingDoctors = doctors.filter(doctor => isDoctorActive(doctor) && doctorSpecialty(doctor) === specialty);
   const duplicate = duplicateBookingPatient(form, patients);
   const change = (key, value) => setForm(current => ({ ...current, [key]: value }));
   return <>
@@ -20,7 +22,7 @@ export default function AppointmentBookingFields({ form, setForm, patients, doct
           <select aria-label="Patient" className="ap-form-select" value={form.patientId || ''}
             onChange={event => setForm(current => selectBookingPatient(current, patients.find(patient => patient.id === event.target.value)))}>
             <option value="">Register a new patient</option>
-            {patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name} ({patient.id})</option>)}
+            {patients.filter(patient => !isPatientArchived(patient)).map(patient => <option key={patient.id} value={patient.id}>{patient.name} ({patient.id})</option>)}
           </select>
         </label>
         <label className="ap-form-field"><span className="ap-form-label">Patient Name *</span>
@@ -44,7 +46,7 @@ export default function AppointmentBookingFields({ form, setForm, patients, doct
         <label className="ap-form-field"><span className="ap-form-label">Visit specialty *</span>
           <select aria-label="Visit specialty" required disabled={Boolean(slot?.doctor)} className="ap-form-select" value={specialty} onChange={event => {
             const selectedSpecialty = event.target.value;
-            const doctor = doctors.find(item => item.active && doctorSpecialty(item) === selectedSpecialty);
+            const doctor = doctors.find(item => isDoctorActive(item) && doctorSpecialty(item) === selectedSpecialty);
             setForm(current => ({ ...current, specialty: selectedSpecialty, doctor: doctor?.name || '', ...(!slot ? { time: '' } : {}) }));
           }}>{SPECIALTIES.map(item => <option key={item} value={item}>{specialtyLabel(item)}</option>)}</select>
         </label>
@@ -69,13 +71,13 @@ export default function AppointmentBookingFields({ form, setForm, patients, doct
             onChange={event => setForm(current => ({ ...current, date: event.target.value, time: '' }))} />
         </label>
         <label className="ap-form-field"><span className="ap-form-label">Time Slot *</span>
-          <input aria-label="Appointment time" type="time" step="60" required readOnly={Boolean(slot)} className="ap-form-input" value={timeKey(slot?.time || form.time)} onChange={event => change('time', event.target.value)} />
+          <input aria-label="Appointment time" type="time" step="60" min={CLINIC_OPEN} max={LAST_APPOINTMENT} required readOnly={Boolean(slot)} className="ap-form-input" value={timeKey(slot?.time || form.time)} onChange={event => change('time', event.target.value)} />
         </label>
         <label className="ap-form-field full-width"><span className="ap-form-label">Intake Notes / Chief Complaint</span>
           <textarea placeholder="Reason for visit or clinical intake details..." className="ap-form-textarea" value={form.notes || ''} onChange={event => change('notes', event.target.value)} />
         </label>
       </div>
     </fieldset>
-    <p className="ap-field-hint">Appointments last 30 minutes. Choose a time within the doctor's available hours.</p>
+    <p className="ap-field-hint">Appointments last 30 minutes. Clinic hours are 8:00 AM–5:00 PM; the last appointment starts at 4:30 PM.</p>
   </>;
 }

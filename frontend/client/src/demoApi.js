@@ -1,8 +1,10 @@
 import { createDemoData, demoPassword } from './demoData.js';
 import { applyChanges } from './sharedState.js';
-import { SPECIALTIES, VISIT_TYPES, normalizeSpecialty } from '../../shared/formRules.mjs';
+import { SPECIALTIES, VISIT_TYPES, normalizeSpecialty, ageFromBirthday, ageProblem } from '../../shared/formRules.mjs';
 import { hasPreviousVisit } from '../../shared/patientHistory.mjs';
 import { canTransitionAppointment } from '../../shared/appointmentWorkflow.mjs';
+import { appointmentConflict, withinClinicHours, timeMinutes, isDoctorActive } from '../../shared/schedulingRules.mjs';
+import { newestRecordsFirst, stampChangedRecords } from '../../shared/recordOrdering.mjs';
 
 const clone = value => structuredClone(value);
 function fail(status, message) { throw Object.assign(new Error(message), { status }); }
@@ -25,11 +27,14 @@ export function createDemoApi() {
       patient.appointments = result.appointments.filter(appointment => appointment.patientId === patient.id)
         .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
       patient.hasPreviousVisit = hasPreviousVisit({ ...patient, hasPreviousVisit: undefined });
+      patient.age = ageFromBirthday(patient.birthday) ?? patient.age;
     }
     if (session.role === 'Receptionist') for (const patient of result.patients) {
       Object.assign(patient, { vitals: {}, medical: {}, medicalHistory: {}, consultation: {}, visits: [], recordNotes: [] });
     }
-    result.doctors = result.doctors.filter(doctor => doctor.active).map(doctor => ({ ...doctor, specialty: normalizeSpecialty(doctor.specialty) }));
+    result.doctors = result.doctors.map(doctor => ({ ...doctor, specialty: normalizeSpecialty(doctor.specialty) }));
+    result.patients = newestRecordsFirst(result.patients);
+    result.appointments = newestRecordsFirst(result.appointments);
     return result;
   };
   const publicAccount = account => {
@@ -90,6 +95,10 @@ export function createDemoApi() {
       if (!['Receptionist', 'Medical Secretary'].includes(session.role)) fail(403, 'Use a staff demo account to edit these records.');
       if (!Array.isArray(body.changes) || body.changes.some(change => !['patients', 'appointments', 'schedules'].includes(change.collection))) fail(400, 'Invalid demo changes.');
       const changes = body.changes.map(change => {
+        if (change.collection === 'patients' && change.after && (!change.before || change.before.birthday !== change.after.birthday || change.before.age !== change.after.age)) {
+          const problem = ageProblem(change.after);
+          if (problem) fail(400, problem);
+        }
         if (change.collection === 'appointments' && change.after && change.before && !canTransitionAppointment(change.before, change.after)) fail(400, `Invalid appointment status transition from ${change.before.status} to ${change.after.status}.`);
         if (change.collection === 'appointments' && change.after) {
           const { before, after } = change;
@@ -114,7 +123,23 @@ export function createDemoApi() {
         }
         return change;
       });
-      state = applyChanges(state, clone(changes));
+      const next = applyChanges(state, clone(changes));
+      for (const { collection, after } of changes) {
+        if (collection === 'appointments' && after && !['Cancelled', 'Completed'].includes(after.status)) {
+          const problem = appointmentConflict(after, next.appointments, next.schedules, { doctors: next.doctors });
+          if (problem) fail(409, problem);
+        }
+        if (collection === 'schedules' && after) {
+          if (!next.doctors.some(doctor => doctor.name === after.doctor && isDoctorActive(doctor))) fail(400, 'Choose an active doctor for this schedule.');
+          if (!withinClinicHours(timeMinutes(after.start), timeMinutes(after.end)) || timeMinutes(after.end) - timeMinutes(after.start) < 30) fail(400, 'Doctor schedules must fit within clinic operating hours (8:00 AM–5:00 PM).');
+          for (const appointment of next.appointments.filter(item => item.doctor === after.doctor && item.date === after.date && !['Cancelled', 'Completed'].includes(item.status))) {
+            const problem = appointmentConflict(appointment, next.appointments, next.schedules);
+            if (problem) fail(409, problem);
+          }
+        }
+      }
+      for (const collection of ['patients', 'appointments']) next[collection] = stampChangedRecords(state[collection], next[collection]);
+      state = next;
       for (const change of changes) log(change.after === null ? 'delete' : change.before ? 'update' : 'create', change.collection, change.id);
       return visibleState();
     }

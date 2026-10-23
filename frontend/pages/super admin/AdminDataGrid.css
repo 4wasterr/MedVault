@@ -18,7 +18,6 @@
 .admin-grid-table small { display: block; color: #64748b; font-size: .72rem; margin-top: 4px; }
 .admin-grid-name { min-width: 160px; max-width: 240px; overflow-wrap: anywhere; }
 .admin-grid-contact { min-width: 200px; max-width: 280px; overflow-wrap: anywhere; }
-.admin-grid-secretary { min-width: 180px; max-width: 250px; overflow-wrap: anywhere; }
 .admin-grid-status { white-space: nowrap; }
 .admin-grid-actions { min-width: 210px; }
 .admin-grid-table .admin-record-actions { justify-content: flex-start; flex-wrap: nowrap; }

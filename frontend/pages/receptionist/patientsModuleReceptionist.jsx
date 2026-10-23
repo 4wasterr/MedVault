@@ -6,10 +6,13 @@ import { emptyRegistrationForm } from '../../client/src/patientRegistration';
 import { findDuplicatePatient, registrationIdentity } from '../../shared/patientIdentity.mjs';
 import { useDraftState } from '../../client/src/useDraftState';
 import { useCurrentUser } from '../../client/src/currentUser';
-import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, formatPhone, phoneInput, specialtyLabel, personName } from '../../shared/formRules.mjs';
+import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, formatPhone, phoneInput, specialtyLabel, personName, ageFromBirthday, withBirthday } from '../../shared/formRules.mjs';
 import { createRecordId, dateKey, todayISO, validateRegisterForm } from '../medical secretary/medsecData';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
 import { validatePatientEdit } from '../medical secretary/medsecData';
+import PatientArchiveControls, { matchesPatientArchive } from '../components/PatientArchiveControls';
+import { isPatientArchived, setPatientArchived } from '../../shared/patientArchive.mjs';
+import { compareRecordsNewestFirst } from '../../shared/recordOrdering.mjs';
 
 export default function PatientsModuleReceptionist({
   onNavigate,
@@ -54,7 +57,8 @@ export default function PatientsModuleReceptionist({
 
   // Edit Mode state for Personal Info
   const [isEditing, setIsEditing] = useDraftState('patients:isEditing', false);
-  const [editFormData, setEditFormData] = useDraftState('patients:editFormData', () => ({ ...selectedPatient }));
+  const [editDraft, setEditFormData] = useDraftState('patients:editFormData', () => ({ ...selectedPatient }));
+  const editFormData = editDraft.birthday ? withBirthday(editDraft, dateKey(editDraft.birthday)) : editDraft;
   useEffect(() => {
     if (!selectedPatient || isEditing) return undefined;
     const latest = patients.find((patient) => patient.id === selectedPatient.id);
@@ -67,6 +71,7 @@ export default function PatientsModuleReceptionist({
   // Search, Status Filter, Doctor Filter, and Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [archiveFilter, setArchiveFilter] = useState('Active');
   const [selectedDoctor, setSelectedDoctor] = useState('All');
   const [sortBy, setSortBy] = useState('default');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -90,7 +95,8 @@ export default function PatientsModuleReceptionist({
   };
 
   // Pic 3 Register Patient Form State
-  const [registerForm, setRegisterForm] = useDraftState('patients:registerForm', emptyRegistrationForm);
+  const [registrationDraft, setRegisterForm] = useDraftState('patients:registerForm', emptyRegistrationForm);
+  const registerForm = registrationDraft.birthday ? withBirthday(registrationDraft, registrationDraft.birthday) : registrationDraft;
   const registrationDuplicate = findDuplicatePatient(registrationIdentity(registerForm), patients);
 
   const [registerErrors, setRegisterErrors] = useState({});
@@ -106,7 +112,7 @@ export default function PatientsModuleReceptionist({
   const handleSelectPatient = (patient) => {
     setSelectedPatient(patient);
     setIsEditing(false);
-    setEditFormData({ ...patient });
+    setEditFormData({ ...patient, age: ageFromBirthday(dateKey(patient.birthday)) ?? patient.age });
   };
 
   // Handle saving edits on Personal Info
@@ -205,7 +211,7 @@ export default function PatientsModuleReceptionist({
         selectedDoctor === 'All' ||
         (p.doctor && p.doctor.toLowerCase() === selectedDoctor.toLowerCase());
 
-      return matchesSearch && matchesStatus && matchesDoctor;
+      return matchesPatientArchive(p, archiveFilter) && matchesSearch && matchesStatus && matchesDoctor;
     })
     .sort((a, b) => {
       if (sortBy === 'name-asc') {
@@ -217,7 +223,7 @@ export default function PatientsModuleReceptionist({
       if (sortBy === 'age-desc') {
         return (Number(b.age) || 0) - (Number(a.age) || 0);
       }
-      return 0;
+      return compareRecordsNewestFirst(a, b);
     });
 
   return (
@@ -421,6 +427,7 @@ export default function PatientsModuleReceptionist({
                   </button>
                 </div>
 
+                <PatientArchiveControls value={archiveFilter} onChange={setArchiveFilter} />
                 {/* Row 2: Filter Badges & Interactive Dropdown */}
                 <div className="pm-filter-badge-row">
                   <button
@@ -504,7 +511,7 @@ export default function PatientsModuleReceptionist({
                             value={sortBy}
                             onChange={(e) => setSortBy(e.target.value)}
                           >
-                            <option value="default">Default Queue</option>
+                            <option value="default">Recently Added / Updated</option>
                             <option value="name-asc">Patient Name (A-Z)</option>
                             <option value="age-asc">Age (Youngest First)</option>
                             <option value="age-desc">Age (Oldest First)</option>
@@ -610,6 +617,16 @@ export default function PatientsModuleReceptionist({
                     </button>
                   </div>
 
+                  <button type="button" className="pm-pill-btn" disabled={isEditing} onClick={() => {
+                    const current = patients.find(patient => patient.id === selectedPatient.id);
+                    if (!current) return;
+                    const archived = !isPatientArchived(current);
+                    const updated = setPatientArchived(current, archived);
+                    setPatients(items => items.map(patient => patient.id === current.id ? updated : patient));
+                    setSelectedPatient(updated); setEditFormData({ ...updated });
+                    setArchiveFilter(archived ? 'Archived' : 'Active');
+                    showToast(archived ? 'Patient archived.' : 'Patient restored to active records.');
+                  }}>{isPatientArchived(selectedPatient) ? 'Restore Patient' : 'Archive Patient'}</button>
                   {/* Header Patient Summary Row */}
                   <div className="pm-profile-summary">
                     <div className="pm-summary-avatar">
@@ -688,8 +705,8 @@ export default function PatientsModuleReceptionist({
                         <form id="patient-profile-edit" onSubmit={handleSaveEdit}>
                           <div className="pm-info-grid-2col">
                             <label className="pm-info-item"><span className="pm-info-lbl">Full Name *</span><input type="text" required data-person-name="true" maxLength="160" className="pm-input-pill" value={editFormData.name || ''} onChange={e => setEditFormData({ ...editFormData, name: e.target.value })} /></label>
-                            <label className="pm-info-item"><span className="pm-info-lbl">Birthday</span><input type="date" className="pm-input-pill" min="1900-01-01" max={todayISO()} value={dateKey(editFormData.birthday)} onChange={e => setEditFormData({ ...editFormData, birthday: e.target.value })} /></label>
-                            <label className="pm-info-item"><span className="pm-info-lbl">Age *</span><input type="number" required min="0" max="130" step="1" className="pm-input-pill" value={editFormData.age ?? ''} onChange={e => setEditFormData({ ...editFormData, age: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Birthday</span><input type="date" className="pm-input-pill" min="1900-01-01" max={todayISO()} value={dateKey(editFormData.birthday)} onChange={e => setEditFormData(withBirthday(editFormData, e.target.value))} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Age *</span><input type="number" required min="0" max="130" step="1" className="pm-input-pill" readOnly={Boolean(editFormData.birthday)} value={editFormData.birthday ? ageFromBirthday(dateKey(editFormData.birthday)) ?? '' : editFormData.age ?? ''} onChange={e => setEditFormData({ ...editFormData, age: e.target.value })} /></label>
                             <label className="pm-info-item"><span className="pm-info-lbl">Sex</span><select className="pm-input-pill" value={editFormData.sex || ''} onChange={e => setEditFormData({ ...editFormData, sex: e.target.value })}><option value="">Not recorded</option><option>Male</option><option>Female</option><option>Other</option></select></label>
                             <label className="pm-info-item"><span className="pm-info-lbl">Contact Number *</span><input className="pm-input-pill" type="tel" required pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={formatPhone(editFormData.contact)} onChange={e => setEditFormData({ ...editFormData, contact: phoneInput(e.target.value) })} /></label>
                             <label className="pm-info-item"><span className="pm-info-lbl">Email</span><input className="pm-input-pill" type="email" placeholder="name@gmail.com" value={editFormData.email || ''} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} /></label>
@@ -877,7 +894,7 @@ export default function PatientsModuleReceptionist({
               <PatientRegistrationFields value={registerForm} patients={patients} onUseExisting={patient => {
                 setRegisterForm(emptyRegistrationForm()); setRegisterErrors({}); setShowRegisterModal(false);
                 setSearchQuery(''); setActiveFilter('All'); setSelectedDoctor('All'); setActiveTab('personal'); handleSelectPatient(patient);
-              }} onChange={(key, value) => { setRegisterErrors({}); setRegisterForm(current => ({ ...current, [key]: value })); }} />
+              }} onChange={(key, value) => { setRegisterErrors({}); setRegisterForm(current => key === 'birthday' ? withBirthday(current, value) : { ...current, [key]: value }); }} />
               {registerErrors.form && <p role="alert" className="medsec-error">{registerErrors.form}</p>}
 
               {/* Modal Footer Actions */}

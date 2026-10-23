@@ -1,6 +1,6 @@
 .signup-right-section { align-items: flex-start; }
 .signup-card-wrapper { max-width: 690px; margin-block: auto; }
-.signup-card { padding: 34px 38px; border-radius: 32px; }
+.signup-card { padding: 34px 38px; border-radius: 32px; max-height: calc(100dvh - 56px); overflow-y: auto; overscroll-behavior: contain; }
 .signup-heading { margin-bottom: 22px; }
 .signup-brand { display: inline-flex; align-items: center; gap: 7px; color: var(--mv-cyan); font-size: 1.1rem; font-weight: 800; }
 .signup-brand span { font-size: 1.25rem; }

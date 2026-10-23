@@ -45,7 +45,7 @@ test('actual forms render restored drafts, constrained date/time inputs, vital c
     save('patients:registerForm', { firstName: 'Restored registration', age: '0', birthday: clinicToday(), emergencyRelationship: 'Parent' });
     html = render(Registration, props);
     assert.match(html, /Restored registration/);
-    assert.match(html, /type="number" min="0" max="130" step="1" required/);
+    assert.match(html, /type="number" min="0" max="130" step="1" readOnly="" required/);
     assert.match(html, /type="date" min="1900-01-01" max="[0-9-]+"/);
 
     const Dashboard = await load('receptionist/receptionistDashboard.jsx');
@@ -53,7 +53,7 @@ test('actual forms render restored drafts, constrained date/time inputs, vital c
     save('dashboard:registerFormData', { firstName: 'Dashboard draft', age: '0', birthday: clinicToday(), emergencyRelationship: 'Parent' });
     html = render(Dashboard, props);
     assert.match(html, /Dashboard draft/);
-    assert.match(html, /type="number" min="0" max="130" step="1" required/);
+    assert.match(html, /type="number" min="0" max="130" step="1" readOnly="" required/);
     assert.match(html, /Emergency contact relationship/);
     save('dashboard:activeModal', 'appointment');
     save('dashboard:appointmentForm', { patientId: 'P1', doctor: 'Dr. Cruz', date: '2050-01-01', time: '09:17', type: 'Follow-up' });
@@ -80,7 +80,25 @@ test('actual forms render restored drafts, constrained date/time inputs, vital c
     assert.match(render(await load('medical secretary/MedSecDoctorSchedules.jsx'), props, 'Medical Secretary:bob'), /type="time" step="60"/);
     assert.match(render(await load('receptionist/Signup.jsx'), { onBack() {} }), /type="email"/);
     assert.match(render(await load('super admin/AdminUserManagement.jsx'), { accounts: [], onRefresh() {} }), /Staff Accounts/);
-    assert.match(render(await load('super admin/AdminDoctorManagement.jsx'), { doctors: [], accounts: [], onRefresh() {} }), /Doctor Profiles/);
+    const Doctors = await load('super admin/AdminDoctorManagement.jsx');
+    save('doctor:open', true, 'Super Admin:admin');
+    html = render(Doctors, { doctors: [{ id: 'D2', name: 'Dr. Retired', specialty: 'General Health', active: false, secretaryUsername: 'previous.assignment' }], onRefresh() {} }, 'Super Admin:admin');
+    assert.match(html, /Doctor Profiles/);
+    assert.match(html, /aria-label="Doctor status"/);
+    assert.match(html, />Deactivated<\/button>/);
+    assert.doesNotMatch(html, /Assigned Medical Secretary|<th[^>]*>Medical Secretary|previous.assignment/);
+
+    const statusProps = { ...props, doctors: [...props.doctors, { id: 'D2', name: 'Dr. Retired', specialty: 'General Health', active: false }],
+      patients: [patient, { ...patient, id: 'P-archived', name: 'Archived Person', archived: true }] };
+    html = render(Registration, statusProps);
+    assert.match(html, /aria-label="Patient archive status"/);
+    assert.match(html, /Draft Patient/);
+    assert.doesNotMatch(html, /Archived Person/);
+    html = render(Records, statusProps, 'Medical Secretary:archive-list');
+    assert.match(html, /Draft Patient/);
+    assert.doesNotMatch(html, /Archived Person/);
+    html = render(await load('medical secretary/MedSecDoctorSchedules.jsx'), statusProps, 'Medical Secretary:schedule-status');
+    assert.doesNotMatch(html, /<option[^>]*>Dr\. Retired<\/option>/);
   } finally {
     delete globalThis.window;
     await server.close();

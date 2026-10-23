@@ -9,9 +9,11 @@ import { useDraftState } from '../../client/src/useDraftState';
 import { useCurrentUser } from '../../client/src/currentUser';
 import { dashboardData } from '../../client/src/dashboardData';
 import { appointmentStage } from '../../shared/appointmentWorkflow.mjs';
-import { SPECIALTIES, demographicsProblem, personName, normalizeRoom } from '../../shared/formRules.mjs';
+import { SPECIALTIES, demographicsProblem, personName, normalizeRoom, withBirthday } from '../../shared/formRules.mjs';
+import { appointmentConflict, isDoctorActive } from '../../shared/schedulingRules.mjs';
+import { isPatientArchived } from '../../shared/patientArchive.mjs';
 import { appointmentSpecialty, bookingPatient, doctorSpecialty, duplicateBookingPatient, selectBookingPatient, updatePatientBooking } from '../../client/src/appointmentBooking';
-import { createRecordId, dateKey, displayTime, isBookingUnavailable, todayISO, validateBooking, validateRegisterForm } from '../medical secretary/medsecData';
+import { createRecordId, dateKey, displayTime, todayISO, validateBooking, validateRegisterForm } from '../medical secretary/medsecData';
 
 export default function ReceptionistDashboard({
   onLogout,
@@ -40,7 +42,7 @@ export default function ReceptionistDashboard({
   const [appointmentError, setAppointmentError] = useState('');
   const [registrationError, setRegistrationError] = useState('');
   const emptyAppointment = () => ({ patientId: '', patientName: '', age: '', contact: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
-    doctor: doctors.find(doctor => doctor.active)?.name || '', specialty: doctorSpecialty(doctors.find(doctor => doctor.active)),
+    doctor: doctors.find(isDoctorActive)?.name || '', specialty: doctorSpecialty(doctors.find(isDoctorActive)),
     date: todayISO(), time: '', type: 'New Consultation', room: 'Room 1', notes: '' });
   const [appointmentForm, setAppointmentForm] = useDraftState('dashboard:appointmentForm', emptyAppointment);
   // Complete drafts created before patient intake fields were added to this dialog.
@@ -55,12 +57,11 @@ export default function ReceptionistDashboard({
     });
   };
   const selectedBookingSpecialty = appointmentSpecialty(dashboardBookingForm, doctors);
-  const liveAvailabilityProblem = dashboardBookingForm.doctor && !doctors.some(doctor => doctor.active &&
+  const liveAvailabilityProblem = dashboardBookingForm.doctor && !doctors.some(doctor => isDoctorActive(doctor) &&
     doctor.name === dashboardBookingForm.doctor && doctorSpecialty(doctor) === selectedBookingSpecialty)
     ? 'Choose an active doctor for the selected specialty.'
-    : dashboardBookingForm.doctor && dashboardBookingForm.date && dashboardBookingForm.time &&
-      isBookingUnavailable(schedules, appointments, dashboardBookingForm.doctor, dashboardBookingForm.date, dashboardBookingForm.time)
-      ? 'Choose a time within doctor operating hours without overlapping bookings or blocked periods.' : '';
+    : dashboardBookingForm.doctor && dashboardBookingForm.date && dashboardBookingForm.time
+      ? appointmentConflict(dashboardBookingForm, appointments, schedules, { doctors }) || '' : '';
 
   const closeModal = () => {
     setActiveModal(null);
@@ -69,7 +70,8 @@ export default function ReceptionistDashboard({
   };
 
   // Pic 3 Register Form State
-  const [registerFormData, setRegisterFormData] = useDraftState('dashboard:registerFormData', emptyRegistrationForm);
+  const [registrationDraft, setRegisterFormData] = useDraftState('dashboard:registerFormData', emptyRegistrationForm);
+  const registerFormData = registrationDraft.birthday ? withBirthday(registrationDraft, registrationDraft.birthday) : registrationDraft;
   const registrationDuplicate = findDuplicatePatient(registrationIdentity(registerFormData), patients);
 
   // Range Toggle State: 'Weekly' | 'Quarterly' | 'Annually'
@@ -168,18 +170,18 @@ export default function ReceptionistDashboard({
     const duplicate = duplicateBookingPatient(dashboardBookingForm, patients);
     if (duplicate) { setAppointmentError(duplicatePatientMessage(duplicate)); return; }
     const existingPatient = patients?.find(item => item.id === dashboardBookingForm.patientId);
+    if (isPatientArchived(existingPatient)) { setAppointmentError('Restore this archived patient before booking.'); return; }
     if (dashboardBookingForm.patientId && !existingPatient) { setAppointmentError('This patient profile is no longer available. Select a patient again.'); return; }
     const patient = bookingPatient(dashboardBookingForm, existingPatient, createRecordId('PTNT'));
     const { date, time, doctor, type } = dashboardBookingForm;
     const specialty = appointmentSpecialty(dashboardBookingForm, doctors);
     const problem = validateBooking(dashboardBookingForm) || demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
     if (problem) { setAppointmentError(problem); return; }
-    if (!SPECIALTIES.includes(specialty) || !doctors.some(item => item.active && item.name === doctor && doctorSpecialty(item) === specialty)) {
+    if (!SPECIALTIES.includes(specialty) || !doctors.some(item => isDoctorActive(item) && item.name === doctor && doctorSpecialty(item) === specialty)) {
       setAppointmentError('Choose an active doctor for the selected specialty.'); return;
     }
-    if (isBookingUnavailable(schedules, appointments, doctor, date, time)) {
-      setAppointmentError('Choose a time within doctor operating hours without overlapping bookings or blocked periods.'); return;
-    }
+    const conflict = appointmentConflict(dashboardBookingForm, appointments, schedules, { doctors });
+    if (conflict) { setAppointmentError(conflict); return; }
     const booking = {
       id: createRecordId('APPT'), patientId: patient.id, patientName: patient.name,
       age: patient.age, sex: patient.sex, contact: patient.contact, address: patient.address,
@@ -704,7 +706,7 @@ export default function ReceptionistDashboard({
               <PatientRegistrationFields value={registerFormData} patients={patients} onUseExisting={patient => {
                 setRegisterFormData(emptyRegistrationForm()); setRegistrationError(''); closeModal();
                 onNavigate?.('patients', { patientId: patient.id, tab: 'personal' });
-              }} onChange={(key, value) => { setRegistrationError(''); setRegisterFormData(current => ({ ...current, [key]: value })); }} />
+              }} onChange={(key, value) => { setRegistrationError(''); setRegisterFormData(current => key === 'birthday' ? withBirthday(current, value) : { ...current, [key]: value }); }} />
               {registrationError && <p role="alert" className="medsec-error">{registrationError}</p>}
 
               {/* Modal Footer Actions */}

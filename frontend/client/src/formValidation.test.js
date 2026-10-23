@@ -42,8 +42,8 @@ test('any minute is bookable while complete 30-minute overlaps remain protected'
   const busy = time => isBookingUnavailable(schedules, [], 'Dr. Cruz', '2050-01-01', time);
   assert.equal(busy('09:17'), false);
   assert.equal(busy('08:06'), true);
-  assert.equal(busy('16:43'), false);
-  assert.equal(busy('16:44'), true);
+  assert.equal(busy('16:30'), false);
+  assert.equal(busy('16:31'), true);
   assert.equal(busy('11:45'), true);
   assert.equal(busy('12:30'), false);
   assert.equal(busy('13:45'), true);

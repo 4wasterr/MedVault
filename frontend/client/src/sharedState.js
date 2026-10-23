@@ -1,4 +1,5 @@
 import { isSessionDismissed, waitForLogout } from './sessionState.js';
+import { newestRecordsFirst } from '../../shared/recordOrdering.mjs';
 
 export const emptyState = () => ({ patients: [], appointments: [], schedules: {}, doctors: [] });
 
@@ -106,5 +107,7 @@ export function applyChanges(state, changes) {
     else if (index >= 0) next[collection][index] = after;
     else if (after !== null) next[collection].unshift(after);
   }
+  next.patients = newestRecordsFirst(next.patients);
+  next.appointments = newestRecordsFirst(next.appointments);
   return next;
 }

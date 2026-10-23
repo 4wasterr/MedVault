@@ -16,6 +16,7 @@ import { installFormFeedback } from './formFeedback';
 import { dismissSession, endSession, isSessionDismissed, resumeSession } from './sessionState';
 import { recoverRejectedSave } from './saveRecovery';
 import { CurrentUserContext } from './currentUser';
+import { stampChangedRecords } from '../../shared/recordOrdering.mjs';
 import './formFeedback.css';
 import './moduleLayout.css';
 
@@ -141,7 +142,7 @@ export default function App() {
       setRecords(merged);
       persistPending(serverState, merged);
       setSyncMessage('');
-      setSaveStatus(isDemo ? 'Changes saved for this preview. Refresh to reset.' : 'Changes saved to the shared server.');
+      setSaveStatus(isDemo ? 'Changes saved for this preview. Refresh to reset.' : '');
     } catch (error) {
       if (userRef.current !== session) return;
       const recovery = recoverRejectedSave(base, submitted, recordsRef.current, error.status === 409 ? error.state : null);
@@ -196,8 +197,9 @@ export default function App() {
 
   const updateCollection = (collection, updater) => {
     const previous = recordsRef.current;
-    const value = typeof updater === 'function' ? updater(previous[collection]) : updater;
+    let value = typeof updater === 'function' ? updater(previous[collection]) : updater;
     if (value === previous[collection]) return;
+    if (['patients', 'appointments'].includes(collection)) value = stampChangedRecords(previous[collection], value);
     const next = { ...previous, [collection]: value };
     recordsRef.current = next;
     setRecords(next);

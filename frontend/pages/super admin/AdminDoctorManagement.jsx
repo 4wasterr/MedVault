@@ -4,11 +4,13 @@ import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
 import { validateDoctorForm } from '../medical secretary/medsecData';
+import { isDoctorActive } from '../../shared/schedulingRules.mjs';
+import './AdminUserManagement.css';
 import './AdminDoctorManagement.css';
 
-const blank = { name: '', specialty: '', phone: '', email: '', secretaryUsername: '', active: true };
+const blank = { name: '', specialty: '', phone: '', email: '', active: true };
 
-export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) {
+export default function AdminDoctorManagement({ doctors, onRefresh }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [form, setForm] = useDraftState('doctor:form', blank);
@@ -17,17 +19,10 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const secretaries = accounts.filter((account) => account.role === 'Medical Secretary' && account.status === 'approved');
-  const secretaryLabel = (username) => {
-    if (!username) return 'Unassigned';
-    const account = secretaries.find((item) => item.username === username);
-    return account ? `${account.firstName} ${account.lastName} (@${username})` : `@${username}`;
-  };
   const visible = useMemo(() => doctors.filter((doctor) => {
-    const secretary = accounts.find(account => account.username === doctor.secretaryUsername);
-    return (filter === 'all' || (filter === 'active' ? doctor.active : !doctor.active)) &&
-      `${doctor.name} ${doctor.specialty} ${doctor.email} ${doctor.phone} ${doctor.secretaryUsername} ${secretary?.firstName || ''} ${secretary?.lastName || ''}`.toLowerCase().includes(search.trim().toLowerCase());
-  }), [doctors, accounts, filter, search]);
+    return (filter === 'all' || (filter === 'active' ? isDoctorActive(doctor) : !isDoctorActive(doctor))) &&
+      `${doctor.name} ${doctor.specialty} ${doctor.email} ${doctor.phone}`.toLowerCase().includes(search.trim().toLowerCase());
+  }), [doctors, filter, search]);
   const startCreate = () => { setEditing(''); setForm(blank); setError(''); setOpen(true); };
   const startEdit = (doctor) => { setEditing(doctor.id); setForm({ ...doctor }); setError(''); setOpen(true); };
   const save = async (event) => {
@@ -52,7 +47,6 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
     { key: 'name', label: 'Doctor Name', value: doctor => doctor.name, className: 'admin-grid-name', render: doctor => <strong>{doctor.name}</strong> },
     { key: 'specialty', label: 'Specialty', value: doctor => specialtyLabel(doctor.specialty), render: doctor => doctor.specialty ? specialtyLabel(doctor.specialty) : 'Not set' },
     { key: 'contact', label: 'Contact Details', value: doctor => doctor.email, className: 'admin-grid-contact', render: doctor => <><span>{doctor.email || 'No email'}</span><small>{formatPhone(doctor.phone) || 'No phone'}</small></> },
-    { key: 'secretary', label: 'Medical Secretary', value: doctor => secretaryLabel(doctor.secretaryUsername), className: 'admin-grid-secretary' },
     { key: 'status', label: 'Status', value: doctor => doctor.active ? 'Active' : 'Inactive', className: 'admin-grid-status', render: doctor => <span className={`medsec-badge ${doctor.active ? 'completed' : 'blocked'}`}>{doctor.active ? 'Active' : 'Inactive'}</span> },
     { key: 'actions', label: 'Actions', className: 'admin-grid-actions', render: doctor => <div className="admin-record-actions">
       <button type="button" className="medsec-btn secondary" disabled={busy} aria-label={`Edit ${doctor.name}`} onClick={() => startEdit(doctor)}>Edit</button>
@@ -62,8 +56,8 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
 
   return <section className="medsec-panel admin-management-panel"><div className="medsec-panel-heading"><div><h2>Doctor Profiles</h2><p className="medsec-muted">These physicians appear in staff bookings and schedules.</p></div>
     <button type="button" className="medsec-btn" onClick={startCreate}>+ Add Doctor</button></div>
-    <div className="admin-toolbar"><label className="medsec-field"><span>Search doctors</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, specialty, contact, or secretary" /></label>
-      <label className="medsec-field admin-doctor-status-filter"><span>Status</span><select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All doctors</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div>
+    <div className="admin-toolbar"><label className="medsec-field"><span>Search doctors</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, specialty, or contact" /></label>
+      <div className="medsec-tabs admin-filter-tabs" role="group" aria-label="Doctor status">{[['all', 'All'], ['active', 'Active'], ['inactive', 'Deactivated']].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} className={`medsec-tab ${filter === value ? 'active' : ''}`} onClick={() => setFilter(value)}>{label}</button>)}</div></div>
     {error && <p className="medsec-error" role="alert">{error}</p>}{message && <p className="medsec-notice" role="status">{message}</p>}
     <AdminDataGrid rows={visible} columns={columns} rowKey={doctor => doctor.id} label="Doctor profiles" itemLabel="doctors" resetKey={`${filter}|${search}`}
       emptyMessage={doctors.length ? 'No doctors match your search and status filter.' : 'No doctor profiles yet. Add a doctor to get started.'} />
@@ -74,8 +68,6 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
         <label className="medsec-field"><span>Specialty *</span><select required value={form.specialty} onChange={(event) => setForm({ ...form, specialty: event.target.value })}><option value="">Choose a specialty</option>{!SPECIALTIES.includes(form.specialty) && form.specialty && <option value={form.specialty} disabled>{form.specialty} (choose a current specialty)</option>}{SPECIALTIES.map(specialty => <option key={specialty} value={specialty}>{specialtyLabel(specialty)}</option>)}</select></label>
         <label className="medsec-field"><span>Phone</span><input type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={formatPhone(form.phone)} onChange={(event) => setForm({ ...form, phone: phoneInput(event.target.value) })} /></label>
         <label className="medsec-field"><span>Email</span><input type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-        <label className="medsec-field wide"><span>Assigned Medical Secretary</span><select value={form.secretaryUsername} onChange={(event) => setForm({ ...form, secretaryUsername: event.target.value })}><option value="">Unassigned</option>
-          {secretaries.map((item) => <option key={item.username} value={item.username}>{item.firstName} {item.lastName} (@{item.username})</option>)}</select></label>
       </div>{error && <p className="medsec-error" role="alert">{error}</p>}<div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" className="medsec-btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Add Doctor'}</button></div></form>
     </div></div>}
   </section>;

@@ -119,10 +119,12 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       })
       assert.equal(createRes.status, 200)
 
-      const checkedIn = { ...appt, status: 'Checked-In' }
-      assert.equal((await request('/api/changes', recCookie, {
-        changes: [{ collection: 'appointments', id: appt.id, before: appt, after: checkedIn }]
-      })).status, 200)
+      const created = createRes.body.appointments.find(item => item.id === appt.id)
+      const checkInRes = await request('/api/changes', recCookie, {
+        changes: [{ collection: 'appointments', id: appt.id, before: created, after: { ...created, status: 'Checked-In' } }]
+      })
+      assert.equal(checkInRes.status, 200)
+      const checkedIn = checkInRes.body.appointments.find(item => item.id === appt.id)
       // Complete a visit after arrival.
       const completed = { ...appt, status: 'Completed', visitStatus: 'Completed' }
       const completeRes = await request('/api/changes', secCookie, {

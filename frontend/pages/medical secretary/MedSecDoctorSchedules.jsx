@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import { useDraftState } from '../../client/src/useDraftState';
 import { isBookingUnavailable, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeMinutes, todayISO } from './medsecData';
+import { CLINIC_OPEN, CLINIC_CLOSE, isDoctorActive, withinClinicHours } from '../../shared/schedulingRules.mjs';
 
 export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointments = [], schedules = {}, setSchedules, doctors: managedDoctors = [], username }) {
-  const doctors = managedDoctors.filter((item) => item.active && (!item.secretaryUsername || item.secretaryUsername === username)).map((item) => item.name);
+  const doctors = managedDoctors.filter((item) => isDoctorActive(item) && (!item.secretaryUsername || item.secretaryUsername === username)).map((item) => item.name);
   const defaultDoctor = doctors[0] || '';
   const [doctor, setDoctor] = useDraftState('schedules:doctor', defaultDoctor);
   const [date, setDate] = useDraftState('schedules:date', todayISO());
@@ -40,12 +41,13 @@ export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointmen
     }
     const first = timeMinutes(start);
     const last = timeMinutes(end);
-    if (!date || !Number.isFinite(first) || !Number.isFinite(last) || last - first < 30) {
-      setError('Choose valid operating hours with room for at least one 30-minute appointment.'); return;
+    if (!doctors.includes(doctor)) { setError('Choose an active doctor before changing schedules.'); return; }
+    if (!date || !withinClinicHours(first, last) || last - first < 30) {
+      setError('Choose hours within 8:00 AM–5:00 PM with room for at least one 30-minute appointment.'); return;
     }
     const excludedBooking = appointments.find((appointment) =>
       appointment.doctor === doctor && dateKey(appointment.date) === date &&
-      !['Open', 'Cancelled'].includes(appointment.status) && (timeMinutes(appointment.time) < first || timeMinutes(appointment.time) + 30 > last)
+      appointment.status !== 'Cancelled' && (timeMinutes(appointment.time) < first || timeMinutes(appointment.time) + 30 > last)
     );
     if (excludedBooking) { setError('This change would remove an already booked time. Reschedule that appointment first.'); return; }
     const blocked = Object.fromEntries(Object.entries(schedule.blocked || {}).filter(([slot]) => timeMinutes(slot) >= first && timeMinutes(slot) + 30 <= last));
@@ -62,10 +64,10 @@ export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointmen
     }
     const first = timeMinutes(blockStart);
     const last = timeMinutes(blockEnd);
-    if (!Number.isFinite(first) || !Number.isFinite(last) || first >= last || first < timeMinutes(schedule.start) || last > timeMinutes(schedule.end)) {
+    if (!doctors.includes(doctor) || !withinClinicHours(first, last) || first < timeMinutes(schedule.start) || last > timeMinutes(schedule.end)) {
       setError('Choose a valid period within the doctor operating hours.'); return;
     }
-    if (appointments.some(item => item.doctor === doctor && dateKey(item.date) === date && !['Open', 'Cancelled'].includes(item.status) && timeMinutes(item.time) < last && timeMinutes(item.time) + 30 > first)) {
+    if (appointments.some(item => item.doctor === doctor && dateKey(item.date) === date && item.status !== 'Cancelled' && timeMinutes(item.time) < last && timeMinutes(item.time) + 30 > first)) {
       setError('A booked appointment falls in this period. Reschedule it before blocking.'); return;
     }
     const nextSchedule = { ...schedule, doctor, date, blockedPeriods: [...(schedule.blockedPeriods || []), { start: blockStart, end: blockEnd, reason: reason.trim() || 'Unavailable' }] };
@@ -78,7 +80,7 @@ export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointmen
     if (JSON.stringify(schedule) !== JSON.stringify(scheduleSnapshot)) {
       setError('This schedule changed in another session. Select the doctor and date again to review it.'); return;
     }
-    if (hasBooking(appointments, doctor, date, slot)) return;
+    if (!doctors.includes(doctor) || hasBooking(appointments, doctor, date, slot)) return;
     if ((schedule.blockedPeriods || []).some(period => timeMinutes(slot) < timeMinutes(period.end) && timeMinutes(slot) + 30 > timeMinutes(period.start))) { setError('Use Unblock period to remove this unavailable period.'); return; }
     const blocked = { ...schedule.blocked };
     if (blocked[slot]) delete blocked[slot]; else blocked[slot] = reason.trim() || 'Unavailable';
@@ -101,8 +103,8 @@ export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointmen
         <form onSubmit={saveAvailability}>
           <h3>Set daily hours</h3>
           <div className="medsec-form-grid">
-            <label className="medsec-field"><span>Start</span><input type="time" step="60" value={start} onChange={(event) => setStart(event.target.value)} /></label>
-            <label className="medsec-field"><span>End</span><input type="time" step="60" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+            <label className="medsec-field"><span>Start</span><input type="time" step="60" min={CLINIC_OPEN} max="16:30" value={start} onChange={(event) => setStart(event.target.value)} /></label>
+            <label className="medsec-field"><span>End</span><input type="time" step="60" min="08:30" max={CLINIC_CLOSE} value={end} onChange={(event) => setEnd(event.target.value)} /></label>
           </div>
           <div className="medsec-actions"><button type="submit" className="medsec-btn">Save Availability</button></div>
         </form>
@@ -110,8 +112,8 @@ export default function MedSecDoctorSchedules({ onNavigate, onLogout, appointmen
         <form onSubmit={blockPeriod}>
           <h3>Block unavailable period</h3>
           <div className="medsec-form-grid">
-            <label className="medsec-field"><span>From</span><input type="time" step="60" value={blockStart} onChange={(event) => setBlockStart(event.target.value)} /></label>
-            <label className="medsec-field"><span>Until</span><input type="time" step="60" value={blockEnd} onChange={(event) => setBlockEnd(event.target.value)} /></label>
+            <label className="medsec-field"><span>From</span><input type="time" step="60" min={CLINIC_OPEN} max={CLINIC_CLOSE} value={blockStart} onChange={(event) => setBlockStart(event.target.value)} /></label>
+            <label className="medsec-field"><span>Until</span><input type="time" step="60" min={CLINIC_OPEN} max={CLINIC_CLOSE} value={blockEnd} onChange={(event) => setBlockEnd(event.target.value)} /></label>
             <label className="medsec-field wide"><span>Reason</span><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Unavailable" /></label>
           </div>
           <div className="medsec-actions"><button type="submit" className="medsec-btn secondary">Block Period</button></div>

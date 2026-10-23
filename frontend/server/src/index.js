@@ -12,6 +12,10 @@ const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProble
 const { normalizePatientPhone } = require('../../shared/patientIdentity.mjs')
 const { hasPreviousVisit } = require('../../shared/patientHistory.mjs')
 const { canTransitionAppointment } = require('../../shared/appointmentWorkflow.mjs')
+const { ageProblem, ageFromBirthday } = require('../../shared/formRules.mjs')
+const { appointmentConflict, withinClinicHours, dateOnly } = require('../../shared/schedulingRules.mjs')
+const { isPatientArchived } = require('../../shared/patientArchive.mjs')
+const { compareRecordsNewestFirst } = require('../../shared/recordOrdering.mjs')
 // ===== VALIDATIONS (added) =====
 function todayDateString() {
   return process.env.MEDVAULT_TODAY || clinicToday()
@@ -54,11 +58,11 @@ const ALLOWED_PATIENT_FIELDS = new Set([
   'email', 'specialty', 'type', 'emergencyRelationship', 'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
   'vitals', 'medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes', 'appointments',
   'isRestricted', 'consentStatus', 'encounters', 'documents',
-  'date', 'createdAt', 'lastUpdatedAt', 'lastUpdatedBy'
+  'date', 'createdAt', 'lastUpdatedAt', 'lastUpdatedBy', 'archived', 'isArchived', 'archivedAt'
 ])
 const ALLOWED_APPOINTMENT_FIELDS = new Set([
   'id', 'patientId', 'patientName', 'doctor', 'doctorId', 'room', 'date', 'time',
-  'type', 'specialty', 'status', 'contact', 'email', 'age', 'sex', 'address', 'emergencyName', 'emergencyRelationship', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
+  'type', 'specialty', 'status', 'contact', 'email', 'age', 'sex', 'address', 'emergencyName', 'emergencyRelationship', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt', 'priority', 'createdAt', 'lastUpdatedAt'
 ])
 const ALLOWED_SCHEDULE_FIELDS = new Set([
   'doctor', 'date', 'start', 'end', 'blocked', 'blockedPeriods'
@@ -112,6 +116,9 @@ function filterPatientForRole(patient, user, doctors = []) {
       emergencyName: patient.emergencyName || '',
       emergencyContact: patient.emergencyContact || '',
       status: patient.status || 'Waiting',
+      archived: patient.archived === true,
+      isArchived: patient.isArchived === true,
+      archivedAt: patient.archivedAt || '',
       date: patient.date || '',
       createdAt: patient.createdAt || '',
       lastUpdatedAt: patient.lastUpdatedAt || '',
@@ -244,6 +251,13 @@ function validatePatient(after, before = null, { legacyImport = false } = {}) {
   if (before === null && !legacyImport) {
     const problem = demographicsProblem(after, todayDateString())
     if (problem) return problem
+  }
+  if (!legacyImport && before && (!same(was.age, after.age) || !same(was.birthday, after.birthday))) {
+    const problem = ageProblem({ ...after, birthday: after.birthday ? parseDate(after.birthday)?.toISOString().slice(0, 10) || after.birthday : '' }, todayDateString())
+    if (problem) return problem
+  }
+  for (const field of ['archived', 'isArchived']) {
+    if (after[field] !== undefined && typeof after[field] !== 'boolean') return 'Patient archive status must be true or false.'
   }
   for (const [field, label] of [['age', 'Age'], ['contact', 'Contact number'], ['emergencyContact', 'Emergency contact number'], ['emergencyRelationship', 'Emergency contact relationship']]) {
     if (!legacyImport && !same(was[field], after[field]) && !text(after[field])) return label + ' is required.'
@@ -766,7 +780,7 @@ async function createApp({ seedDemo = false } = {}) {
             status = excluded.status, data = excluded.data, updated_at = excluded.updated_at
         `).run(patient.id, patient.name, normName, patient.age || '', patient.sex || '', patient.birthday || '',
           patient.contact || '', normPhone, patient.address || '', patient.emergencyName || '', patient.emergencyContact || '',
-          patient.status || 'Waiting', JSON.stringify(storePatient(patient)), now, now)
+          patient.status || 'Waiting', JSON.stringify(storePatient(patient)), patient.createdAt || now, patient.lastUpdatedAt || now)
       }
 
       async function syncRelationalAppointment(appointment) {
@@ -782,7 +796,7 @@ async function createApp({ seedDemo = false } = {}) {
             data = excluded.data
         `).run(appointment.id, appointment.patientId || null, appointment.patientName || '', appointment.doctor || '',
           appointment.room || '', appointment.date || '', appointment.time || '', itemMinute, appointment.type || '',
-          appointment.status || 'Open', appointment.visitStatus || '', appointment.contact || '', JSON.stringify(appointment), now)
+          appointment.status || 'Open', appointment.visitStatus || '', appointment.contact || '', JSON.stringify(appointment), appointment.createdAt || now)
       }
 
       async function syncRelationalSchedule(key, schedule) {
@@ -799,7 +813,9 @@ async function createApp({ seedDemo = false } = {}) {
         const state = { patients: [], appointments: [], schedules: {}, doctors }
         const rawPatients = []
         const allAppointments = []
-        for (const row of (await db.prepare('SELECT collection, id, data FROM records ORDER BY rowid').all())) {
+        // Record data is encrypted, so sort its decoded timestamps below. The SQL
+        // order keeps legacy rows without timestamps newest-first as well.
+        for (const row of (await db.prepare('SELECT collection, id, data FROM records ORDER BY rowid DESC').all())) {
           if (row.collection === 'schedules') state.schedules[row.id] = JSON.parse(row.data)
           else if (row.collection === 'patients') rawPatients.push(JSON.parse(row.data))
           else if (row.collection === 'appointments') {
@@ -839,10 +855,15 @@ async function createApp({ seedDemo = false } = {}) {
         } else if (user) {
           state.schedules = filterSchedulesForRole(state.schedules, user, doctors)
         }
+        state.patients.sort(compareRecordsNewestFirst)
+        state.appointments.sort(compareRecordsNewestFirst)
         return state
       }
 
       async function hydratePatient(patient) {
+        const birthday = parseDate(patient.birthday)?.toISOString().slice(0, 10)
+        const age = birthday && ageFromBirthday(birthday, todayDateString())
+        if (Number.isInteger(age) && age >= 0 && age <= 130) patient = { ...patient, age }
         if (!patient.createdAt) {
           const metadata = await db.prepare('SELECT created_at FROM patients_rel WHERE id = ?').get(patient.id)
           if (metadata?.created_at) patient = { ...patient, createdAt: metadata.created_at }
@@ -886,6 +907,10 @@ async function createApp({ seedDemo = false } = {}) {
           .map((doctor) => ({ ...doctor, specialty: normalizeSpecialty(doctor.specialty), active: Boolean(doctor.active) }))
       }
 
+      async function lockScheduling() {
+        if (db.storageType === 'PostgreSQL') await db.raw('SELECT pg_advisory_xact_lock(506758, 2)')
+      }
+
       function appointmentMinutes(value) {
         const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i)
         if (!match) return NaN
@@ -896,36 +921,21 @@ async function createApp({ seedDemo = false } = {}) {
         return hour * 60 + minute
       }
 
-      function bookingIssue(appointments, schedules) {
-        const booked = appointments.filter((item) => !['Open', 'Cancelled'].includes(item.status))
-        const dateOnly = (value) => parseDate(value)?.toISOString().slice(0, 10) || ''
-        const doctorKey = (value) => text(value).toLocaleLowerCase()
-        const scheduleIndex = new Map(Object.values(schedules).map((schedule) => [
-          `${doctorKey(schedule?.doctor)}|${dateOnly(schedule?.date)}`,
-          schedule,
-        ]))
-        const DEFAULT_START_MINUTE = 8 * 60 // 08:00 AM
-        const DEFAULT_END_MINUTE = 17 * 60 // 17:00 (5:00 PM)
-
-        for (let index = 0; index < booked.length; index += 1) {
-          const item = booked[index]
-          const itemMinute = appointmentMinutes(item.time)
-          const date = dateOnly(item.date)
-          if (!item.doctor || !date || !Number.isFinite(itemMinute)) return { status: 400, error: 'Booked appointments require a doctor, date, and valid time.' }
-          if (booked.slice(index + 1).some((other) => doctorKey(other.doctor) === doctorKey(item.doctor) && dateOnly(other.date) === date &&
-            Math.abs(appointmentMinutes(other.time) - itemMinute) < 30)) {
-            return { status: 409, error: 'This doctor already has an appointment within that 30-minute period.' }
+      function bookingIssue(appointments, schedules, changes = []) {
+        // Validate affected reservations only, so legacy conflicts never prevent
+        // unrelated patient edits or completing/cancelling a consultation.
+        for (const change of changes) {
+          if (change.collection === 'appointments' && change.after && change.after.status !== 'Cancelled' &&
+            (change.after.status !== 'Completed' || !change.before || change.before.date !== change.after.date || change.before.time !== change.after.time || change.before.doctor !== change.after.doctor || change.before.room !== change.after.room)) {
+            const issue = appointmentConflict(change.after, appointments, schedules)
+            if (issue) return { status: 409, error: issue }
           }
-          const schedule = scheduleIndex.get(`${doctorKey(item.doctor)}|${date}`)
-          const startMinute = schedule ? appointmentMinutes(schedule.start) : DEFAULT_START_MINUTE
-          const endMinute = schedule ? appointmentMinutes(schedule.end) : DEFAULT_END_MINUTE
-          if (itemMinute < startMinute || itemMinute + 30 > endMinute) {
-            return { status: 409, error: 'This booking conflicts with doctor operating hours.' }
-          }
-          if (schedule) {
-            if (Object.keys(schedule.blocked || {}).some(slot => schedule.blocked[slot] && itemMinute < appointmentMinutes(slot) + 30 && itemMinute + 30 > appointmentMinutes(slot)) ||
-              (schedule.blockedPeriods || []).some(period => itemMinute < appointmentMinutes(period.end) && itemMinute + 30 > appointmentMinutes(period.start))) {
-              return { status: 409, error: 'This booking conflicts with the doctor schedule.' }
+          if (change.collection === 'schedules') {
+            const doctor = change.after?.doctor || change.before?.doctor
+            const date = change.after?.date || change.before?.date
+            for (const appointment of appointments.filter(item => item.doctor === doctor && dateOnly(item.date) === dateOnly(date) && !['Cancelled', 'Completed'].includes(item.status))) {
+              const issue = appointmentConflict(appointment, appointments, schedules)
+              if (issue) return { status: 409, error: issue }
             }
           }
         }
@@ -1457,6 +1467,7 @@ async function createApp({ seedDemo = false } = {}) {
         const now = new Date().toISOString()
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
+          await lockScheduling()
           ;(await db.prepare('UPDATE doctors SET name = ?, specialty = ?, phone = ?, email = ?, secretary_username = ?, doctor_username = ?, active = ? WHERE id = ?')
             .run(details.name, details.specialty, details.phone, details.email, details.secretaryUsername, details.doctorUsername, Number(details.active), previous.id))
           if (details.doctorUsername) {
@@ -1481,6 +1492,7 @@ async function createApp({ seedDemo = false } = {}) {
               const nextId = row.collection === 'schedules' && row.id.startsWith(`${previous.name}|`)
                 ? `${details.name}${row.id.slice(previous.name.length)}` : row.id
               if (changed || nextId !== row.id) {
+                if (['patients', 'appointments'].includes(row.collection)) data.lastUpdatedAt = now
                 ;(await update.run(nextId, JSON.stringify(data), row.collection, row.id))
                 ;(await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
                   .run(now, request.user.username, request.user.role, row.collection, nextId, 'doctor-rename', row.data, JSON.stringify(data)))
@@ -1659,12 +1671,14 @@ async function createApp({ seedDemo = false } = {}) {
         await db.exec('BEGIN IMMEDIATE')
         try {
           const apptRows = await db.prepare("SELECT id, data FROM records WHERE collection = 'appointments'").all()
+          const now = new Date().toISOString()
           const updateAppt = db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?")
           for (const row of apptRows) {
             const appt = JSON.parse(row.data)
             if (appt.patientId === duplicateId) {
               appt.patientId = primaryId
               appt.patientName = primary.name
+              appt.lastUpdatedAt = now
               await updateAppt.run(JSON.stringify(appt), appt.id)
               await syncRelationalAppointment(appt)
             }
@@ -1680,9 +1694,11 @@ async function createApp({ seedDemo = false } = {}) {
           await db.prepare("DELETE FROM records WHERE collection = 'patients' AND id = ?").run(duplicateId)
           await db.prepare('DELETE FROM patients_rel WHERE id = ?').run(duplicateId)
 
-          const now = new Date().toISOString()
+          primary.lastUpdatedAt = now
+          await db.prepare("UPDATE records SET data = ? WHERE collection = 'patients' AND id = ?").run(JSON.stringify(primary), primaryId)
+          await syncRelationalPatient(primary)
           await db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(now, request.user.username, request.user.role, 'patients', primaryId, 'merge', duplicateRow.data, primaryRow.data)
+            .run(now, request.user.username, request.user.role, 'patients', primaryId, 'merge', duplicateRow.data, JSON.stringify(primary))
 
           await db.exec('COMMIT')
           const updated = await hydratePatient(primary)
@@ -1806,12 +1822,12 @@ async function createApp({ seedDemo = false } = {}) {
           const start = appointmentMinutes(schedule.start)
           const end = appointmentMinutes(schedule.end)
           if (!schedule.doctor || !parseDate(schedule.date) || !/^\d{4}-\d{2}-\d{2}$/.test(schedule.date) ||
-            !Number.isFinite(start) || !Number.isFinite(end) || end - start < 30) {
+            !withinClinicHours(start, end) || end - start < 30) {
             return reject(request, response, 400, `Schedule for ${key} requires valid start and end times.`)
           }
         }
 
-        const importIssue = bookingIssue(appointments, schedules)
+        const importIssue = bookingIssue(appointments, schedules, appointments.map(after => ({ collection: 'appointments', before: null, after })))
         if (importIssue) return response.status(importIssue.status).json({ error: importIssue.error })
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
@@ -1937,11 +1953,11 @@ async function createApp({ seedDemo = false } = {}) {
             const start = appointmentMinutes(after.start)
             const end = appointmentMinutes(after.end)
             if (!after.doctor || !parseDate(after.date) || !/^\d{4}-\d{2}-\d{2}$/.test(after.date) || `${after.doctor}|${after.date}` !== id ||
-              !Number.isFinite(start) || !Number.isFinite(end) || end - start < 30 ||
+              !withinClinicHours(start, end) || end - start < 30 ||
               (after.blockedPeriods !== undefined && (!Array.isArray(after.blockedPeriods) || after.blockedPeriods.some(period => !period || !Number.isFinite(appointmentMinutes(period.start)) || !Number.isFinite(appointmentMinutes(period.end)) || appointmentMinutes(period.start) < start || appointmentMinutes(period.end) > end || appointmentMinutes(period.start) >= appointmentMinutes(period.end)))) ||
               !after.blocked || typeof after.blocked !== 'object' || Array.isArray(after.blocked) ||
               Object.keys(after.blocked).some((slot) => { const minute = appointmentMinutes(slot); return !Number.isFinite(minute) || minute < start || minute + 30 > end })) {
-              return reject(request, response, 400, 'Doctor schedules require a date and valid operating hours.')
+              return reject(request, response, 400, 'Doctor schedules require a valid date and hours within clinic operating hours (8:00 AM–5:00 PM), with at least 30 minutes available.')
             }
           }
           if (collection === 'schedules') {
@@ -2019,8 +2035,8 @@ async function createApp({ seedDemo = false } = {}) {
           if (collection === 'appointments' && after?.visitStatus === 'Completed' && after.status !== 'Completed') {
             return reject(request, response, 400, 'A completed visit must also have a completed appointment status.')
           }
-          if (collection === 'appointments' && after && !['Open', 'Cancelled'].includes(after.status) &&
-            (!before || before.doctor !== after.doctor || before.date !== after.date || before.time !== after.time)) {
+          if (collection === 'appointments' && after && !['Cancelled', 'Completed'].includes(after.status) &&
+            (!before || before.status === 'Open' || before.status !== after.status || before.visitStatus !== after.visitStatus || before.doctor !== after.doctor || before.date !== after.date || before.time !== after.time || before.room !== after.room)) {
             if (!(await db.prepare('SELECT id FROM doctors WHERE name = ? AND active = 1').get(after.doctor))) {
               return reject(request, response, 400, 'Choose an active doctor for new or rescheduled bookings.')
             }
@@ -2030,12 +2046,31 @@ async function createApp({ seedDemo = false } = {}) {
         ;(await db.exec('BEGIN IMMEDIATE'))
         try {
           const find = db.prepare('SELECT data FROM records WHERE collection = ? AND id = ?')
+          await lockScheduling()
           const insert = db.prepare('INSERT INTO records (collection, id, data) VALUES (?, ?, ?)')
           const update = db.prepare('UPDATE records SET data = ? WHERE collection = ? AND id = ?')
           const remove = db.prepare('DELETE FROM records WHERE collection = ? AND id = ?')
           const audit = db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           const currentAppointments = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all()).map(row => JSON.parse(row.data))
           const managedDoctors = await readDoctors()
+          for (const { collection, before, after } of changes) {
+            if (after && (collection === 'schedules' || (collection === 'appointments' && !['Cancelled', 'Completed'].includes(after.status) &&
+              (!before || before.status === 'Open' || before.status !== after.status || before.visitStatus !== after.visitStatus || before.doctor !== after.doctor || before.date !== after.date || before.time !== after.time || before.room !== after.room)))) {
+              if (!managedDoctors.some(doctor => doctor.active && doctor.name === after.doctor)) {
+                await db.exec('ROLLBACK')
+                return reject(request, response, 400, 'Choose an active doctor for this booking or schedule.')
+              }
+            }
+            if (collection === 'appointments' && after && !['Open', 'Cancelled', 'Completed'].includes(after.status) &&
+              (!before || before.status === 'Open' || before.patientId !== after.patientId || before.date !== after.date || before.time !== after.time || before.doctor !== after.doctor)) {
+              const pending = changes.find(change => change.collection === 'patients' && change.id === after.patientId)
+              const patientRow = pending ? null : await find.get('patients', after.patientId)
+              if (isPatientArchived(pending ? pending.after : patientRow && JSON.parse(patientRow.data))) {
+                await db.exec('ROLLBACK')
+                return reject(request, response, 400, 'Restore this archived patient before booking.')
+              }
+            }
+          }
           for (const change of changes) {
             const { collection, id, before, after } = change
             const row = (await find.get(collection, id))
@@ -2068,11 +2103,17 @@ async function createApp({ seedDemo = false } = {}) {
               ;(await db.exec('ROLLBACK'))
               return reject(request, response, 400, 'Cancel a booking to retain its history; booked appointments cannot be deleted.')
             }
+            if (['patients', 'appointments'].includes(collection) && after) {
+              let createdAt = before?.createdAt
+              if (!createdAt && before && collection === 'appointments') {
+                createdAt = (await db.prepare('SELECT created_at FROM appointments_rel WHERE id = ?').get(id))?.created_at
+              }
+              after.createdAt = createdAt || new Date().toISOString()
+              after.lastUpdatedAt = new Date().toISOString()
+            }
             if (collection === 'patients' && after) {
               after.name = personName(after.name)
               if (after.emergencyName !== undefined) after.emergencyName = personName(after.emergencyName)
-              after.createdAt = before?.createdAt || after.createdAt || new Date().toISOString()
-              after.lastUpdatedAt = new Date().toISOString()
               after.lastUpdatedBy = request.user.username
             }
             const cleanAfter = after ? stripUnknownFields(collection, after, request.user.role) : null
@@ -2100,6 +2141,7 @@ async function createApp({ seedDemo = false } = {}) {
                       for (const [field, target] of Object.entries(demographics)) {
                         if (field in cleanAfter) appt[target] = cleanAfter[field]
                       }
+                      appt.lastUpdatedAt = cleanAfter.lastUpdatedAt
                       await updateAppt.run(JSON.stringify(appt), appt.id)
                       await syncRelationalAppointment(appt)
                       await audit.run(new Date().toISOString(), request.user.username, request.user.role, 'appointments', appt.id,
@@ -2123,7 +2165,7 @@ async function createApp({ seedDemo = false } = {}) {
           }
           const schedules = Object.fromEntries((await db.prepare("SELECT id, data FROM records WHERE collection = 'schedules'").all())
             .map((row) => [row.id, JSON.parse(row.data)]))
-          const issue = bookingIssue(appointments, schedules)
+          const issue = bookingIssue(appointments, schedules, changes)
           if (issue) {
             ;(await db.exec('ROLLBACK'))
             return reject(request, response, issue.status, issue.error, { state: await readState() })
@@ -2205,7 +2247,7 @@ async function createApp({ seedDemo = false } = {}) {
           }
         }
 
-        query += ' ORDER BY encounter_date DESC, created_at DESC'
+        query += ' ORDER BY updated_at DESC, created_at DESC, id DESC'
         const rows = await db.prepare(query).all(...params)
         const encounters = rows.map(r => ({
           ...r,
@@ -2273,7 +2315,7 @@ async function createApp({ seedDemo = false } = {}) {
         if (!patientRow) return reject(request, response, 404, 'Patient not found.')
 
         const doctorId = request.user.doctorId || ''
-        const doctorName = request.user.doctorName || (request.user.role === 'Doctor' ? request.user.username : (request.body?.doctorName || 'Dr. Cruz'))
+        let doctorName = request.user.doctorName || (request.user.role === 'Doctor' ? request.user.username : (request.body?.doctorName || 'Dr. Cruz'))
 
         if (request.user.role === 'Doctor') {
           const grants = await db.prepare("SELECT id FROM emergency_access_grants WHERE doctor_username = ? AND patient_id = ? AND expires_at > ?")
@@ -2289,38 +2331,58 @@ async function createApp({ seedDemo = false } = {}) {
           }
         }
 
-        const id = crypto.randomUUID()
-        const now = new Date().toISOString()
-        await db.prepare(`
-          INSERT INTO encounters (
-            id, patient_id, doctor_id, doctor_name, appointment_id, encounter_date,
-            subjective, objective, vitals_snapshot, assessment, diagnosis,
-            treatment_plan, prescriptions, follow_up_date, status, addenda,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '[]', ?, ?)
-        `).run(
-          id, patientId, doctorId, doctorName, appointmentId, encounterDate,
-          text(subjective), text(objective), JSON.stringify(vitalsSnapshot),
-          text(assessment), text(diagnosis), text(treatmentPlan),
-          JSON.stringify(Array.isArray(prescriptions) ? prescriptions : []),
-          text(followUpDate), now, now
-        )
-
-        if (appointmentId) {
-          const apptRow = await db.prepare("SELECT data FROM records WHERE collection = 'appointments' AND id = ?").get(appointmentId)
-          if (apptRow) {
-            const appt = JSON.parse(apptRow.data)
-            if (appt.status === 'Checked-In' || appt.status === 'Waiting') {
-              appt.status = 'In Consultation'
-              appt.visitStatus = 'In Consultation'
-              await db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?").run(JSON.stringify(appt), appointmentId)
-              await syncRelationalAppointment(appt)
+        await db.exec('BEGIN IMMEDIATE')
+        try {
+          await lockScheduling()
+          let consultationAppointment = null
+          if (appointmentId) {
+            const appointments = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all()).map(row => JSON.parse(row.data))
+            const appointment = appointments.find(item => item.id === appointmentId)
+            if (appointment && request.user.role === 'Medical Secretary' && !request.body?.doctorName) doctorName = appointment.doctor
+            let issue = null
+            if (!appointment || appointment.patientId !== patientId || appointment.doctor !== doctorName) issue = 'Choose an appointment linked to this patient and doctor.'
+            else if (!['Checked-In', 'Waiting'].includes(appointment.status)) issue = 'Check in the patient before starting a new consultation.'
+            else {
+              consultationAppointment = { ...appointment, status: 'In Consultation', visitStatus: 'In Consultation' }
+              const schedules = Object.fromEntries((await db.prepare("SELECT id, data FROM records WHERE collection = 'schedules'").all()).map(row => [row.id, JSON.parse(row.data)]))
+              issue = appointmentConflict(consultationAppointment, appointments, schedules, { doctors: await readDoctors() })
+            }
+            if (issue) {
+              await db.exec('ROLLBACK')
+              return reject(request, response, 409, issue)
             }
           }
-        }
+          const id = crypto.randomUUID()
+          const now = new Date().toISOString()
+          await db.prepare(`
+            INSERT INTO encounters (
+              id, patient_id, doctor_id, doctor_name, appointment_id, encounter_date,
+              subjective, objective, vitals_snapshot, assessment, diagnosis,
+              treatment_plan, prescriptions, follow_up_date, status, addenda,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '[]', ?, ?)
+          `).run(
+            id, patientId, doctorId, doctorName, appointmentId, encounterDate,
+            text(subjective), text(objective), JSON.stringify(vitalsSnapshot),
+            text(assessment), text(diagnosis), text(treatmentPlan),
+            JSON.stringify(Array.isArray(prescriptions) ? prescriptions : []),
+            text(followUpDate), now, now
+          )
 
-        await recordEvent(request.user.username, request.user.role, 'encounter-create-draft', { encounterId: id, patientId })
-        response.status(201).json({ id, status: 'draft', message: 'Draft encounter created successfully.' })
+          if (consultationAppointment) {
+            consultationAppointment.lastUpdatedAt = now
+            await db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?").run(JSON.stringify(consultationAppointment), appointmentId)
+            await syncRelationalAppointment(consultationAppointment)
+            await recordEvent(request.user.username, request.user.role, 'consultation-started', { appointmentId }, 'appointments', appointmentId)
+          }
+
+          await recordEvent(request.user.username, request.user.role, 'encounter-create-draft', { encounterId: id, patientId })
+          await db.exec('COMMIT')
+          response.status(201).json({ id, status: 'draft', message: 'Draft encounter created successfully.' })
+        } catch (error) {
+          await db.exec('ROLLBACK')
+          throw error
+        }
       })
 
       app.patch('/api/doctor/encounters/:id', authenticate, async (request, response) => {
@@ -2412,6 +2474,7 @@ async function createApp({ seedDemo = false } = {}) {
             const appt = JSON.parse(apptRow.data)
             appt.status = 'Completed'
             appt.visitStatus = 'Completed'
+            appt.lastUpdatedAt = signedAt
             await db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?").run(JSON.stringify(appt), existing.appointment_id)
             await syncRelationalAppointment(appt)
           }
@@ -2421,6 +2484,7 @@ async function createApp({ seedDemo = false } = {}) {
         if (patRow) {
           const pat = JSON.parse(patRow.data)
           pat.status = 'Completed'
+          pat.lastUpdatedAt = signedAt
           pat.consultation = {
             doctor: existing.doctor_name || request.user.doctorName,
             date: existing.encounter_date,

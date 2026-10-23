@@ -1,5 +1,8 @@
 import { clinicToday, contactProblem, demographicsProblem, normalizeVisitType, validISODate, vitalProblem, VISIT_TYPES, nameProblem, staffProblems, SPECIALTIES } from '../../shared/formRules.mjs';
 import { hasPreviousVisit } from '../../shared/patientHistory.mjs';
+import { appointmentStage } from '../../shared/appointmentWorkflow.mjs';
+import { timeMinutes, withinClinicHours, appointmentConflict, CLINIC_HOURS_MESSAGE } from '../../shared/schedulingRules.mjs';
+export { timeMinutes } from '../../shared/schedulingRules.mjs';
 export const DOCTORS = [];
 
 export function createRecordId(prefix) {
@@ -35,17 +38,6 @@ export function displayDate(value) {
   });
 }
 
-export function timeMinutes(value) {
-  if (!value) return NaN;
-  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-  if (!match) return NaN;
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (minute > 59 || hour > (match[3] ? 12 : 23) || (match[3] && hour < 1)) return NaN;
-  if (match[3]) hour = (hour % 12) + (match[3].toUpperCase() === 'PM' ? 12 : 0);
-  return hour * 60 + minute;
-}
-
 export function timeKey(value) {
   const minutes = timeMinutes(value);
   if (!Number.isFinite(minutes)) return '';
@@ -60,8 +52,8 @@ export function displayTime(value) {
 }
 
 export function slotsBetween(start, end) {
-  const first = timeMinutes(start);
-  const last = timeMinutes(end);
+  const first = Math.max(480, timeMinutes(start));
+  const last = Math.min(1020, timeMinutes(end));
   if (!Number.isFinite(first) || !Number.isFinite(last) || first >= last) return [];
   const slots = [];
   for (let minute = first; minute + 30 <= last; minute += 30) {
@@ -88,20 +80,20 @@ export function hasBooking(appointments, doctor, date, time, excludeId) {
     appointment.doctor === doctor &&
     dateKey(appointment.date) === dateKey(date) &&
     Math.abs(timeMinutes(appointment.time) - targetMinute) < 30 &&
-    !['Open', 'Cancelled'].includes(appointment.status)
+    !['Cancelled', 'No-Show'].includes(appointmentStage(appointment))
   );
 }
 
-export function availableSlots(schedules, appointments, doctor, date, excludeId) {
+export function availableSlots(schedules, appointments, doctor, date, excludeId, room) {
   const schedule = getSchedule(schedules, doctor, date);
   return slotsBetween(schedule.start, schedule.end).filter((time) =>
-    !schedule.blocked?.[time] && !hasBooking(appointments, doctor, date, time, excludeId)
+    !isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId, room)
   );
 }
 
 export function visitStatus(appointment) {
-  if (['Waiting', 'In Consultation', 'Completed'].includes(appointment.visitStatus)) return appointment.visitStatus;
-  if (['Waiting', 'In Consultation', 'Completed'].includes(appointment.status)) return appointment.status;
+  const status = appointmentStage(appointment);
+  if (['Waiting', 'In Consultation', 'Completed'].includes(status)) return status;
   return 'Waiting';
 }
 
@@ -126,6 +118,7 @@ export function validateBooking(form, { checkDate = true } = {}) {
   if (!form.doctor?.trim()) return 'Choose an active doctor.';
   const bookingDate = validCalendarDate(form.date);
   if (!bookingDate || !timeKey(form.time)) return 'Please select a valid date and time.';
+  if (!withinClinicHours(timeMinutes(form.time), timeMinutes(form.time) + 30)) return CLINIC_HOURS_MESSAGE;
   if (checkDate && bookingDate < todayISO()) return 'Appointments cannot be booked or rescheduled in the past.';
   if (!VISIT_TYPES.includes(form.type)) return 'Choose a standard visit type.';
   return form.contact !== undefined ? contactProblem(form, { required: false }) : null;
@@ -154,14 +147,8 @@ export function validateDoctorForm(doctor) {
   if (!SPECIALTIES.includes(doctor.specialty)) return 'Choose a standard specialty.';
   return contactProblem({ contact: doctor.phone, email: doctor.email }, { required: false });
 }
-export function isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId) {
-  const minute = timeMinutes(time);
-  const schedule = getSchedule(schedules, doctor, date);
-  if (!Number.isFinite(minute) || minute < timeMinutes(schedule.start) || minute + 30 > timeMinutes(schedule.end)) return true;
-  if (hasBooking(appointments, doctor, date, time, excludeId)) return true;
-  const overlaps = (start, end) => minute < end && minute + 30 > start;
-  return Object.keys(schedule.blocked || {}).some(slot => schedule.blocked[slot] && overlaps(timeMinutes(slot), timeMinutes(slot) + 30)) ||
-    (schedule.blockedPeriods || []).some(period => overlaps(timeMinutes(period.start), timeMinutes(period.end)));
+export function isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId, room) {
+  return Boolean(appointmentConflict({ id: excludeId, doctor, date, time, room }, appointments, schedules));
 }
 
 // Keep distinct appointments even when a patient sees the same doctor twice that day.

@@ -1,6 +1,6 @@
 import React from 'react';
 import './PatientIdentityNotice.css';
-import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, clinicToday, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
+import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, clinicToday, ageFromBirthday, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
 import { duplicatePatientMessage, findDuplicatePatient, registrationIdentity } from '../../shared/patientIdentity.mjs';
 
 function TextField({ label, name, value, onChange, required = false, wide = false, type = 'text', ...props }) {
@@ -15,7 +15,7 @@ function TextField({ label, name, value, onChange, required = false, wide = fals
 // Both receptionist entry points share the same field order and validation rules.
 export default function PatientRegistrationFields({ value, onChange, patients = [], onUseExisting }) {
   const duplicate = findDuplicatePatient(registrationIdentity(value), patients);
-  const field = (name, label, props = {}) => <TextField key={name} name={name} label={label} value={value[name]} onChange={onChange} {...props} />;
+  const field = (name, label, props = {}) => <TextField key={name} name={name} label={label} value={name === 'age' && value.birthday ? ageFromBirthday(value.birthday) ?? '' : value[name]} onChange={onChange} {...props} />;
   const phoneProps = { type: 'tel', required: true, pattern: PHONE_PATTERN, maxLength: 16, placeholder: '+63 917 123 4567' };
   return <>
     <h3 className="pm-form-section-title">Personal Information</h3>
@@ -28,7 +28,7 @@ export default function PatientRegistrationFields({ value, onChange, patients = 
           <option value="">Select sex</option><option>Male</option><option>Female</option><option>Other</option>
         </select>
       </label>
-      {field('age', 'Age', { type: 'number', min: 0, max: 130, step: 1, required: true })}
+      {field('age', 'Age', { type: 'number', min: 0, max: 130, step: 1, required: true, readOnly: Boolean(value.birthday) })}
       {field('birthday', 'Birthday', { type: 'date', min: '1900-01-01', max: clinicToday() })}
       {field('contactNumber', 'Contact Number', phoneProps)}
       {field('email', 'Email', { type: 'email', placeholder: 'name@gmail.com' })}
