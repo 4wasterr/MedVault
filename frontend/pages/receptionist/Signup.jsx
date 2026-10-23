@@ -1,3 +1,6 @@
+import { useDraftState } from '../../client/src/useDraftState';
+import { EMAIL_PATTERN, PHONE_PATTERN, USERNAME_PATTERN, NAME_PATTERN, NAME_GUIDANCE, staffProblems } from '../../shared/formRules.mjs';
+import PasswordField from '../components/PasswordField';
 import React, { useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import './Signup.css';
@@ -8,9 +11,7 @@ const emptyForm = {
 };
 
 export default function Signup({ onBack }) {
-  const [form, setForm] = useState(emptyForm);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [form, setForm] = useDraftState('signup:form', emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -22,14 +23,8 @@ export default function Signup({ onBack }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-    if (!form.password) {
-      setError('Please enter a password.');
-      return;
-    }
+    const problems = staffProblems(form, { signup: true });
+    if (Object.keys(problems).length) { setError(Object.values(problems)[0]); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -60,34 +55,26 @@ export default function Signup({ onBack }) {
           <h2>Login credentials</h2>
           <div className="signup-grid">
             <label className="signup-field"><span>Username *</span>
-              <input required autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z][A-Za-z0-9._-]{2,31}"
+              <input required autoComplete="username" minLength={3} maxLength={32} pattern={USERNAME_PATTERN}
                 title="Start with a letter; use 3–32 letters, numbers, dots, underscores, or hyphens."
                 value={form.username} onChange={(event) => update('username', event.target.value)} placeholder="Choose a username" /></label>
             <div className="signup-field signup-field-empty" aria-hidden="true" />
-            <label className="signup-field"><span>Password *</span><div className="signup-password-wrap">
-              <input required maxLength={128} autoComplete="new-password" type={showPassword ? 'text' : 'password'}
-                value={form.password} onChange={(event) => update('password', event.target.value)} placeholder="Create a password" />
-              <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button>
-            </div></label>
-            <label className="signup-field"><span>Confirm password *</span><div className="signup-password-wrap">
-              <input required maxLength={128} autoComplete="new-password" type={showConfirm ? 'text' : 'password'}
-                value={form.confirmPassword} onChange={(event) => update('confirmPassword', event.target.value)} placeholder="Repeat your password" />
-              <button type="button" onClick={() => setShowConfirm((visible) => !visible)} aria-label={showConfirm ? 'Hide confirmation' : 'Show confirmation'}>{showConfirm ? 'Hide' : 'Show'}</button>
-            </div></label>
+            <PasswordField className="signup-field" value={form.password} onChange={event => update('password', event.target.value)} />
+            <PasswordField className="signup-field" label="Confirm Password" value={form.confirmPassword} confirmFor={form.password} onChange={event => update('confirmPassword', event.target.value)} />
           </div>
 
           <h2>Personal details</h2>
           <div className="signup-grid">
-            <label className="signup-field"><span>First name *</span><input required maxLength={80} autoComplete="given-name"
+            <label className="signup-field"><span>First name *</span><input required pattern={NAME_PATTERN} title={NAME_GUIDANCE} maxLength={80} autoComplete="given-name"
               value={form.firstName} onChange={(event) => update('firstName', event.target.value)} placeholder="First name" /></label>
-            <label className="signup-field"><span>Middle name <small>(optional)</small></span><input maxLength={80} autoComplete="additional-name"
+            <label className="signup-field"><span>Middle name <small>(optional)</small></span><input pattern={NAME_PATTERN} title={NAME_GUIDANCE} maxLength={80} autoComplete="additional-name"
               value={form.middleName} onChange={(event) => update('middleName', event.target.value)} placeholder="Middle name" /></label>
-            <label className="signup-field"><span>Last name *</span><input required maxLength={80} autoComplete="family-name"
+            <label className="signup-field"><span>Last name *</span><input required pattern={NAME_PATTERN} title={NAME_GUIDANCE} maxLength={80} autoComplete="family-name"
               value={form.lastName} onChange={(event) => update('lastName', event.target.value)} placeholder="Last name" /></label>
-            <label className="signup-field"><span>Phone number *</span><input required type="tel" maxLength={25} autoComplete="tel"
-              value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="e.g. +63 912 345 6789" /></label>
-            <label className="signup-field signup-wide"><span>Email *</span><input required type="email" maxLength={254} autoComplete="email"
-              value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="name@clinic.com" /></label>
+            <label className="signup-field"><span>Phone number *</span><input required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" autoComplete="tel"
+              value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
+            <label className="signup-field signup-wide"><span>Email *</span><input required type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" maxLength={254} autoComplete="email"
+              value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="name@gmail.com" /></label>
             <label className="signup-field signup-wide"><span>Address *</span><textarea required maxLength={300} autoComplete="street-address"
               value={form.address} onChange={(event) => update('address', event.target.value)} placeholder="Complete address" rows={2} /></label>
             <label className="signup-field signup-wide"><span>Requested role *</span><select required value={form.role} onChange={(event) => update('role', event.target.value)}>

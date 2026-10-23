@@ -1,3 +1,5 @@
+import { useDraftState } from '../../client/src/useDraftState';
+import { EMAIL_PATTERN, PHONE_PATTERN, SPECIALTIES, NAME_PATTERN, NAME_GUIDANCE } from '../../shared/formRules.mjs';
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
@@ -9,9 +11,9 @@ const blank = { name: '', specialty: '', phone: '', email: '', secretaryUsername
 export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
-  const [form, setForm] = useState(blank);
-  const [editing, setEditing] = useState('');
-  const [open, setOpen] = useState(false);
+  const [form, setForm] = useDraftState('doctor:form', blank);
+  const [editing, setEditing] = useDraftState('doctor:editing', '');
+  const [open, setOpen] = useDraftState('doctor:open', false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -29,8 +31,7 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
   const startCreate = () => { setEditing(''); setForm(blank); setError(''); setOpen(true); };
   const startEdit = (doctor) => { setEditing(doctor.id); setForm({ ...doctor }); setError(''); setOpen(true); };
   const save = async (event) => {
-    //event.preventDefault(); setBusy(true); setError(''); setMessage('');
-        event.preventDefault(); setMessage('');
+    event.preventDefault(); setMessage('');
     const problem = validateDoctorForm(form);
     if (problem) { setError(problem); return; }
     setBusy(true); setError('');
@@ -69,10 +70,10 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
     {open && <div className="medsec-modal-backdrop" role="presentation" onClick={() => setOpen(false)}><div className="medsec-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="admin-doctor-title" onClick={(event) => event.stopPropagation()}>
       <h2 id="admin-doctor-title">{editing ? 'Edit Doctor Profile' : 'Add Doctor'}</h2><p>Changing a doctor's name updates linked appointments, patient visits, and schedules.</p>
       <form onSubmit={save}><div className="medsec-form-grid">
-        <label className="medsec-field"><span>Doctor Name *</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Dr. Maria Santos" /></label>
-        <label className="medsec-field"><span>Specialty</span><input value={form.specialty} onChange={(event) => setForm({ ...form, specialty: event.target.value })} /></label>
-        <label className="medsec-field"><span>Phone</span><input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
-        <label className="medsec-field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+        <label className="medsec-field"><span>Doctor Name *</span><input required maxLength={100} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Dr. Maria Santos" /></label>
+        <label className="medsec-field"><span>Specialty *</span><select required value={form.specialty} onChange={(event) => setForm({ ...form, specialty: event.target.value })}><option value="">Choose a specialty</option>{!SPECIALTIES.includes(form.specialty) && form.specialty && <option value={form.specialty} disabled>{form.specialty} (choose a current specialty)</option>}{SPECIALTIES.map(specialty => <option key={specialty}>{specialty}</option>)}</select></label>
+        <label className="medsec-field"><span>Phone</span><input type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="medsec-field"><span>Email</span><input type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="medsec-field wide"><span>Assigned Medical Secretary</span><select value={form.secretaryUsername} onChange={(event) => setForm({ ...form, secretaryUsername: event.target.value })}><option value="">Unassigned</option>
           {secretaries.map((item) => <option key={item.username} value={item.username}>{item.firstName} {item.lastName} (@{item.username})</option>)}</select></label>
       </div>{error && <p className="medsec-error" role="alert">{error}</p>}<div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" className="medsec-btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Add Doctor'}</button></div></form>

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
-import { createRecordId, todayISO } from '../medical secretary/medsecData';
+import { useDraftState } from '../../client/src/useDraftState';
+import { PHONE_PATTERN, RELATIONSHIPS, VISIT_TYPES } from '../../shared/formRules.mjs';
+import { createRecordId, dateKey, todayISO, validateRegisterForm } from '../medical secretary/medsecData';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
 import { validatePatientEdit } from '../medical secretary/medsecData';
 
@@ -23,7 +25,7 @@ export default function PatientsModuleReceptionist({
   const setPatients = propSetPatients || setLocalPatients;
 
   // Selected Patient State for Master-Detail Panel (null = Empty State)
-  const [selectedPatient, setSelectedPatient] = useState(() => patients.find(patient => patient.id === selectedPatientId) || null);
+  const [selectedPatient, setSelectedPatient] = useDraftState('patients:selectedPatient', () => patients.find(patient => patient.id === selectedPatientId) || null);
 
   // Prefer the secretary's saved fields; explicit blanks must not revive older values.
   const medicalInfo = {
@@ -46,8 +48,8 @@ export default function PatientsModuleReceptionist({
   const doctorNames = [...new Set([...doctors.map(doctor => doctor.name), ...patients.map(patient => patient.doctor).filter(Boolean)])];
 
   // Edit Mode state for Personal Info
-  const [isEditing, setIsEditing] = useState(false);
-  const [editFormData, setEditFormData] = useState(() => ({ ...selectedPatient }));
+  const [isEditing, setIsEditing] = useDraftState('patients:isEditing', false);
+  const [editFormData, setEditFormData] = useDraftState('patients:editFormData', () => ({ ...selectedPatient }));
   useEffect(() => {
     if (!selectedPatient || isEditing) return undefined;
     const latest = patients.find((patient) => patient.id === selectedPatient.id);
@@ -65,7 +67,7 @@ export default function PatientsModuleReceptionist({
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   // Modals & Header menus
-  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useDraftState('patients:showRegisterModal', false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -83,14 +85,14 @@ export default function PatientsModuleReceptionist({
   };
 
   // Pic 3 Register Patient Form State
-  const [registerForm, setRegisterForm] = useState({
+  const [registerForm, setRegisterForm] = useDraftState('patients:registerForm', {
     firstName: '',
     sex: '',
     middleName: '',
     contactNumber: '',
     lastName: '',
     address: '',
-    type: 'Checkup',
+    type: 'Routine Checkup', age: '', birthday: '', email: '', emergencyRelationship: '',
     emergFirstName: '',
     emergContactNumber: '',
     emergMiddleName: '',
@@ -130,7 +132,7 @@ export default function PatientsModuleReceptionist({
     setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     setAppointments?.(current => current.map(item => item.patientId === updated.id ? { ...item,
       patientName: updated.name, age: updated.age, sex: updated.sex, contact: updated.contact, address: updated.address,
-      emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact } : item));
+      email: updated.email, emergencyRelationship: updated.emergencyRelationship, emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact } : item));
     setIsEditing(false);
     showToast(`Profile update submitted for ${updated.name}. Check the save status.`);
   };
@@ -150,22 +152,27 @@ export default function PatientsModuleReceptionist({
       return;
     }
 
+    const problem = validateRegisterForm(registerForm);
+    if (problem) { setRegisterErrors({ form: problem }); return; }
+
     const formattedId = createRecordId('PTNT');
     const fullName = `${registerForm.firstName} ${registerForm.middleName ? registerForm.middleName + ' ' : ''}${registerForm.lastName}`.trim();
-    const emergFullName = `${registerForm.emergFirstName} ${registerForm.emergLastName}`.trim();
+    const emergFullName = `${registerForm.emergFirstName} ${registerForm.emergMiddleName} ${registerForm.emergLastName}`.trim();
 
     const newPatientObj = {
       id: formattedId,
       name: fullName,
-      age: '',
+      age: registerForm.age,
       sex: registerForm.sex || '',
-      birthday: '',
+      birthday: registerForm.birthday,
+      email: registerForm.email,
+      emergencyRelationship: registerForm.emergencyRelationship,
       contact: registerForm.contactNumber || '',
       address: registerForm.address,
       emergencyName: emergFullName || '',
       emergencyContact: registerForm.emergContactNumber || '',
       doctor: '',
-      type: registerForm.type || 'Checkup',
+      type: registerForm.type || 'Routine Checkup',
       status: 'Waiting',
       date: todayISO(),
       createdAt: new Date().toISOString(),
@@ -187,7 +194,7 @@ export default function PatientsModuleReceptionist({
       contactNumber: '',
       lastName: '',
       address: '',
-      type: 'Checkup',
+      type: 'Routine Checkup', age: '', birthday: '', email: '', emergencyRelationship: '',
       emergFirstName: '',
       emergContactNumber: '',
       emergMiddleName: '',
@@ -732,9 +739,9 @@ export default function PatientsModuleReceptionist({
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Birthday</span>
                             <input
-                              type="text"
+                              type="date"
                               className="pm-input-pill"
-                              value={editFormData.birthday || ''}
+                              value={dateKey(editFormData.birthday)} min="1900-01-01" max={todayISO()}
                               onChange={(e) => setEditFormData({ ...editFormData, birthday: e.target.value })}
                             />
                           </div>
@@ -744,7 +751,7 @@ export default function PatientsModuleReceptionist({
                             <input
                               type="number"
                               className="pm-input-pill"
-                              value={editFormData.age || ''}
+                              value={editFormData.age ?? ''} required min="0" max="130" step="1"
                               onChange={(e) => setEditFormData({ ...editFormData, age: e.target.value })}
                             />
                           </div>
@@ -766,7 +773,7 @@ export default function PatientsModuleReceptionist({
                           <div className="pm-info-item">
                             <span className="pm-info-lbl">Contact Number</span>
                             <input
-                              type="text"
+                              type="tel" required pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567"
                               className="pm-input-pill"
                               value={editFormData.contact || ''}
                               onChange={(e) => setEditFormData({ ...editFormData, contact: e.target.value })}
@@ -792,6 +799,9 @@ export default function PatientsModuleReceptionist({
                               onChange={(e) => setEditFormData({ ...editFormData, emergencyName: e.target.value })}
                             />
                           </div>
+                          <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact number *</span><input className="pm-input-pill" type="tel" required pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={editFormData.emergencyContact || ''} onChange={e => setEditFormData({ ...editFormData, emergencyContact: e.target.value })} /></label>
+                          <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact relationship *</span><select className="pm-input-pill" required value={editFormData.emergencyRelationship || ''} onChange={e => setEditFormData({ ...editFormData, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+                          <label className="pm-info-item"><span className="pm-info-lbl">Email</span><input className="pm-input-pill" type="email" placeholder="name@gmail.com" value={editFormData.email || ''} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} /></label>
                         </form>
                       )}
 
@@ -967,7 +977,7 @@ export default function PatientsModuleReceptionist({
 
             <h2 className="pm-modal-title">Register Patient</h2>
 
-            <form onSubmit={handleRegisterSubmit} noValidate>
+            <form onSubmit={handleRegisterSubmit}>
               {/* SECTION 1: Personal Information */}
               <h3 className="pm-form-section-title">Personal Information</h3>
 
@@ -1025,10 +1035,10 @@ export default function PatientsModuleReceptionist({
                 <div className="pm-form-field">
                   <label className="pm-field-label">Contact Number</label>
                   <input
-                    type="text"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
                     value={registerForm.contactNumber}
                     onChange={(e) => setRegisterForm({ ...registerForm, contactNumber: e.target.value })}
-                    placeholder="Enter contact number"
+                    placeholder="+639171234567"
                     className="pm-form-input"
                   />
                 </div>
@@ -1055,13 +1065,11 @@ export default function PatientsModuleReceptionist({
                     Status (Visit Type) <span className="req">*</span>
                   </label>
                   <select
-                    value={registerForm.type || 'Checkup'}
+                    value={registerForm.type || 'Routine Checkup'}
                     onChange={(e) => setRegisterForm({ ...registerForm, type: e.target.value })}
                     className="pm-form-select"
                   >
-                    <option value="Checkup">Checkup</option>
-                    <option value="Follow up">Follow up</option>
-                    <option value="Consultation">Consultation</option>
+                    {VISIT_TYPES.map(item => <option key={item}>{item}</option>)}
                   </select>
                 </div>
 
@@ -1083,6 +1091,14 @@ export default function PatientsModuleReceptionist({
                 </div>
               </div>
 
+              <div className="pm-form-grid-2">
+                <label className="pm-form-field"><span className="pm-field-label">Age *</span><input className="pm-form-input" type="number" min="0" max="130" step="1" required value={registerForm.age} onChange={e => setRegisterForm({ ...registerForm, age: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Birthday</span><input className="pm-form-input" type="date" min="1900-01-01" max={todayISO()} value={registerForm.birthday} onChange={e => setRegisterForm({ ...registerForm, birthday: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Email</span><input className="pm-form-input" type="email" placeholder="name@gmail.com" value={registerForm.email} onChange={e => setRegisterForm({ ...registerForm, email: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Emergency contact relationship *</span><select className="pm-form-select" required value={registerForm.emergencyRelationship} onChange={e => setRegisterForm({ ...registerForm, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+              </div>
+              {registerErrors.form && <p role="alert" className="medsec-error">{registerErrors.form}</p>}
+              <p className="medsec-muted">Drafts are saved on this device as you type.</p>
               {/* SECTION 2: Emergency Contact Information */}
               <h3 className="pm-form-section-title">Emergency Contact Information</h3>
 
@@ -1103,10 +1119,10 @@ export default function PatientsModuleReceptionist({
                 <div className="pm-form-field">
                   <label className="pm-field-label">Contact Number</label>
                   <input
-                    type="text"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
                     value={registerForm.emergContactNumber}
                     onChange={(e) => setRegisterForm({ ...registerForm, emergContactNumber: e.target.value })}
-                    placeholder="Enter Contact Number"
+                    placeholder="+639171234567"
                     className="pm-form-input"
                   />
                 </div>

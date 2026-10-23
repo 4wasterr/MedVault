@@ -1,19 +1,22 @@
+import { useDraftState } from '../../client/src/useDraftState';
+import { EMAIL_PATTERN, PHONE_PATTERN, NAME_PATTERN, NAME_GUIDANCE, USERNAME_PATTERN } from '../../shared/formRules.mjs';
+import PasswordField from '../components/PasswordField';
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
 import { validateStaffForm } from '../medical secretary/medsecData';
 import './AdminUserManagement.css';
 
-const blank = { username: '', password: '', firstName: '', middleName: '', lastName: '', address: '', phone: '', email: '', role: 'Receptionist', status: 'approved' };
+const blank = { username: '', password: '', confirmPassword: '', firstName: '', middleName: '', lastName: '', address: '', phone: '', email: '', role: 'Receptionist', status: 'approved' };
 const filters = ['all', 'pending', 'approved', 'deactivated', 'rejected'];
 const fullName = account => [account.firstName, account.middleName, account.lastName].filter(Boolean).join(' ') || account.username;
 
 export default function AdminUserManagement({ accounts, onRefresh }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [form, setForm] = useState(blank);
-  const [editing, setEditing] = useState('');
-  const [open, setOpen] = useState(false);
+  const [form, setForm] = useDraftState('staff:form', blank);
+  const [editing, setEditing] = useDraftState('staff:editing', '');
+  const [open, setOpen] = useDraftState('staff:open', false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -24,7 +27,7 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
     `${item.username} ${fullName(item)} ${item.email} ${item.phone} ${item.address} ${item.role}`.toLowerCase().includes(search.trim().toLowerCase())), [accounts, filter, search]);
 
   const startCreate = () => { setForm(blank); setEditing(''); setOpen(true); setError(''); };
-  const startEdit = (account) => { setForm({ ...account, password: '' }); setEditing(account.username); setOpen(true); setError(''); };
+  const startEdit = (account) => { setForm({ ...account, password: '', confirmPassword: '' }); setEditing(account.username); setOpen(true); setError(''); };
 
   const run = async (operation, success) => {
     setBusy(true); setError(''); setMessage('');
@@ -102,14 +105,15 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
     {open && <div className="medsec-modal-backdrop" role="presentation" onClick={() => setOpen(false)}><div className="medsec-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-title" onClick={(event) => event.stopPropagation()}>
       <h2 id="admin-account-title">{editing ? 'Edit Staff Account' : 'Create Staff Account'}</h2><p>Staff can sign in after an admin creates or approves their account.</p>
       <form onSubmit={save}><div className="medsec-form-grid">
-        <label className="medsec-field"><span>Username *</span><input required minLength="3" maxLength="32" value={form.username} disabled={!!editing} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
-        <label className="medsec-field"><span>{editing ? 'New Password (optional)' : 'Password *'}</span><input type="password" required={!editing} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
-        <label className="medsec-field"><span>First Name *</span><input required value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} /></label>
-        <label className="medsec-field"><span>Middle Name</span><input value={form.middleName} onChange={(event) => setForm({ ...form, middleName: event.target.value })} /></label>
-        <label className="medsec-field"><span>Last Name *</span><input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
-        <label className="medsec-field"><span>Role *</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option>Receptionist</option><option>Medical Secretary</option><option>Super Admin</option></select></label>
-        <label className="medsec-field"><span>Phone *</span><input type="tel" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
-        <label className="medsec-field"><span>Email *</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+        <label className="medsec-field"><span>Username *</span><input required minLength="3" maxLength="32" pattern={USERNAME_PATTERN} title="Start with a letter; use 3–32 letters, numbers, dots, underscores, or hyphens." value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+        <PasswordField label={editing ? 'New Password (optional)' : 'Password'} required={!editing} value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} />
+        <PasswordField label="Confirm Password" required={!editing || !!form.password} confirmFor={form.password} value={form.confirmPassword || ''} onChange={event => setForm({ ...form, confirmPassword: event.target.value })} />
+        <label className="medsec-field"><span>First Name *</span><input required maxLength={80} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} /></label>
+        <label className="medsec-field"><span>Middle Name (optional)</span><input maxLength={80} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.middleName} onChange={(event) => setForm({ ...form, middleName: event.target.value })} /></label>
+        <label className="medsec-field"><span>Last Name *</span><input required maxLength={80} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
+        <label className="medsec-field"><span>Role *</span><select required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option>Receptionist</option><option>Medical Secretary</option><option>Super Admin</option></select></label>
+        <label className="medsec-field"><span>Phone *</span><input type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="medsec-field"><span>Email *</span><input type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="medsec-field wide"><span>Address *</span><input required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label>
       </div>{error && <p className="medsec-error" role="alert">{error}</p>}<div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" className="medsec-btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Create Account'}</button></div></form>
     </div></div>}

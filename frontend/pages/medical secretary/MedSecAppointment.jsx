@@ -1,21 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
-import { availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
+import { useDraftState } from '../../client/src/useDraftState';
+import { demographicsProblem, normalizeVisitType, VISIT_TYPES } from '../../shared/formRules.mjs';
+import { isBookingUnavailable, patientVisits, availableSlots, createRecordId, dateKey, displayDate, displayTime, getSchedule, timeKey, todayISO, visitStatus } from './medsecData';
 import { validateBooking } from './medsecData';
 
-const emptyForm = (doctor = '') => ({ patientId: '', doctor, date: todayISO(), time: '', type: 'Consultation', notes: '' });
+const emptyForm = (doctor = '') => ({ patientId: '', doctor, date: todayISO(), time: '', type: 'New Consultation', notes: '' });
 const progress = ['Waiting', 'In Consultation', 'Completed'];
 
 export default function MedSecAppointment({
   onNavigate, onLogout, patients = [], setPatients, appointments = [], setAppointments, schedules = {}, doctors: managedDoctors = [], onRecordView,
 }) {
   const activeDoctors = managedDoctors.filter((doctor) => doctor.active).map((doctor) => doctor.name);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useDraftState('secretary-booking:selectedId', null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [dateFilter, setDateFilter] = useState('');
-  const [formMode, setFormMode] = useState(null);
-  const [form, setForm] = useState(() => emptyForm(activeDoctors[0]));
+  const [formMode, setFormMode] = useDraftState('secretary-booking:formMode', null);
+  const [form, setForm] = useDraftState('secretary-booking:form', () => emptyForm(activeDoctors[0]));
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
@@ -43,7 +45,7 @@ export default function MedSecAppointment({
     setForm(appointment ? {
       patientId: appointment.patientId || '', doctor: appointment.doctor || activeDoctors[0] || '',
       date: dateKey(appointment.date) || todayISO(), time: timeKey(appointment.time),
-      type: appointment.type || 'Consultation', notes: appointment.notes || '',
+      type: normalizeVisitType(appointment.type), notes: appointment.notes || '',
     } : emptyForm(activeDoctors[0]));
     setError(''); setMessage('');
   };
@@ -56,16 +58,18 @@ export default function MedSecAppointment({
     }
     const patient = patients.find((item) => item.id === form.patientId);
     if (!patient) { setError('Choose a patient profile.'); return; }
-        const bookingProblem = validateBooking({ ...form, patientName: patient.name, contact: patient.contact }, { checkDate: !existing });
+    const patientProblem = demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
+    if (patientProblem) { setError(`${patientProblem} Update the linked patient profile before booking.`); return; }
+        const bookingProblem = validateBooking({ ...form, patientName: patient.name, contact: patient.contact }, { checkDate: true });
     if (bookingProblem) { setError(bookingProblem); return; }
-    if (!form.time || !availableSlots(schedules, appointments, form.doctor, form.date, formMode?.id).includes(form.time)) {
-      setError('Choose an available 30-minute slot for this doctor and date.'); return;
+    if (isBookingUnavailable(schedules, appointments, form.doctor, form.date, form.time, formMode?.id)) {
+      setError('Choose a time within the doctor operating hours, without overlapping bookings or blocked periods.'); return;
     }
     const id = existing?.id || createRecordId('APPT');
     const booking = {
       ...existing, id, patientId: patient.id, patientName: patient.name, age: patient.age, sex: patient.sex,
       contact: patient.contact, address: patient.address, emergencyName: patient.emergencyName,
-      emergencyContact: patient.emergencyContact, doctor: form.doctor, room: existing?.room || 'To be assigned', date: form.date,
+      emergencyContact: patient.emergencyContact, emergencyRelationship: patient.emergencyRelationship, doctor: form.doctor, room: existing?.room || 'To be assigned', date: form.date,
       time: displayTime(form.time), type: form.type, notes: form.notes,
       status: existing && existing.status !== 'Open' ? existing.status : 'Confirmed',
       visitStatus: existing && existing.status !== 'Open' ? visitStatus(existing) : 'Waiting',
@@ -77,7 +81,7 @@ export default function MedSecAppointment({
       return { ...item, appointments: [{ sourceAppointmentId: id, date: displayDate(form.date), doctor: form.doctor,
         type: form.type, status: booking.status }, ...history] };
     }));
-    setSelectedId(id); setFormMode(null); setError(''); setMessage('Booking saved and shared with reception.');
+    setSelectedId(id); setFormMode(null); setForm(emptyForm(activeDoctors[0])); setError(''); setMessage('Booking saved and shared with reception.');
   };
 
   const advance = () => {
@@ -95,12 +99,9 @@ export default function MedSecAppointment({
             ? { ...entry, status: next === 'Completed' ? 'Done' : next } : entry),
         };
         if (next === 'Completed') {
-          const previousVisits = patient.visits || (patient.appointments || [])
-            .filter((appointment) => /done|completed/i.test(appointment.status || ''))
-            .map((appointment, index) => ({ id: `legacy-${patient.id}-${index}`, date: appointment.date || '',
-              doctor: appointment.doctor || '', type: appointment.type || '', summary: '', notes: '' }));
+          const previousVisits = patientVisits(patient);
           const savedVisit = { id: `visit-${selected.id}`, appointmentId: selected.id, date: displayDate(selected.date),
-            doctor: selected.doctor, type: selected.type,
+            doctor: selected.doctor, type: normalizeVisitType(selected.type),
             summary: patient.consultation?.findings || patient.medical?.diagnosis || '',
             notes: selected.notes || '', diagnosis: patient.consultation?.diagnosis || patient.medical?.diagnosis || '',
             treatment: patient.consultation?.treatment || patient.medical?.treatment || '',
@@ -114,7 +115,7 @@ export default function MedSecAppointment({
               .join(' · '),
             vitals: { ...patient.vitals }, savedAt: new Date().toISOString(),
           };
-          updated.visits = [savedVisit, ...previousVisits.filter((visit) => visit.appointmentId !== selected.id)];
+          updated.visits = patientVisits({ visits: [savedVisit, ...previousVisits] });
         }
         return updated;
       }));
@@ -194,7 +195,7 @@ export default function MedSecAppointment({
             <h2>{formMode.kind === 'new' ? 'New Booking' : formMode.kind === 'open' ? 'Book Open Slot' : 'Edit Booking'}</h2>
             <button type="button" className="medsec-btn outline" onClick={() => { setFormMode(null); setError(''); }}>Cancel</button>
           </div>
-          <p className="medsec-muted">Available times use the doctor schedule and exclude booked or blocked slots.</p>
+          <p className="medsec-muted">Choose any minute within the doctor operating hours. Each appointment lasts 30 minutes and cannot overlap bookings or blocked periods. Drafts are saved on this device.</p>
           <form onSubmit={saveBooking}>
             <div className="medsec-form-grid">
               <label className="medsec-field wide"><span>Patient profile</span><select required value={form.patientId} onChange={(event) => setForm({ ...form, patientId: event.target.value })}>
@@ -204,11 +205,9 @@ export default function MedSecAppointment({
                 {[...new Set([...activeDoctors, ...(formMode.kind === 'edit' && form.doctor ? [form.doctor] : [])])]
                   .map((doctor) => <option key={doctor}>{doctor}</option>)}
               </select></label>
-              <label className="medsec-field"><span>Date</span><input type="date" required value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, time: '' })} /></label>
-              <label className="medsec-field"><span>30-minute slot</span><select required value={form.time} onChange={(event) => setForm({ ...form, time: event.target.value })}>
-                <option value="">Select available time</option>{formSlots.map((slot) => <option key={slot} value={slot}>{displayTime(slot)}</option>)}
-              </select></label>
-              <label className="medsec-field"><span>Visit type</span><input required value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} /></label>
+              <label className="medsec-field"><span>Date</span><input type="date" required min={todayISO()} value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value, time: '' })} /></label>
+              <label className="medsec-field"><span>Time *</span><input type="time" step="60" required value={form.time} onChange={event => setForm({ ...form, time: event.target.value })} /></label>
+              <label className="medsec-field"><span>Visit type *</span><select required value={form.type} onChange={event => setForm({ ...form, type: event.target.value })}>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></label>
               <label className="medsec-field wide"><span>Booking notes</span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label>
             </div>
             <p className="medsec-muted">{formSlots.length} free slots · {displayTime(currentSchedule.start)}–{displayTime(currentSchedule.end)}

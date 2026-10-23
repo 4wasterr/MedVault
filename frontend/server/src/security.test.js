@@ -56,7 +56,7 @@ test('security controls reject attacks and preserve encrypted clinical data', as
         after: { ...patient, medical: { diagnosis: 'Unauthorized' } } }] })).status, 403)
     })
     await t.test('stored medical fields and audit snapshots are encrypted and authenticated', async () => {
-      const patient = { id: 'security-patient', name: 'Test Patient', medical: { diagnosis: 'Confidential diagnosis',
+      const patient = { id: 'security-patient', name: 'Test Patient' , age: '35', contact: '+639171234567', emergencyContact: '+639181234567', emergencyRelationship: 'Parent', medical: { diagnosis: 'Confidential diagnosis',
         notes: '<script>alert(1)</script>Safe note; BP < 140; sugar > 5; Ben & Sara' }, appointments: [] }
       assert.equal((await send('changes', login.cookie, { changes: [{ collection: 'patients', id: patient.id, before: null, after: patient }] })).status, 200)
       const raw = (await db.raw('SELECT data FROM records WHERE collection = ? AND id = ?', ['patients', patient.id], 'get')).data

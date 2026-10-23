@@ -30,7 +30,7 @@ function createSecurity(directory) {
   const jwtKey = secret('MEDVAULT_JWT_SECRET', directory)
   const protectedFields = new Set(['vitals', 'medical', 'medicalHistory', 'consultation', 'recordNotes',
     'diagnosis', 'treatment', 'followUp', 'summary', 'notes', 'vitalsSummary', 'name', 'patientName',
-    'contact', 'address', 'birthday', 'emergencyName', 'emergencyContact'])
+    'contact', 'email', 'address', 'birthday', 'emergencyName', 'emergencyContact', 'emergencyRelationship'])
   function encrypt(value, context) {
     const iv = crypto.randomBytes(12)
     const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv)

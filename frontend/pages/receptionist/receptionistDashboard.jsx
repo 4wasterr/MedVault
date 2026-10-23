@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
-import { createRecordId, dateKey, getSchedule, hasBooking, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
+import { useDraftState } from '../../client/src/useDraftState';
+import { PHONE_PATTERN, RELATIONSHIPS, VISIT_TYPES, demographicsProblem } from '../../shared/formRules.mjs';
+import { createRecordId, dateKey, displayTime, isBookingUnavailable, todayISO, validateBooking, validateRegisterForm } from '../medical secretary/medsecData';
 
 export default function ReceptionistDashboard({
   onLogout,
@@ -24,10 +26,12 @@ export default function ReceptionistDashboard({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [activeModal, setActiveModal] = useState(null); // 'register' | 'appointment' | 'patientList' | 'patientDetail' | null
+  const [activeModal, setActiveModal] = useDraftState('dashboard:activeModal', null); // 'register' | 'appointment' | 'patientList' | 'patientDetail' | null
   const [selectedPatient, setSelectedPatient] = useState(null);
   const dashboardDate = new Date();
   const [appointmentError, setAppointmentError] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
+  const [appointmentForm, setAppointmentForm] = useDraftState('dashboard:appointmentForm', { patientId: '', doctor: doctors.find(doctor => doctor.active)?.name || '', date: todayISO(), time: '14:00', type: 'New Consultation' });
 
   const closeModal = () => {
     setActiveModal(null);
@@ -36,8 +40,8 @@ export default function ReceptionistDashboard({
   };
 
   // Pic 3 Register Form State
-  const [registerFormData, setRegisterFormData] = useState({
-    firstName: '',
+  const [registerFormData, setRegisterFormData] = useDraftState('dashboard:registerFormData', {
+    firstName: '', age: '', birthday: '', email: '', emergencyRelationship: '',
     sex: '',
     middleName: '',
     contactNumber: '',
@@ -115,6 +119,8 @@ export default function ReceptionistDashboard({
 
   const handleRegisterPatient = (e) => {
     e.preventDefault();
+    const problem = validateRegisterForm(registerFormData);
+    if (problem) { setRegistrationError(problem); return; }
     const fullName = `${registerFormData.firstName} ${registerFormData.middleName ? registerFormData.middleName + ' ' : ''}${registerFormData.lastName}`.trim();
     if (!fullName) return;
 
@@ -122,12 +128,12 @@ export default function ReceptionistDashboard({
       const newPatientObj = {
         id: createRecordId('PTNT'),
         name: fullName,
-        age: '',
+        age: registerFormData.age, birthday: registerFormData.birthday, email: registerFormData.email, emergencyRelationship: registerFormData.emergencyRelationship,
         status: 'Waiting',
         sex: registerFormData.sex || '',
         contact: registerFormData.contactNumber || '',
         address: registerFormData.address || '',
-        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergLastName}`.trim(),
+        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergMiddleName} ${registerFormData.emergLastName}`.trim(),
         emergencyContact: registerFormData.emergContactNumber || '',
         doctor: '',
         date: todayKey,
@@ -138,8 +144,9 @@ export default function ReceptionistDashboard({
     }
 
     setActiveModal(null);
+    setRegistrationError('');
     setRegisterFormData({
-      firstName: '',
+      firstName: '', age: '', birthday: '', email: '', emergencyRelationship: '',
       sex: '',
       middleName: '',
       contactNumber: '',
@@ -154,24 +161,19 @@ export default function ReceptionistDashboard({
 
   const handleDashboardAppointment = (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const patient = patients?.find((item) => item.id === form.get('patientId'));
-    if (!patient || !setAppointments) return;
-    const date = String(form.get('date'));
-    const time = String(form.get('time'));
-    const doctor = String(form.get('doctor'));
-    if (!doctor) { setAppointmentError('Choose an active doctor.'); return; }
-    if (!dateKey(date) || dateKey(date) < todayISO()) { setAppointmentError('Choose today or a future appointment date.'); return; }
-    const savedSchedule = getSchedule(schedules, doctor, date);
-    if (hasBooking(appointments, doctor, date, time) ||
-      !slotsBetween(savedSchedule.start, savedSchedule.end).includes(timeKey(time)) || savedSchedule.blocked?.[timeKey(time)]) {
-      setAppointmentError('This time is already booked or blocked in Doctor Schedules.'); return;
+    const patient = patients?.find(item => item.id === appointmentForm.patientId);
+    if (!patient || !setAppointments) { setAppointmentError('Choose a patient profile.'); return; }
+    const { date, time, doctor, type } = appointmentForm;
+    const problem = validateBooking(appointmentForm) || demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
+    if (problem) { setAppointmentError(problem); return; }
+    if (isBookingUnavailable(schedules, appointments, doctor, date, time)) {
+      setAppointmentError('Choose a time within doctor operating hours without overlapping bookings or blocked periods.'); return;
     }
     const booking = {
       id: createRecordId('APPT'), patientId: patient.id, patientName: patient.name,
       age: patient.age, sex: patient.sex, contact: patient.contact, address: patient.address,
-      emergencyName: patient.emergencyName, emergencyContact: patient.emergencyContact,
-      doctor, date, time, type: String(form.get('type')), status: 'Confirmed', visitStatus: 'Waiting',
+      emergencyName: patient.emergencyName, emergencyContact: patient.emergencyContact, emergencyRelationship: patient.emergencyRelationship,
+      doctor, date, time: displayTime(time), type, status: 'Confirmed', visitStatus: 'Waiting',
       notes: 'Appointment booked by Receptionist.',
     };
     setAppointments((current) => [booking, ...current]);
@@ -179,6 +181,7 @@ export default function ReceptionistDashboard({
       ...item, appointments: [{ sourceAppointmentId: booking.id, date, doctor, type: booking.type, status: 'Scheduled' }, ...(item.appointments || [])],
     } : item));
     setAppointmentError('');
+    setAppointmentForm({ patientId: '', doctor: doctors.find(item => item.active)?.name || '', date: todayISO(), time: '14:00', type: 'New Consultation' });
     closeModal();
   };
 
@@ -706,7 +709,7 @@ export default function ReceptionistDashboard({
 
             <h2 className="pm-modal-title">Register Patient</h2>
 
-            <form onSubmit={handleRegisterPatient} noValidate>
+            <form onSubmit={handleRegisterPatient}>
               {/* SECTION 1: Personal Information */}
               <h3 className="pm-form-section-title">Personal Information</h3>
 
@@ -760,10 +763,10 @@ export default function ReceptionistDashboard({
                 <div className="pm-form-field">
                   <label className="pm-field-label">Contact Number</label>
                   <input
-                    type="text"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
                     value={registerFormData.contactNumber}
                     onChange={(e) => setRegisterFormData({ ...registerFormData, contactNumber: e.target.value })}
-                    placeholder="Enter Contact Number"
+                    placeholder="+639171234567"
                     className="pm-form-input"
                   />
                 </div>
@@ -799,6 +802,14 @@ export default function ReceptionistDashboard({
                 </div>
               </div>
 
+              <div className="pm-form-grid-2">
+                <label className="pm-form-field"><span className="pm-field-label">Age *</span><input className="pm-form-input" type="number" min="0" max="130" step="1" required value={registerFormData.age} onChange={e => setRegisterFormData({ ...registerFormData, age: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Birthday</span><input className="pm-form-input" type="date" min="1900-01-01" max={todayISO()} value={registerFormData.birthday} onChange={e => setRegisterFormData({ ...registerFormData, birthday: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Email</span><input className="pm-form-input" type="email" placeholder="name@gmail.com" value={registerFormData.email} onChange={e => setRegisterFormData({ ...registerFormData, email: e.target.value })} /></label>
+                <label className="pm-form-field"><span className="pm-field-label">Emergency contact relationship *</span><select className="pm-form-select" required value={registerFormData.emergencyRelationship} onChange={e => setRegisterFormData({ ...registerFormData, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+              </div>
+              {registrationError && <p role="alert" className="medsec-error">{registrationError}</p>}
+              <p className="medsec-muted">Drafts are saved on this device as you type.</p>
               {/* SECTION 2: Emergency Contact Information */}
               <h3 className="pm-form-section-title">Emergency Contact Information</h3>
 
@@ -820,10 +831,10 @@ export default function ReceptionistDashboard({
                 <div className="pm-form-field">
                   <label className="pm-field-label">Contact Number</label>
                   <input
-                    type="text"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
                     value={registerFormData.emergContactNumber}
                     onChange={(e) => setRegisterFormData({ ...registerFormData, emergContactNumber: e.target.value })}
-                    placeholder="Enter Contact Number"
+                    placeholder="+639171234567"
                     className="pm-form-input"
                   />
                 </div>
@@ -891,25 +902,25 @@ export default function ReceptionistDashboard({
             >
               <div className="field-block">
                 <label>Patient</label>
-                <select name="patientId" required defaultValue=""><option value="">Select patient</option>
+                <select name="patientId" required value={appointmentForm.patientId} onChange={e => setAppointmentForm({ ...appointmentForm, patientId: e.target.value })}><option value="">Select patient</option>
                   {(patients || []).map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
                 </select>
               </div>
               <div className="field-block-row">
-                <div className="field-block"><label>Doctor</label><select name="doctor" required defaultValue={doctors.find((doctor) => doctor.active)?.name || ''}>
+                <div className="field-block"><label>Doctor</label><select name="doctor" required value={appointmentForm.doctor} onChange={e => setAppointmentForm({ ...appointmentForm, doctor: e.target.value })}>
                   {!doctors.some((doctor) => doctor.active) && <option value="">No active doctors available</option>}
                   {doctors.filter((doctor) => doctor.active).map((doctor) => <option key={doctor.id}>{doctor.name}</option>)}
                 </select></div>
-                <div className="field-block"><label>Visit type</label><select name="type" defaultValue="Consultation"><option>Consultation</option><option>Checkup</option><option>Follow-up</option></select></div>
+                <div className="field-block"><label>Visit type</label><select name="type" required value={appointmentForm.type} onChange={e => setAppointmentForm({ ...appointmentForm, type: e.target.value })}>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></div>
               </div>
               <div className="field-block-row">
                 <div className="field-block">
                   <label>Date</label>
-                  <input name="date" type="date" min={todayISO()} defaultValue={todayISO()} required />
+                  <input name="date" type="date" min={todayISO()} value={appointmentForm.date} onChange={e => setAppointmentForm({ ...appointmentForm, date: e.target.value })} required />
                 </div>
                 <div className="field-block">
                   <label>Time</label>
-                  <input name="time" type="time" step="1800" defaultValue="14:00" required />
+                  <input name="time" type="time" step="60" value={appointmentForm.time} onChange={e => setAppointmentForm({ ...appointmentForm, time: e.target.value })} required />
                 </div>
               </div>
               {appointmentError && <p role="alert" style={{ color: '#b91c1c', margin: 0 }}>{appointmentError}</p>}

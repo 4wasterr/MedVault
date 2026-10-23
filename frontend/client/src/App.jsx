@@ -8,6 +8,8 @@ import MedSecPatientRecords from '../../pages/medical secretary/MedSecPatientRec
 import MedSecAppointment from '../../pages/medical secretary/MedSecAppointment';
 import MedSecDoctorSchedules from '../../pages/medical secretary/MedSecDoctorSchedules';
 import AdminDashboard from '../../pages/super admin/AdminDashboard';
+import { DraftScope } from './useDraftState';
+import { draftKey, readDraft, writeDraft } from './draftStorage';
 import { api, applyChanges, changesBetween, emptyState } from './sharedState';
 
 class ErrorBoundary extends Component {
@@ -58,6 +60,47 @@ export default function App() {
   const flushRef = useRef(null);
   const retryRef = useRef(null);
   const [saveBlocked, setSaveBlocked] = useState(false);
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  useEffect(() => {
+    const failed = () => setDraftStorageFailed(true);
+    window.addEventListener('medvault-draft-storage-failed', failed);
+    return () => window.removeEventListener('medvault-draft-storage-failed', failed);
+  }, []);
+
+  const persistPending = (base, pending) => {
+    const session = userRef.current;
+    if (!session) return;
+    try {
+      if (!writeDraft(localStorage, draftKey(`${session.role}:${session.username}`, 'pending-changes'), changesBetween(base, pending))) setDraftStorageFailed(true);
+    } catch { setDraftStorageFailed(true); }
+  };
+
+  const restorePending = (state, session) => {
+    let changes = [];
+    try { changes = readDraft(localStorage, draftKey(`${session.role}:${session.username}`, 'pending-changes'), []); }
+    catch { setDraftStorageFailed(true); }
+    if (!Array.isArray(changes)) return;
+    const pending = changes.filter(change => {
+      if (!['patients', 'appointments', 'schedules'].includes(change?.collection)) return false;
+      const current = change.collection === 'schedules' ? state.schedules[change.id] : state[change.collection].find(item => item.id === change.id);
+      return JSON.stringify(current || null) !== JSON.stringify(change.after);
+    });
+    if (!pending.length) return;
+    const conflict = pending.some(change => {
+      const current = change.collection === 'schedules' ? state.schedules[change.id] : state[change.collection].find(item => item.id === change.id);
+      return JSON.stringify(current || null) !== JSON.stringify(change.before);
+    });
+    const merged = applyChanges(state, pending);
+    recordsRef.current = merged;
+    setRecords(merged);
+    if (conflict) {
+      markSaveBlocked(true);
+      setSyncMessage('Recovered changes conflict with newer server records. Review your changes before retrying save.');
+    } else {
+      setSyncMessage('Recovered pending changes from this device.');
+      queueMicrotask(() => flushRef.current?.());
+    }
+  };
 
   const markSaveBlocked = (value) => {
     saveBlockedRef.current = value;
@@ -90,6 +133,7 @@ export default function App() {
       const merged = applyChanges(serverState, newerChanges);
       recordsRef.current = merged;
       setRecords(merged);
+      persistPending(serverState, merged);
       markSaveBlocked(false);
       setSyncMessage('');
       setSaveStatus('Changes saved to the shared server.');
@@ -150,6 +194,7 @@ export default function App() {
     const next = { ...previous, [collection]: value };
     recordsRef.current = next;
     setRecords(next);
+    persistPending(syncedRef.current, next);
     markSaveBlocked(false);
     setSaveStatus('Saving changes...');
     queueMicrotask(() => flushRef.current?.());
@@ -166,6 +211,7 @@ export default function App() {
         setCurrentUser(session.role);
         setCurrentUsername(session.username);
         installState(state);
+        restorePending(state, session);
         setStartupError('');
       } catch (error) {
         if (cancelled) return;
@@ -294,6 +340,7 @@ export default function App() {
       installState(state);
       setSyncMessage('');
       setSaveStatus('');
+      restorePending(state, { role, username });
       handleNavigate('dashboard');
     } catch (error) {
       setStartupError(error.message);
@@ -376,7 +423,8 @@ export default function App() {
     <p>{startupError}</p><button type="button" onClick={() => window.location.reload()}>Retry</button>
   </div>;
 
-  return <ErrorBoundary>
+  return <DraftScope.Provider key={currentUsername || 'signup'} value={currentUser + ':' + (currentUsername || 'signup')}><ErrorBoundary>
+    {draftStorageFailed && <div className="medvault-sync-alert" role="alert">Browser storage is unavailable or full. Keep this page open until your changes are saved to the server.</div>}
     {isMedicalSecretary && legacyAvailable && <div className="medvault-import-alert" role="status">
       <span>Records from the previous browser-only version are available here. Importing replaces shared records before clinical changes have been made.</span>
       <button type="button" disabled={importingLegacy} onClick={importBrowserRecords}>
@@ -401,5 +449,5 @@ export default function App() {
           selectedPatientId={patientTarget.id} initialTab={patientTarget.tab} />
           : effectiveView === 'appointments' ? <Appointments {...sharedProps} />
             : <Dashboard {...sharedProps} receptionistName={currentUser} />}
-  </ErrorBoundary>;
+  </ErrorBoundary></DraftScope.Provider>;
 }

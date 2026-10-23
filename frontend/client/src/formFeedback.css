@@ -1,0 +1,10 @@
+.required-indicator, .required, .required-star { color: #b91c1c !important; font-weight: 700; }
+.mv-inline-error { display: block; width: 100%; margin-top: 5px; color: #b91c1c !important; font-size: .78rem; line-height: 1.4; font-weight: 500; }
+.mv-field-hint { display: block; color: #5a6e81; font-size: .75rem; line-height: 1.5; }
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: #b91c1c !important; outline-color: #b91c1c; }
+.mv-password-wrap { position: relative; width: 100%; }
+.mv-password-wrap input { width: 100%; padding-right: 44px !important; }
+.mv-password-wrap button { display: grid; place-items: center; position: absolute; top: 50%; right: 8px; transform: translateY(-50%); padding: 5px; border: 0; border-radius: 4px; background: transparent; color: #0284c7; cursor: pointer; }
+.mv-password-wrap button:focus-visible { outline: 2px solid #0284c7; outline-offset: 2px; }
+.mv-profile-card { max-width: 760px; margin: 32px auto; padding: 28px; border: 1px solid #d5e8f2; border-radius: 20px; background: white; }
+.mv-profile-card h1 { margin: 16px 0; }

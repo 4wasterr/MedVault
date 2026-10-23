@@ -101,8 +101,8 @@ test('admin audit grid covers all users and preserves workflow integrity', async
     })
 
     await t.test('clinical create, update and cascading visit deletion have safe summaries', async () => {
-      const patient = { id: 'audit-patient', name: 'Private patient name', medical: { diagnosis: 'Secret diagnosis' }, vitals: {}, appointments: [],
-        visits: [{ id: 'audit-visit', date: '2020-01-01', doctor: 'Dr. Cruz', diagnosis: 'Secret diagnosis' }] }
+      const patient = { id: 'audit-patient', name: 'Private patient name' , age: '35', contact: '+639171234567', emergencyContact: '+639181234567', emergencyRelationship: 'Parent', medical: { diagnosis: 'Secret diagnosis' }, vitals: {}, appointments: [],
+        visits: [{ id: 'audit-visit', type: 'Follow-up', date: '2020-01-01', doctor: 'Dr. Cruz', diagnosis: 'Secret diagnosis' }] }
       const created = await request('changes', secretary.cookie, { changes: [{ collection: 'patients', id: patient.id, before: null, after: patient }] })
       assert.equal(created.status, 200)
       const before = created.body.patients.find(row => row.id === patient.id)

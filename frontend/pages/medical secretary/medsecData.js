@@ -1,3 +1,4 @@
+import { clinicToday, contactProblem, demographicsProblem, normalizeVisitType, validISODate, vitalProblem, VISIT_TYPES, nameProblem, staffProblems, SPECIALTIES } from '../../shared/formRules.mjs';
 export const DOCTORS = [];
 
 export function createRecordId(prefix) {
@@ -25,10 +26,7 @@ export function isPastPatient(patient, appointments = []) {
     appointments.some((appointment) => appointment.patientId === patient.id && completed(appointment));
 }
 
-export function todayISO() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
+export const todayISO = clinicToday;
 
 export function dateKey(value) {
   if (!value) return '';
@@ -41,8 +39,7 @@ export function dateKey(value) {
 function validCalendarDate(value) {
   const key = dateKey(value);
   if (!key) return '';
-  const parsed = new Date(`${key}T12:00:00`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key ? key : '';
+  return validISODate(key) ? key : '';
 }
 
 export function displayDate(value) {
@@ -59,7 +56,7 @@ export function timeMinutes(value) {
   if (!match) return NaN;
   let hour = Number(match[1]);
   const minute = Number(match[2]);
-  if (minute > 59 || hour > (match[3] ? 12 : 23)) return NaN;
+  if (minute > 59 || hour > (match[3] ? 12 : 23) || (match[3] && hour < 1)) return NaN;
   if (match[3]) hour = (hour % 12) + (match[3].toUpperCase() === 'PM' ? 12 : 0);
   return hour * 60 + minute;
 }
@@ -94,7 +91,7 @@ export function scheduleKey(doctor, date) {
 
 export function getSchedule(schedules, doctor, date) {
   return schedules[scheduleKey(doctor, date)] || {
-    doctor, date: dateKey(date), start: '09:00', end: '17:00', blocked: {},
+    doctor, date: dateKey(date), start: '08:00', end: '17:00', blocked: {},
   };
 }
 
@@ -127,64 +124,84 @@ export function visitStatus(appointment) {
 
 
 export function validatePatientEdit(patient) {
-  if (!patient) return 'Patient data is missing.';
-  if (!patient.name?.trim()) return 'Patient name is required.';
-  if (patient.age !== '' && patient.age !== undefined) {
-    const age = Number(patient.age);
-    if (!Number.isInteger(age) || age < 0 || age > 130) return 'Age must be a whole number from 0 to 130.';
-  }
-  if (patient.birthday) {
-    const birthdayKey = validCalendarDate(patient.birthday);
-    if (!birthdayKey) return 'Birthday is not a valid date.';
-    const birthday = new Date(`${birthdayKey}T12:00:00`);
-    if (birthday.getTime() > Date.now()) return 'Birthday cannot be in the future.';
-    if (birthday.getFullYear() < 1900) return 'Birthday cannot be before 1900.';
-  }
-  if (patient.sex && !['Female', 'Male', 'Other'].includes(patient.sex)) return 'Choose a valid sex value.';
-  return validateContactDetails(patient);
+  const problem = nameProblem(patient?.name, { max: 160 }) || nameProblem(patient?.emergencyName, { max: 160, optional: true });
+  if (problem) return problem;
+  return demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
 }
-export function validateRegisterForm(formData) {
-  if (!formData) return "Registration data is missing.";
-  if (!formData.firstName?.trim() || !formData.lastName?.trim()) {
-    return "First and last names are required.";
+export function validateRegisterForm(form) {
+  for (const key of ['firstName', 'middleName', 'lastName', 'emergFirstName', 'emergMiddleName', 'emergLastName']) {
+    const problem = nameProblem(form?.[key], { optional: !['firstName', 'lastName'].includes(key) });
+    if (problem) return problem;
   }
-  return null;
+  return demographicsProblem({ ...form, contact: form.contactNumber, emergencyContact: form.emergContactNumber });
 }
-export function validateBooking(form, { checkDate = false } = {}) {
-  if (!form) return 'Booking data is missing.';
-  if (!form.patientId && !form.patientName?.trim()) return 'Choose a patient or enter the patient name.';
+export function validateBooking(form, { checkDate = true } = {}) {
+  if (!form?.patientId && !form?.patientName?.trim()) return 'Choose a patient or enter the patient name.';
+  if (form.patientName && nameProblem(form.patientName, { max: 160 })) return nameProblem(form.patientName, { max: 160 });
   if (!form.doctor?.trim()) return 'Choose an active doctor.';
   const bookingDate = validCalendarDate(form.date);
-  if (!bookingDate || !timeKey(form.time)) return 'Please select a valid date and time slot.';
-  if (checkDate && bookingDate < todayISO()) return 'Appointments cannot be created in the past.';
-  return null;
+  if (!bookingDate || !timeKey(form.time)) return 'Please select a valid date and time.';
+  if (checkDate && bookingDate < todayISO()) return 'Appointments cannot be booked or rescheduled in the past.';
+  if (!VISIT_TYPES.includes(form.type)) return 'Choose a standard visit type.';
+  return form.contact !== undefined ? contactProblem(form, { required: false }) : null;
 }
-export function validateContactDetails(contact) {
-  if (!contact) return 'Contact details are missing.';
-  const phone = (value) => {
-    const compact = String(value).trim().replace(/[\s()-]/g, '');
-    const local = compact.startsWith('+63') ? `0${compact.slice(3)}` : compact;
-    return /^09\d{9}$/.test(local);
-  };
-  if (contact.contact && !phone(contact.contact)) return 'Contact number must be a valid Philippine mobile number.';
-  if (contact.emergencyContact && !phone(contact.emergencyContact)) return 'Emergency contact must be a valid Philippine mobile number.';
-  return null;
-}
+export const validateContactDetails = contactProblem;
 export function validatePatientRecord(record) {
-  if (!record) return "Patient record data is missing.";
-  return null;
-}
-export function validateStaffForm(staff) {
-  if (!staff) return "Staff data is missing.";
-  if (!staff.name?.trim() && !staff.firstName?.trim()) {
-    return "Staff name is required.";
+  const problem = validatePatientEdit(record);
+  if (problem) return problem;
+  for (const [key, value] of Object.entries(record.vitals || {})) {
+    const issue = vitalProblem(key, value);
+    if (issue) return issue;
+  }
+  if (record.vitals?.measuredAt && (!Number.isFinite(new Date(record.vitals.measuredAt).getTime()) || new Date(record.vitals.measuredAt).getTime() > Date.now() + 300000)) return 'Vitals measured at must be a valid time and cannot be in the future.';
+  for (const visit of record.visits || []) {
+    if (!validISODate(visit.date) || !visit.doctor?.trim()) return 'Each visit needs a valid date and doctor.';
+    if (!VISIT_TYPES.includes(visit.type)) return 'Choose a standard visit type for every visit.';
   }
   return null;
+}
+export function validateStaffForm(staff, options) {
+  return Object.values(staffProblems(staff, options))[0] || null;
 }
 export function validateDoctorForm(doctor) {
-  if (!doctor) return "Doctor data is missing.";
-  if (!doctor.name?.trim() && !doctor.firstName?.trim()) {
-    return "Doctor name is required.";
+  const problem = nameProblem(doctor?.name, { max: 100 });
+  if (problem) return problem;
+  if (!SPECIALTIES.includes(doctor.specialty)) return 'Choose a standard specialty.';
+  return contactProblem({ contact: doctor.phone, email: doctor.email }, { required: false });
+}
+export function isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId) {
+  const minute = timeMinutes(time);
+  const schedule = getSchedule(schedules, doctor, date);
+  if (!Number.isFinite(minute) || minute < timeMinutes(schedule.start) || minute + 30 > timeMinutes(schedule.end)) return true;
+  if (hasBooking(appointments, doctor, date, time, excludeId)) return true;
+  const overlaps = (start, end) => minute < end && minute + 30 > start;
+  return Object.keys(schedule.blocked || {}).some(slot => schedule.blocked[slot] && overlaps(timeMinutes(slot), timeMinutes(slot) + 30)) ||
+    (schedule.blockedPeriods || []).some(period => overlaps(timeMinutes(period.start), timeMinutes(period.end)));
+}
+
+// Keep distinct appointments even when a patient sees the same doctor twice that day.
+export function patientVisits(patient) {
+  const visits = patient.visits ?? (patient.appointments || [])
+    .filter(item => /^(done|completed)$/i.test(item.status || item.visitStatus || ''))
+    .map((item, index) => {
+      const appointmentId = item.sourceAppointmentId || item.appointmentId || item.id;
+      return { id: appointmentId ? 'visit-' + appointmentId : 'legacy-' + patient.id + '-' + index,
+        appointmentId, date: item.date || '', doctor: item.doctor || '', type: item.type || '', summary: '', notes: '' };
+    });
+  const result = [];
+  const source = visit => visit.appointmentId || visit.sourceAppointmentId || (visit.id?.startsWith('visit-APPT') ? visit.id.slice(6) : '');
+  const legacy = visit => !source(visit) && (!visit.id || visit.id.startsWith('legacy-'));
+  const fingerprint = visit => dateKey(visit.date) + '|' + String(visit.doctor || '').trim().toLowerCase() + '|' + normalizeVisitType(visit.type);
+  for (const visit of visits) {
+    const index = result.findIndex(item => (visit.id && item.id === visit.id) || (source(visit) && source(item) === source(visit)) ||
+      ((legacy(visit) || legacy(item)) && fingerprint(item) === fingerprint(visit)));
+    const normalized = { ...visit, date: dateKey(visit.date), type: normalizeVisitType(visit.type) };
+    if (index < 0) result.push(normalized);
+    else {
+      const preferred = source(visit) && !source(result[index]) ? normalized : result[index];
+      const other = preferred === normalized ? result[index] : normalized;
+      result[index] = { ...other, ...Object.fromEntries(Object.entries(preferred).filter(([, value]) => value !== '' && value !== undefined)) };
+    }
   }
-  return null;
+  return result;
 }

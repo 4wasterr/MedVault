@@ -2,6 +2,8 @@ export const emptyState = () => ({ patients: [], appointments: [], schedules: {}
 
 let csrfToken = '';
 let csrfRequest;
+let pendingActions = 0;
+export const hasPendingActions = () => pendingActions > 0;
 async function getCsrfToken() {
   if (csrfToken) return csrfToken;
   if (!csrfRequest) csrfRequest = fetch('/api/csrf', { credentials: 'same-origin' })
@@ -16,6 +18,9 @@ async function getCsrfToken() {
 
 export async function api(path, options = {}) {
   const changing = !['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase());
+  const critical = changing && !['activity', 'logout'].includes(path);
+  if (critical) pendingActions++;
+  try {
   const protection = changing ? { 'X-CSRF-Token': await getCsrfToken() } : {};
   const response = await fetch(`/api/${path}`, {
     credentials: 'same-origin',
@@ -31,6 +36,9 @@ export async function api(path, options = {}) {
     throw error;
   }
   return body;
+  } finally {
+    if (critical) pendingActions--;
+  }
 }
 
 function asMap(collection, value) {

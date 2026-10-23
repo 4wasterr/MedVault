@@ -8,9 +8,10 @@ const { openStorage } = require('./storage')
 const { createSecurity, hashPassword, verifyPassword, installProtection, production } = require('./security')
 const { listAudit, AuditQueryError } = require('./audit')
 const mfa = require('./mfa')
+const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProblem: sharedVitalProblem, VISIT_TYPES, RELATIONSHIPS } = require('../../shared/formRules.mjs')
 // ===== VALIDATIONS (added) =====
 function todayDateString() {
-  return process.env.MEDVAULT_TODAY || (process.env.NODE_ENV === 'production' ? new Date().toISOString().slice(0, 10) : '2026-10-01')
+  return process.env.MEDVAULT_TODAY || clinicToday()
 }
 
 function normalizeName(name) {
@@ -47,16 +48,16 @@ function findDuplicatePatient(patient, existingPatients) {
 
 const ALLOWED_PATIENT_FIELDS = new Set([
   'id', 'name', 'age', 'sex', 'birthday', 'contact', 'address',
-  'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
+  'email', 'emergencyRelationship', 'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
   'vitals', 'medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes', 'appointments',
   'isRestricted', 'consentStatus', 'encounters', 'documents'
 ])
 const ALLOWED_APPOINTMENT_FIELDS = new Set([
   'id', 'patientId', 'patientName', 'doctor', 'doctorId', 'room', 'date', 'time',
-  'type', 'status', 'contact', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
+  'type', 'status', 'contact', 'email', 'age', 'sex', 'address', 'emergencyName', 'emergencyRelationship', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
 ])
 const ALLOWED_SCHEDULE_FIELDS = new Set([
-  'doctor', 'date', 'start', 'end', 'blocked'
+  'doctor', 'date', 'start', 'end', 'blocked', 'blockedPeriods'
 ])
 
 function stripUnknownFields(collection, data) {
@@ -104,7 +105,9 @@ function filterPatientForRole(patient, user, doctors = []) {
     return {
       id: patient.id,
       name: patient.name,
-      age: patient.age || '',
+      age: patient.age ?? '',
+      email: patient.email || '',
+      emergencyRelationship: patient.emergencyRelationship || '',
       sex: patient.sex || '',
       birthday: patient.birthday || '',
       contact: patient.contact || '',
@@ -176,24 +179,19 @@ function filterSchedulesForRole(schedules, user, doctors = []) {
   }
   return schedules
 }
-const PHONE = /^09\d{9}$/
 const PERSON_NAME = /^[\p{L}\p{M}]+(?:[\s.'’ -][\p{L}\p{M}]+)*$/u
 const SEXES = ['', 'Female', 'Male', 'Other']
 const TEXT_LIMIT = 2000
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const text = (value) => (value === undefined || value === null ? '' : String(value)).trim()
-const validPatientPhone = (value) => {
-  const compact = text(value).replace(/[\s()-]/g, '')
-  const local = compact.startsWith('+63') ? `0${compact.slice(3)}` : compact
-  return PHONE.test(local)
-}
+const validPatientPhone = isPHMobile
 
 // Accepts 2026-10-15, "Jan 10, 1991", etc. Returns a Date or null.
 function parseDate(value) {
   const raw = text(value)
   if (!raw) return null
-  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw)
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00Z` : raw)
   if (Number.isNaN(date.getTime())) return null
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && date.toISOString().slice(0, 10) !== raw) return null // e.g. 2026-02-31
   return date
@@ -206,37 +204,20 @@ function validTime(value) {
   return Number(match[2]) <= 59 && (match[3] ? hour >= 1 && hour <= 12 : hour <= 23)
 }
 
-const VITAL_RULES = {
-  hr: { label: 'Heart rate', min: 20, max: 300 },
-  temp: { label: 'Temperature (°C)', min: 30, max: 45 },
-  respRate: { label: 'Respiratory rate', min: 4, max: 80 },
-  spo2: { label: 'SpO₂', min: 50, max: 100 },
-  weight: { label: 'Weight (kg)', min: 0.2, max: 500 },
-  height: { label: 'Height (cm)', min: 20, max: 260 },
+function vitalProblem(key, raw) {
+  if (key === 'measuredAt' && text(raw)) {
+    const date = parseDate(raw)
+    if (!date || date.getTime() > Date.now() + 5 * 60_000) return 'Vitals measured at must be valid and cannot be in the future.'
+  }
+  return sharedVitalProblem(key, raw)
 }
 
-function vitalProblem(key, raw) {
-  const value = text(raw)
-  if (!value) return null
-  if (key === 'bp') {
-    const match = value.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/)
-    if (!match) return 'Blood pressure must look like 120/80.'
-    const [systolic, diastolic] = [Number(match[1]), Number(match[2])]
-    if (systolic < 50 || systolic > 260 || diastolic < 30 || diastolic > 160 || diastolic >= systolic) return 'Blood pressure values are out of range.'
-    return null
+function vitalsProblem(vitals) {
+  if (!vitals || typeof vitals !== 'object' || Array.isArray(vitals)) return 'Vitals must contain named measurements.'
+  for (const [key, value] of Object.entries(vitals)) {
+    const problem = vitalProblem(key, value)
+    if (problem) return problem
   }
-  if (key === 'measuredAt') {
-    const date = parseDate(value)
-    if (!date) return 'Vitals “measured at” is not a valid date and time.'
-    if (date.getTime() > Date.now() + 5 * 60_000) return 'Vitals cannot be measured in the future.'
-    return null
-  }
-
-
-  const rule = VITAL_RULES[key]
-  if (!rule) return null
-  const number = Number(value)
-  if (!Number.isFinite(number) || number < rule.min || number > rule.max) return `${rule.label} must be a number between ${rule.min} and ${rule.max}.`
   return null
 }
 
@@ -248,9 +229,18 @@ function tooLong(value) {
 }
 
 // Returns an error message (string) or null when the patient record is acceptable.
-function validatePatient(after, before = null) {
+function validatePatient(after, before = null, { legacyImport = false } = {}) {
   if (!after) return null
   const was = before || {}
+  if (before === null && !legacyImport) {
+    const problem = demographicsProblem(after, todayDateString())
+    if (problem) return problem
+  }
+  for (const [field, label] of [['age', 'Age'], ['contact', 'Contact number'], ['emergencyContact', 'Emergency contact number'], ['emergencyRelationship', 'Emergency contact relationship']]) {
+    if (!legacyImport && !same(was[field], after[field]) && !text(after[field])) return label + ' is required.'
+  }
+  if (!same(was.email, after.email) && after.email && !isPublicEmail(after.email)) return 'Use a supported public email domain such as gmail.com, yahoo.com, or outlook.com.'
+  if (!same(was.emergencyRelationship, after.emergencyRelationship) && text(after.emergencyRelationship) && !RELATIONSHIPS.includes(after.emergencyRelationship)) return 'Choose a valid emergency contact relationship.'
   const name = text(after.name)
   if (!same(was.name, after.name) && !PERSON_NAME.test(name)) return 'Patient name may only contain letters, spaces and . \' -'
   if (!same(was.sex, after.sex) && !SEXES.includes(text(after.sex))) return 'Sex must be Female, Male or Other.'
@@ -261,14 +251,16 @@ function validatePatient(after, before = null) {
   if (!same(was.birthday, after.birthday) && text(after.birthday) !== '') {
     const birthday = parseDate(after.birthday)
     if (!birthday) return 'Birthday is not a valid date.'
-    if (birthday.getTime() > Date.now()) return 'Birthday cannot be in the future.'
+    if (birthday.toISOString().slice(0, 10) > todayDateString()) return 'Birthday cannot be in the future.'
     if (birthday.getFullYear() < 1900) return 'Birthday cannot be before 1900.'
   }
-  if (!same(was.contact, after.contact) && text(after.contact) && !validPatientPhone(after.contact)) return 'Contact number is not a valid phone number.'
-  if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !validPatientPhone(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
+  const phoneValid = value => validPatientPhone(value) || (legacyImport && /^09\d{9}$/.test(text(value).replace(/[\s()-]/g, '')))
+  if (!same(was.contact, after.contact) && text(after.contact) && !phoneValid(after.contact)) return 'Contact number is not a valid phone number.'
+  if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !phoneValid(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
   if (!same(was.address, after.address) && text(after.address).length > 300) return 'Address must be 300 characters or fewer.'
   if (!same(was.emergencyName, after.emergencyName) && text(after.emergencyName).length > 160) return 'Emergency contact name must be 160 characters or fewer.'
-  if (after.vitals && typeof after.vitals === 'object' && !same(was.vitals, after.vitals)) {
+  if (after.vitals !== undefined && (!after.vitals || typeof after.vitals !== 'object' || Array.isArray(after.vitals))) return 'Vitals must contain named measurements.'
+  if (after.vitals && !same(was.vitals, after.vitals)) {
     for (const key of Object.keys(after.vitals)) {
       if (same(was.vitals?.[key], after.vitals[key])) continue
       const problem = vitalProblem(key, after.vitals[key])
@@ -280,7 +272,9 @@ function validatePatient(after, before = null) {
   }
   if (Array.isArray(after.visits) && !same(was.visits, after.visits)) {
     for (const visit of after.visits) {
-      if (visit && typeof visit === 'object' && text(visit.date) && !parseDate(visit.date)) return 'Each visit needs a valid date.'
+      if (!visit || typeof visit !== 'object' || !parseDate(visit.date) || !text(visit.doctor)) return 'Each visit needs a valid date and doctor.'
+      const previous = (was.visits || []).find(item => item.id === visit.id)
+      if (!legacyImport && (!previous || previous.type !== visit.type) && !VISIT_TYPES.includes(visit.type)) return 'Choose a standard visit type.'
     }
   }
   return null
@@ -292,7 +286,7 @@ function validateAppointment(after, before = null) {
   const was = before || {}
   const todayStr = todayDateString()
   const apptDate = parseDate(after.date)?.toISOString().slice(0, 10)
-  const isDateChanging = was.date !== after.date
+  const isDateChanging = was.date !== after.date || was.time !== after.time || was.doctor !== after.doctor
   const isNewOrRescheduled = before === null || was.status === 'Open' || isDateChanging
 
   if (after.status === 'Open') {
@@ -312,6 +306,8 @@ function validateAppointment(after, before = null) {
     return null
   }
 
+  if ((before === null || was.status === 'Open' || !same(was.contact, after.contact)) && !isPHMobile(after.contact)) return 'Contact number is required and must use +639XXXXXXXXX.'
+  if ((!before || !same(was.type, after.type)) && !VISIT_TYPES.includes(after.type)) return 'Choose a standard visit type.'
   if (!same(was.patientName, after.patientName) && (!text(after.patientName) || text(after.patientName).length > 160)) return 'Appointment needs a patient name of at most 160 characters.'
   if (!same(was.contact, after.contact) && text(after.contact) && !validPatientPhone(after.contact)) return 'Appointment contact number is not a valid phone number.'
   if (!same(was.emergencyContact, after.emergencyContact) && text(after.emergencyContact) && !validPatientPhone(after.emergencyContact)) return 'Emergency contact number is not a valid phone number.'
@@ -902,7 +898,7 @@ async function createApp({ seedDemo = false } = {}) {
           const item = booked[index]
           const itemMinute = appointmentMinutes(item.time)
           const date = dateOnly(item.date)
-          if (!item.doctor || !date || !Number.isFinite(itemMinute) || itemMinute % 30) return { status: 400, error: 'Booked appointments require a doctor, date, and 30-minute time slot.' }
+          if (!item.doctor || !date || !Number.isFinite(itemMinute)) return { status: 400, error: 'Booked appointments require a doctor, date, and valid time.' }
           if (booked.slice(index + 1).some((other) => doctorKey(other.doctor) === doctorKey(item.doctor) && dateOnly(other.date) === date &&
             Math.abs(appointmentMinutes(other.time) - itemMinute) < 30)) {
             return { status: 409, error: 'This doctor already has an appointment within that 30-minute period.' }
@@ -914,8 +910,8 @@ async function createApp({ seedDemo = false } = {}) {
             return { status: 409, error: 'This booking conflicts with doctor operating hours.' }
           }
           if (schedule) {
-            const key = `${String(Math.floor(itemMinute / 60)).padStart(2, '0')}:${String(itemMinute % 60).padStart(2, '0')}`
-            if (schedule.blocked?.[key]) {
+            if (Object.keys(schedule.blocked || {}).some(slot => schedule.blocked[slot] && itemMinute < appointmentMinutes(slot) + 30 && itemMinute + 30 > appointmentMinutes(slot)) ||
+              (schedule.blockedPeriods || []).some(period => itemMinute < appointmentMinutes(period.end) && itemMinute + 30 > appointmentMinutes(period.start))) {
               return { status: 409, error: 'This booking conflicts with the doctor schedule.' }
             }
           }
@@ -944,8 +940,8 @@ async function createApp({ seedDemo = false } = {}) {
           !password || Buffer.byteLength(password, 'utf8') > 72 ||
           password !== confirmPassword || !['Receptionist', 'Medical Secretary'].includes(role) ||
           !firstName || firstName.length > 80 || middleName.length > 80 || !lastName || lastName.length > 80 ||
-          !address || address.length > 300 || !/^[+\d][\d\s()-]{6,24}$/.test(phone) ||
-          email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          !address || address.length > 300 || !isPHMobile(phone) ||
+          !isPublicEmail(email)) {
           return response.status(400).json({ error: 'Check the required details and role.' })
         }
         if ((await db.prepare('SELECT username FROM staff_accounts WHERE username = ? OR email = ?').get(username, email))) {
@@ -1281,8 +1277,8 @@ async function createApp({ seedDemo = false } = {}) {
           !['approved', 'deactivated'].includes(details.status) ||
           !details.firstName || details.firstName.length > 80 || details.middleName.length > 80 ||
           !details.lastName || details.lastName.length > 80 || !details.address || details.address.length > 300 ||
-          !/^[+\d][\d\s()-]{6,24}$/.test(details.phone) ||
-          details.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email)) return null
+          ((!current.username || details.phone !== current.phone) && !isPHMobile(details.phone)) ||
+          ((!current.username || details.email !== current.email) && !isPublicEmail(details.email))) return null
         return details
       }
 
@@ -1372,7 +1368,7 @@ async function createApp({ seedDemo = false } = {}) {
         }
         if (!details.name || details.name.length > 100 || details.specialty.length > 100 ||
           details.phone.length > 30 || details.email.length > 254 ||
-          (details.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email))) return null
+          (details.email && !isPublicEmail(details.email)) || (details.phone && !isPHMobile(details.phone))) return null
         if (details.secretaryUsername) {
           const secretary = (await db.prepare('SELECT role, status FROM staff_accounts WHERE username = ?').get(details.secretaryUsername))
           if (!(secretary?.role === 'Medical Secretary' && secretary.status === 'approved')) return null
@@ -1739,7 +1735,7 @@ async function createApp({ seedDemo = false } = {}) {
 
         // Apply strict validation to all imported patients
         for (const patient of importedPatients) {
-          const problem = validatePatient(patient)
+          const problem = validatePatient(patient, null, { legacyImport: true })
           if (problem) return reject(request, response, 400, `Patient ${patient.id || ''}: ${problem}`)
         }
 
@@ -1760,7 +1756,7 @@ async function createApp({ seedDemo = false } = {}) {
           const start = appointmentMinutes(schedule.start)
           const end = appointmentMinutes(schedule.end)
           if (!schedule.doctor || !parseDate(schedule.date) || !/^\d{4}-\d{2}-\d{2}$/.test(schedule.date) ||
-            !Number.isFinite(start) || !Number.isFinite(end) || start % 30 || end % 30 || end - start < 30) {
+            !Number.isFinite(start) || !Number.isFinite(end) || end - start < 30) {
             return reject(request, response, 400, `Schedule for ${key} requires valid start and end times.`)
           }
         }
@@ -1884,10 +1880,11 @@ async function createApp({ seedDemo = false } = {}) {
             const start = appointmentMinutes(after.start)
             const end = appointmentMinutes(after.end)
             if (!after.doctor || !parseDate(after.date) || !/^\d{4}-\d{2}-\d{2}$/.test(after.date) || `${after.doctor}|${after.date}` !== id ||
-              !Number.isFinite(start) || !Number.isFinite(end) || start % 30 || end % 30 || end - start < 30 ||
+              !Number.isFinite(start) || !Number.isFinite(end) || end - start < 30 ||
+              (after.blockedPeriods !== undefined && (!Array.isArray(after.blockedPeriods) || after.blockedPeriods.some(period => !period || !Number.isFinite(appointmentMinutes(period.start)) || !Number.isFinite(appointmentMinutes(period.end)) || appointmentMinutes(period.start) < start || appointmentMinutes(period.end) > end || appointmentMinutes(period.start) >= appointmentMinutes(period.end)))) ||
               !after.blocked || typeof after.blocked !== 'object' || Array.isArray(after.blocked) ||
-              Object.keys(after.blocked).some((slot) => { const minute = appointmentMinutes(slot); return !Number.isFinite(minute) || minute % 30 || minute < start || minute + 30 > end })) {
-              return reject(request, response, 400, 'Doctor schedules require a date and valid 30-minute slots.')
+              Object.keys(after.blocked).some((slot) => { const minute = appointmentMinutes(slot); return !Number.isFinite(minute) || minute < start || minute + 30 > end })) {
+              return reject(request, response, 400, 'Doctor schedules require a date and valid operating hours.')
             }
           }
           if (collection === 'schedules') {
@@ -2177,6 +2174,8 @@ async function createApp({ seedDemo = false } = {}) {
         if (!patientId || typeof patientId !== 'string') {
           return reject(request, response, 400, 'Valid patient ID is required.')
         }
+        const vitalIssue = vitalsProblem(vitalsSnapshot)
+        if (vitalIssue) return reject(request, response, 400, vitalIssue)
 
         const patientRow = await db.prepare("SELECT data FROM records WHERE collection = 'patients' AND id = ?").get(patientId)
         if (!patientRow) return reject(request, response, 404, 'Patient not found.')
@@ -2253,6 +2252,8 @@ async function createApp({ seedDemo = false } = {}) {
         }
 
         const b = request.body || {}
+        const vitalIssue = b.vitalsSnapshot === undefined ? null : vitalsProblem(b.vitalsSnapshot)
+        if (vitalIssue) return reject(request, response, 400, vitalIssue)
         const updated = {
           subjective: b.subjective !== undefined ? text(b.subjective) : existing.subjective,
           objective: b.objective !== undefined ? text(b.objective) : existing.objective,

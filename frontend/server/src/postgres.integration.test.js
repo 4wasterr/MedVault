@@ -62,12 +62,12 @@ test('PostgreSQL API persists records, repairs partial schemas, and survives res
     assert.equal(overview.body.patients, 0)
     assert.equal(typeof overview.body.patients, 'number')
     const registration = { username: 'pg.staff', password: 'TestStaffPass123!', confirmPassword: 'TestStaffPass123!',
-      firstName: 'Test', lastName: 'Staff', address: 'Test Clinic', phone: '09123456789', email: 'pg.staff@example.test', role: 'Medical Secretary' }
+      firstName: 'Test', lastName: 'Staff', address: 'Test Clinic', phone: '+639123456789', email: 'pg.staff@gmail.com', role: 'Medical Secretary' }
     assert.equal((await request('register', '', registration)).status, 201)
     assert.equal((await request('admin/accounts/pg.staff/decision', adminLogin.cookie, { decision: 'approve' })).status, 200)
     const staff = await request('login', '', { username: registration.username, password: registration.password })
     assert.equal(staff.status, 200)
-    const patient = { id: 'PTNT-pg-test', name: 'PostgreSQL Integration Patient', vitals: {}, medical: {}, appointments: [] }
+    const patient = { id: 'PTNT-pg-test', name: 'PostgreSQL Integration Patient' , age: '35', contact: '+639171234567', emergencyContact: '+639181234567', emergencyRelationship: 'Parent', vitals: {}, medical: {}, appointments: [] }
     const saved = await request('changes', staff.cookie, { changes: [
       { collection: 'patients', id: patient.id, before: null, after: patient },
     ] })

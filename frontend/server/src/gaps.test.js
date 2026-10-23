@@ -1,3 +1,4 @@
+process.env.MEDVAULT_TODAY = '2026-10-01'
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('fs')
@@ -60,7 +61,7 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
         date: '2020-01-01',
         time: '09:00 AM',
         status: 'Confirmed',
-        type: 'Consultation',
+        type: 'New Consultation', contact: '+639171234567',
       }
       const pastRes = await request('/api/changes', recCookie, {
         changes: [{ collection: 'appointments', id: pastAppointment.id, before: null, after: pastAppointment }]
@@ -77,7 +78,7 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
         date: '2050-05-10',
         time: '07:30 AM',
         status: 'Confirmed',
-        type: 'Consultation',
+        type: 'New Consultation', contact: '+639171234567',
       }
       const earlyRes = await request('/api/changes', recCookie, {
         changes: [{ collection: 'appointments', id: earlyAppointment.id, before: null, after: earlyAppointment }]
@@ -94,7 +95,7 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
         date: '2050-05-10',
         time: '09:00 AM',
         status: 'Confirmed',
-        type: 'Consultation',
+        type: 'New Consultation', contact: '+639171234567',
       }
       const validRes = await request('/api/changes', recCookie, {
         changes: [{ collection: 'appointments', id: validAppointment.id, before: null, after: validAppointment }]
@@ -111,7 +112,7 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
         date: '2050-05-10',
         time: '10:00 AM',
         status: 'Confirmed',
-        type: 'Consultation',
+        type: 'New Consultation', contact: '+639171234567',
       }
       const createRes = await request('/api/changes', recCookie, {
         changes: [{ collection: 'appointments', id: appt.id, before: null, after: appt }]
@@ -241,9 +242,9 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       currentRecCookie = recLoginUpdated.cookie
       const patientA = {
         id: 'PTNT-dup-1',
-        name: 'Maria Clara Santos',
+        name: 'Maria Clara Santos', age: '36', emergencyContact: '+639181234567', emergencyRelationship: 'Parent',
         birthday: '1990-05-15',
-        contact: '0917-123-4567',
+        contact: '+639171234567',
         status: 'Waiting',
         vitals: {},
         medical: {},
@@ -257,9 +258,9 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       // Attempt creating duplicate patient with same normalized name and birthday
       const patientB = {
         id: 'PTNT-dup-2',
-        name: 'Maria Clara-Santos',
+        name: 'Maria Clara-Santos', age: '36', emergencyContact: '+639181234567', emergencyRelationship: 'Parent',
         birthday: '1990-05-15',
-        contact: '0917-999-8888',
+        contact: '+639179998888',
         status: 'Waiting',
         vitals: {},
         medical: {},

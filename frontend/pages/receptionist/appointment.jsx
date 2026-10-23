@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import './receptionistDashboard.css';
 import './appointment.css';
-import { createRecordId, dateKey, displayDate, displayTime, getSchedule, hasBooking, scheduleKey, slotsBetween, timeKey, todayISO } from '../medical secretary/medsecData';
+import { useDraftState } from '../../client/src/useDraftState';
+import PatientIntakeFields from '../components/PatientIntakeFields';
+import { PHONE_PATTERN, RELATIONSHIPS, VISIT_TYPES, demographicsProblem, normalizeVisitType } from '../../shared/formRules.mjs';
+import { isBookingUnavailable, createRecordId, dateKey, displayDate, displayTime, timeKey, todayISO } from '../medical secretary/medsecData';
 import { validateBooking, validateContactDetails } from '../medical secretary/medsecData';
 
 const canModifyBooking = (appointment) => ['Confirmed', 'Checked-In', 'Waiting'].includes(appointment?.status);
@@ -27,16 +30,12 @@ export default function Appointment({
   const doctorNames = [...new Set([...activeDoctorNames, ...appointments.map((item) => item.doctor).filter(Boolean)])];
   const setAppointments = setSharedAppointments ?? setLocalAppointments;
 
-  const unavailable = (doctor, date, time, excludeId) => {
-    if (hasBooking(appointments, doctor, date, time, excludeId)) return true;
-    const saved = schedules[scheduleKey(doctor, date)];
-    return Boolean(saved && (!slotsBetween(saved.start, saved.end).includes(timeKey(time)) || saved.blocked?.[timeKey(time)]));
-  };
+  const unavailable = (doctor, date, time, excludeId) => isBookingUnavailable(schedules, appointments, doctor, date, time, excludeId);
 
-  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [selectedAppointment, setSelectedAppointment] = useDraftState('appointments:selectedAppointment', null);
 
   // Detail card active tab: 'apptInfo' | 'patientInfo' | 'notes'
-  const [activeTab, setActiveTab] = useState('apptInfo');
+  const [activeTab, setActiveTab] = useDraftState('appointments:activeTab', 'apptInfo');
   const selectedId = selectedAppointment?.id;
   useEffect(() => {
     let cancelled = false;
@@ -63,12 +62,12 @@ export default function Appointment({
   const [notifications, setNotifications] = useState([]);
 
   // Inline editing states for Tab 3 (Clinical Notes)
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
-  const [editedNotesText, setEditedNotesText] = useState('');
+  const [isEditingNotes, setIsEditingNotes] = useDraftState('appointments:isEditingNotes', false);
+  const [editedNotesText, setEditedNotesText] = useDraftState('appointments:editedNotesText', '');
 
   // Inline editing states for Tab 2 (Patient Details)
-  const [isEditingPatientInfo, setIsEditingPatientInfo] = useState(false);
-  const [patientEditForm, setPatientEditForm] = useState({
+  const [isEditingPatientInfo, setIsEditingPatientInfo] = useDraftState('appointments:isEditingPatientInfo', false);
+  const [patientEditForm, setPatientEditForm] = useDraftState('appointments:patientEditForm', {
     contact: '',
     address: '',
     emergencyName: '',
@@ -76,10 +75,10 @@ export default function Appointment({
   });
 
   // Modals
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showBookSlotModal, setShowBookSlotModal] = useState(false);
-  const [targetSlot, setTargetSlot] = useState(null);
+  const [showNewModal, setShowNewModal] = useDraftState('appointments:showNewModal', false);
+  const [showEditModal, setShowEditModal] = useDraftState('appointments:showEditModal', false);
+  const [showBookSlotModal, setShowBookSlotModal] = useDraftState('appointments:showBookSlotModal', false);
+  const [targetSlot, setTargetSlot] = useDraftState('appointments:targetSlot', null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -96,31 +95,28 @@ export default function Appointment({
   }, [appointments, selectedAppointment, showEditModal, isEditingNotes, isEditingPatientInfo]);
 
   // Form states for New Appointment
-  const [newForm, setNewForm] = useState({
+  const [newForm, setNewForm] = useDraftState('appointments:newForm', {
     patientId: '',
     patientName: '',
     date: todayISO(),
     time: '',
-    type: 'Routine Checkup',
+    type: 'Routine Checkup', age: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
     doctor: activeDoctorNames[0] || '',
     room: 'General Intake A',
     contact: '',
     notes: '',
   });
-  const newSchedule = getSchedule(schedules, newForm.doctor, newForm.date);
-  const newBookingSlots = slotsBetween(newSchedule.start, newSchedule.end)
-    .filter((slot) => !unavailable(newForm.doctor, newForm.date, slot));
 
   // Form state for Editing Appointment
-  const [editForm, setEditForm] = useState({});
-  const [editOriginal, setEditOriginal] = useState(null);
+  const [editForm, setEditForm] = useDraftState('appointments:editForm', {});
+  const [editOriginal, setEditOriginal] = useDraftState('appointments:editOriginal', null);
 
   // Form state for Booking an Available Slot
-  const [bookForm, setBookForm] = useState({
+  const [bookForm, setBookForm] = useDraftState('appointments:bookForm', {
     patientId: '',
     patientName: '',
     contact: '',
-    type: 'Routine Checkup',
+    type: 'Routine Checkup', age: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
     doctor: activeDoctorNames[0] || '',
     notes: '',
   });
@@ -270,17 +266,17 @@ export default function Appointment({
       patientId: '',
       patientName: '',
       contact: '',
-      type: slot.type || 'Routine Checkup',
+      type: normalizeVisitType(slot.type), age: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
       doctor: slot.doctor || activeDoctorNames[0] || '',
       notes: '',
     });
     setShowBookSlotModal(true);
   };
 
-  const newPatientForBooking = (name, contact, doctor, type, date) => ({
-    id: createRecordId('PTNT'), name: name.trim(), age: '', sex: '', birthday: '',
-    contact: contact || '', address: '', emergencyName: '', emergencyContact: '',
-    doctor, type, date, status: 'Waiting', createdAt: new Date().toISOString(),
+  const newPatientForBooking = (form) => ({
+    id: createRecordId('PTNT'), name: form.patientName.trim(), age: form.age, sex: '', birthday: '',
+    contact: form.contact, address: '', emergencyName: form.emergencyName, emergencyContact: form.emergencyContact,
+    emergencyRelationship: form.emergencyRelationship, status: 'Waiting', createdAt: new Date().toISOString(),
     vitals: {}, medical: {}, appointments: [],
   });
 
@@ -297,8 +293,9 @@ export default function Appointment({
     }
 
     const matchedPatient = patients.find((patient) => patient.id === bookForm.patientId);
-    const patient = matchedPatient || newPatientForBooking(bookForm.patientName, bookForm.contact,
-      bookForm.doctor, bookForm.type, targetSlot.date);
+    const patient = matchedPatient || newPatientForBooking(bookForm);
+    const patientProblem = demographicsProblem(patient);
+    if (patientProblem) { showToast(patientProblem); return; }
 
     const updatedAppt = {
       ...targetSlot,
@@ -308,7 +305,7 @@ export default function Appointment({
       contact: bookForm.contact || patient.contact || '',
       address: patient.address || '',
       emergencyName: patient.emergencyName || '',
-      emergencyContact: patient.emergencyContact || '',
+      emergencyContact: patient.emergencyContact || '', emergencyRelationship: patient.emergencyRelationship || '',
       type: bookForm.type,
       doctor: bookForm.doctor,
       status: 'Confirmed',
@@ -338,17 +335,18 @@ export default function Appointment({
     //if (!newForm.patientName.trim()) return;
     const bookingProblem = validateBooking(newForm, { checkDate: true });
     if (bookingProblem) { showToast(bookingProblem); return; }
-    if (!newBookingSlots.some((slot) => timeKey(slot) === timeKey(newForm.time))) {
+    if (unavailable(newForm.doctor, newForm.date, newForm.time)) {
       showToast('That slot is booked or blocked in Doctor Schedules.'); return;
     }
 
     const matchedPatient = patients.find((patient) => patient.id === newForm.patientId);
-    const patient = matchedPatient || newPatientForBooking(newForm.patientName, newForm.contact,
-      newForm.doctor, newForm.type, newForm.date);
+    const patient = matchedPatient || newPatientForBooking(newForm);
+    const patientProblem = demographicsProblem(patient);
+    if (patientProblem) { showToast(patientProblem); return; }
 
     const newApptObj = {
       id: createRecordId('APPT'),
-      time: newForm.time,
+      time: displayTime(newForm.time),
       patientId: patient.id,
       patientName: patient.name,
       age: patient.age, sex: patient.sex,
@@ -381,7 +379,7 @@ export default function Appointment({
       patientName: '',
       date: todayISO(),
       time: '',
-      type: 'Routine Checkup',
+      type: 'Routine Checkup', age: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
       doctor: activeDoctorNames[0] || '',
       room: 'General Intake A',
       contact: '',
@@ -392,7 +390,7 @@ export default function Appointment({
 
   // Action: Open Edit Modal
   const handleOpenEdit = (appt) => {
-    setEditForm({ ...appt });
+    setEditForm({ ...appt, date: dateKey(appt.date), time: timeKey(appt.time), type: normalizeVisitType(appt.type) });
     setEditOriginal(appt);
     setShowEditModal(true);
   };
@@ -402,6 +400,8 @@ export default function Appointment({
     if (JSON.stringify(appointments.find((item) => item.id === editForm.id) || null) !== JSON.stringify(editOriginal)) {
       showToast('This appointment changed in another session. Reopen it before saving.'); return;
     }
+    const bookingProblem = validateBooking(editForm);
+    if (bookingProblem) { showToast(bookingProblem); return; }
     if (unavailable(editForm.doctor, editForm.date, editForm.time, editForm.id)) {
       showToast('That slot is booked or blocked in Doctor Schedules.'); return;
     }
@@ -496,7 +496,7 @@ export default function Appointment({
       contact: selectedAppointment.contact || '',
       address: selectedAppointment.address || '',
       emergencyName: selectedAppointment.emergencyName || '',
-      emergencyContact: selectedAppointment.emergencyContact || '',
+      emergencyContact: selectedAppointment.emergencyContact || '', emergencyRelationship: selectedAppointment.emergencyRelationship || '',
     });
     setIsEditingPatientInfo(true);
   };
@@ -513,14 +513,14 @@ export default function Appointment({
       contact: patientEditForm.contact,
       address: patientEditForm.address,
       emergencyName: patientEditForm.emergencyName,
-      emergencyContact: patientEditForm.emergencyContact,
+      emergencyContact: patientEditForm.emergencyContact, emergencyRelationship: patientEditForm.emergencyRelationship,
     };
     setAppointments((prev) =>
       prev.map((a) => (a.id === selectedAppointment.id ? updated : a))
     );
     if (setPatients && updated.patientId) setPatients((items) => items.map((patient) => patient.id === updated.patientId ? {
       ...patient, contact: updated.contact, address: updated.address,
-      emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact,
+      emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact, emergencyRelationship: updated.emergencyRelationship,
     } : patient));
     setSelectedAppointment(updated);
     setIsEditingPatientInfo(false);
@@ -1541,9 +1541,9 @@ export default function Appointment({
                         /* Inline Patient Details Editor */
                         <div className="ap-inline-edit-box animate-fade">
                           <div className="ap-inline-field">
-                            <label className="ap-inline-label">Contact Number</label>
+                            <label className="ap-inline-label">Contact Number *</label>
                             <input
-                              type="text"
+                              type="tel" required pattern={PHONE_PATTERN} maxLength="13"
                               className="ap-inline-input"
                               value={patientEditForm.contact}
                               onChange={(e) => setPatientEditForm({ ...patientEditForm, contact: e.target.value })}
@@ -1577,7 +1577,7 @@ export default function Appointment({
                                 className="ap-inline-input"
                                 value={patientEditForm.emergencyContact}
                                 onChange={(e) => setPatientEditForm({ ...patientEditForm, emergencyContact: e.target.value })}
-                              />
+                              /><label>Relationship *<select className="ap-form-input" required value={patientEditForm.emergencyRelationship || ''} onChange={e => setPatientEditForm({ ...patientEditForm, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
                             </div>
                           </div>
 
@@ -1795,28 +1795,21 @@ export default function Appointment({
 
                 <div className="ap-form-field">
                   <label className="ap-form-label">Date *</label>
-                  <input type="date" required className="ap-form-input" value={newForm.date}
+                  <input type="date" required min={todayISO()} className="ap-form-input" value={newForm.date}
                     onChange={(e) => setNewForm({ ...newForm, date: e.target.value, time: '' })} />
                 </div>
 
                 <div className="ap-form-field">
                   <label className="ap-form-label">Time Slot *</label>
-                  <select
-                    className="ap-form-select"
-                    required
-                    value={newForm.time}
-                    onChange={(e) => setNewForm({ ...newForm, time: e.target.value })}
-                  >
-                    <option value="">Select available time</option>
-                    {newBookingSlots.map((slot) => <option key={slot} value={displayTime(slot)}>{displayTime(slot)}</option>)}
-                  </select>
+                  <input type="time" step="60" required className="ap-form-input" value={timeKey(newForm.time)} onChange={e => setNewForm({ ...newForm, time: e.target.value })} />
+
                 </div>
 
                 <div className="ap-form-field">
-                  <label className="ap-form-label">Contact Number</label>
+                  <label className="ap-form-label">Contact Number *</label>
                   <input
-                    type="text"
-                    placeholder="0917-000-0000"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
+                    placeholder="+639171234567"
                     className="ap-form-input"
                     value={newForm.contact}
                     onChange={(e) => setNewForm({ ...newForm, contact: e.target.value })}
@@ -1830,10 +1823,7 @@ export default function Appointment({
                     value={newForm.type}
                     onChange={(e) => setNewForm({ ...newForm, type: e.target.value })}
                   >
-                    <option value="Routine Checkup">Routine Checkup</option>
-                    <option value="General Consultation">General Consultation</option>
-                    <option value="Follow-up (Routine)">Follow-up (Routine)</option>
-                    <option value="Standard Intake">Standard Intake</option>
+                    {VISIT_TYPES.map(item => <option key={item}>{item}</option>)}
                   </select>
                 </div>
 
@@ -1872,6 +1862,8 @@ export default function Appointment({
                 </div>
               </div>
 
+              {!newForm.patientId && <div className="ap-form-grid-2"><PatientIntakeFields value={newForm} onChange={(key, value) => setNewForm(current => ({ ...current, [key]: value }))} /></div>}
+              <p className="medsec-muted">Drafts are saved on this device. Appointments last 30 minutes; choose any minute within the doctor's hours.</p>
               <div className="ap-modal-footer">
                 <button
                   type="button"
@@ -1944,10 +1936,10 @@ export default function Appointment({
                 </div>
 
                 <div className="ap-form-field">
-                  <label className="ap-form-label">Contact Number</label>
+                  <label className="ap-form-label">Contact Number *</label>
                   <input
-                    type="text"
-                    placeholder="0917-000-0000"
+                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
+                    placeholder="+639171234567"
                     className="ap-form-input"
                     value={bookForm.contact}
                     onChange={(e) => setBookForm({ ...bookForm, contact: e.target.value })}
@@ -1961,10 +1953,7 @@ export default function Appointment({
                     value={bookForm.type}
                     onChange={(e) => setBookForm({ ...bookForm, type: e.target.value })}
                   >
-                    <option value="Routine Checkup">Routine Checkup</option>
-                    <option value="General Consultation">General Consultation</option>
-                    <option value="Follow-up (Routine)">Follow-up (Routine)</option>
-                    <option value="Standard Intake">Standard Intake</option>
+                    {VISIT_TYPES.map(item => <option key={item}>{item}</option>)}
                   </select>
                 </div>
 
@@ -1990,6 +1979,8 @@ export default function Appointment({
                 </div>
               </div>
 
+              {!bookForm.patientId && <div className="ap-form-grid-2"><PatientIntakeFields value={bookForm} onChange={(key, value) => setBookForm(current => ({ ...current, [key]: value }))} /></div>}
+              <p className="medsec-muted">Drafts are saved on this device. Appointments last 30 minutes; choose any minute within the doctor's hours.</p>
               <div className="ap-modal-footer">
                 <button
                   type="button"
@@ -2029,6 +2020,8 @@ export default function Appointment({
 
             <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="ap-form-grid-2">
+                <label className="ap-form-field"><span className="ap-form-label">Date *</span><input type="date" required min={todayISO()} className="ap-form-input" value={dateKey(editForm.date)} onChange={e => setEditForm({ ...editForm, date: e.target.value })} /></label>
+
                 <div className="ap-form-field">
                   <label className="ap-form-label">Patient Name</label>
                   <input
@@ -2042,21 +2035,8 @@ export default function Appointment({
 
                 <div className="ap-form-field">
                   <label className="ap-form-label">Time</label>
-                  <select
-                    className="ap-form-select"
-                    value={editForm.time}
-                    onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
-                  >
-                    <option value="08:30 AM">08:30 AM</option>
-                    <option value="09:00 AM">09:00 AM</option>
-                    <option value="09:30 AM">09:30 AM</option>
-                    <option value="10:00 AM">10:00 AM</option>
-                    <option value="10:30 AM">10:30 AM</option>
-                    <option value="11:00 AM">11:00 AM</option>
-                    <option value="01:30 PM">01:30 PM</option>
-                    <option value="02:00 PM">02:00 PM</option>
-                    <option value="02:30 PM">02:30 PM</option>
-                  </select>
+                  <input type="time" step="60" required className="ap-form-input" value={timeKey(editForm.time)} onChange={e => setEditForm({ ...editForm, time: e.target.value })} />
+
                 </div>
 
                 <div className="ap-form-field">
@@ -2103,10 +2083,7 @@ export default function Appointment({
                     value={editForm.type}
                     onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                   >
-                    <option value="Routine Checkup">Routine Checkup</option>
-                    <option value="General Consultation">General Consultation</option>
-                    <option value="Follow-up (Routine)">Follow-up (Routine)</option>
-                    <option value="Standard Intake">Standard Intake</option>
+                    {VISIT_TYPES.map(item => <option key={item}>{item}</option>)}
                   </select>
                 </div>
 

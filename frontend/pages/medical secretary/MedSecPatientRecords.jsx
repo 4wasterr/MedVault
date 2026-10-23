@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
-import { validatePatientRecord } from './medsecData';
+import { useDraftState } from '../../client/src/useDraftState';
+import { PHONE_PATTERN, RELATIONSHIPS, VITAL_RULES, VISIT_TYPES } from '../../shared/formRules.mjs';
+import { dateKey, patientVisits, todayISO, validatePatientRecord } from './medsecData';
 
 const tabs = [
   ['personal', 'Personal'], ['vitals', 'Vitals'], ['medicalHistory', 'Medical History'],
@@ -10,13 +12,8 @@ const tabs = [
 
 function preparePatient(patient) {
   if (!patient) return null;
-  const previousVisits = (patient.appointments || [])
-    .filter((appointment) => /done|completed/i.test(appointment.status || ''))
-    .map((appointment, index) => ({ id: `legacy-${patient.id}-${index}`, date: appointment.date || '',
-      doctor: appointment.doctor || '', type: appointment.type || '', summary: '', diagnosis: '',
-      treatment: '', followUp: '', vitalsSummary: '', notes: '' }));
   return {
-    ...patient,
+    ...patient, birthday: dateKey(patient.birthday),
     vitals: { bp: '', hr: '', temp: '', respRate: '', spo2: '', weight: '', height: '', measuredAt: '', measuredBy: '', suppliedBy: '', ...patient.vitals },
     medicalHistory: {
       conditions: patient.medicalHistory?.conditions ?? patient.medical?.history ?? '',
@@ -31,30 +28,31 @@ function preparePatient(patient) {
       followUp: patient.consultation?.followUp ?? patient.medical?.notes ?? '',
       doctor: patient.consultation?.doctor ?? patient.doctor ?? '', consultedAt: patient.consultation?.consultedAt ?? '',
     },
-    visits: patient.visits ?? previousVisits,
+    visits: patientVisits(patient),
     recordNotes: patient.recordNotes ?? [],
   };
 }
 
-function Field({ label, value, onChange, type = 'text', wide = false, multiline = false, placeholder = '', readOnly = false }) {
+function Field({ label, value, onChange, type = 'text', wide = false, multiline = false, placeholder = '', readOnly = false, ...inputProps }) {
   return <label className={`medsec-field ${wide ? 'wide' : ''}`}><span>{label}</span>
     {multiline ? <textarea value={value ?? ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
-      : <input type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} readOnly={readOnly} />}
+      : <input {...inputProps} step={type === 'datetime-local' ? 1 : inputProps.step} type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} readOnly={readOnly} />}
   </label>;
 }
 
 export default function MedSecPatientRecords({
   patients = [], setPatients, appointments = [], setAppointments, selectedPatientId, initialTab = 'personal', onNavigate, onLogout, onRecordView, username,
 }) {
-  const [selectedId, setSelectedId] = useState(selectedPatientId || null);
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [lastSelectedId, setSelectedId] = useDraftState('records:selectedId', null);
+  const selectedId = selectedPatientId || lastSelectedId;
+  const [activeTab, setActiveTab] = useDraftState('records:activeTab:' + (selectedPatientId || selectedId || 'none') + ':' + initialTab, initialTab);
   const [search, setSearch] = useState('');
-  const [draft, setDraft] = useState(() => preparePatient(patients.find((item) => item.id === selectedPatientId)));
-  const [basePatient, setBasePatient] = useState(() => patients.find((item) => item.id === selectedPatientId) || null);
-  const [noteText, setNoteText] = useState('');
+  const [draft, setDraft] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':draft', () => preparePatient(patients.find((item) => item.id === selectedPatientId)));
+  const [basePatient, setBasePatient] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':basePatient', () => patients.find((item) => item.id === selectedPatientId) || null);
+  const [noteText, setNoteText] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':noteText', '');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useDraftState('records:' + (selectedPatientId || selectedId || 'none') + ':dirty', false);
 
   const patient = patients.find((item) => item.id === selectedId);
   useEffect(() => {
@@ -84,13 +82,11 @@ export default function MedSecPatientRecords({
     visits: current.visits.map((visit, visitIndex) => visitIndex === index ? { ...visit, [key]: value } : visit),
   })); };
   const navigate = (...args) => {
-    if (dirty && !window.confirm('Discard unsaved patient record changes?')) return;
     onNavigate(...args);
   };
   const selectPatient = (item) => {
-    if (dirty && !window.confirm('Discard unsaved patient record changes?')) return;
-    setSelectedId(item.id); setDraft(preparePatient(item)); setBasePatient(item); setActiveTab('personal');
-    setNoteText(''); setMessage(''); setError(''); setDirty(false);
+    setSelectedId(item.id);
+    onNavigate('patients', { patientId: item.id, tab: 'personal' });
   };
 
   const save = () => {
@@ -117,7 +113,7 @@ export default function MedSecPatientRecords({
     setPatients((current) => current.map((item) => item.id === updated.id ? updated : item));
     setAppointments?.((current) => current.map((item) => item.patientId === updated.id ? {
       ...item, patientName: updated.name, age: updated.age, sex: updated.sex, contact: updated.contact,
-      address: updated.address, emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact,
+      address: updated.address, email: updated.email, emergencyRelationship: updated.emergencyRelationship, emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact,
     } : item));
     setDraft(updated); setBasePatient(updated); setNoteText(''); setDirty(false); setError(''); setMessage('Patient record submitted. Check the save status to confirm it reached the shared server.');
   };
@@ -132,7 +128,7 @@ export default function MedSecPatientRecords({
   };
 
   return <MedSecShell active="patients" title="Patient Records" subtitle="Shared patient profiles, clinical details, and saved visits" onNavigate={navigate}
-    onLogout={() => { if (!dirty || window.confirm('Discard unsaved patient record changes?')) onLogout(); }}>
+    onLogout={onLogout}>
     <div className="medsec-grid">
       <section className="medsec-panel" aria-label="Patient list">
         <h2>Patients <span className="medsec-badge">{patients.length}</span></h2>
@@ -164,19 +160,21 @@ export default function MedSecPatientRecords({
 
           {activeTab === 'personal' && <div className="medsec-form-grid">
             <Field label="Full name" value={draft.name} onChange={(value) => update('name', value)} />
-            <Field label="Birthday" value={draft.birthday} onChange={(value) => update('birthday', value)} placeholder="e.g. Jan 10, 1991" />
-            <Field label="Age (years)" type="number" value={draft.age} onChange={(value) => update('age', value)} />
+            <Field label="Birthday" type="date" min="1900-01-01" max={todayISO()} value={draft.birthday} onChange={(value) => update('birthday', value)} />
+            <Field label="Age (years) *" required type="number" min="0" max="130" step="1" value={draft.age} onChange={(value) => update('age', value)} />
             <label className="medsec-field"><span>Sex</span><select value={draft.sex || ''} onChange={(event) => update('sex', event.target.value)}><option value="">Select</option><option>Female</option><option>Male</option><option>Other</option></select></label>
-            <Field label="Contact number" value={draft.contact} onChange={(value) => update('contact', value)} />
-            <Field label="Emergency contact" value={draft.emergencyContact} onChange={(value) => update('emergencyContact', value)} />
+            <Field label="Contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={draft.contact} onChange={(value) => update('contact', value)} />
+            <Field label="Emergency contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={draft.emergencyContact} onChange={(value) => update('emergencyContact', value)} />
+            <label className="medsec-field"><span>Emergency contact relationship *</span><select required value={draft.emergencyRelationship || ''} onChange={e => update('emergencyRelationship', e.target.value)}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+            <Field label="Email" type="email" value={draft.email} onChange={value => update('email', value)} placeholder="name@gmail.com" />
             <Field label="Address" value={draft.address} onChange={(value) => update('address', value)} wide multiline />
             <Field label="Emergency contact name" value={draft.emergencyName} onChange={(value) => update('emergencyName', value)} wide />
           </div>}
 
           {activeTab === 'vitals' && <><p className="medsec-muted">Record measured values, units, time, and the person who measured or supplied them.</p>
             <div className="medsec-form-grid">
-              {[['bp', 'Blood pressure (mmHg)'], ['hr', 'Heart rate (bpm)'], ['temp', 'Temperature (°C)'], ['respRate', 'Respiratory rate (breaths/min)'], ['spo2', 'Oxygen saturation (%)'], ['weight', 'Weight (kg)'], ['height', 'Height (cm)']].map(([key, label]) =>
-                <Field key={key} label={label} value={draft.vitals[key]} onChange={(value) => updateGroup('vitals', key, value)} />)}
+              <Field label="Blood pressure (mmHg)" pattern="[0-9]{2,3}/[0-9]{2,3}" maxLength="7" placeholder="120/80 (70–250/40–150)" value={draft.vitals.bp} onChange={value => updateGroup('vitals', 'bp', value.replace(/[^0-9/]/g, '').slice(0, 7))} />
+              {Object.entries(VITAL_RULES).map(([key, rule]) => <Field key={key} label={rule.label + ' (' + rule.min + '–' + rule.max + ')'} type="number" min={rule.min} max={rule.max} step={rule.step} value={draft.vitals[key]} onChange={value => updateGroup('vitals', key, value)} />)}
               <Field label="Measured at" type="datetime-local" value={draft.vitals.measuredAt} onChange={(value) => updateGroup('vitals', 'measuredAt', value)} />
               <Field label="Measured by" value={draft.vitals.measuredBy} onChange={(value) => updateGroup('vitals', 'measuredBy', value)} />
               <Field label="Supplied by (if reported)" value={draft.vitals.suppliedBy} onChange={(value) => updateGroup('vitals', 'suppliedBy', value)} />
@@ -206,9 +204,9 @@ export default function MedSecPatientRecords({
 
           {activeTab === 'visits' && <><p className="medsec-muted">Previous visits and saved records. Newly completed appointments appear here.</p>
             {draft.visits.map((visit, index) => <div className="medsec-visit-card" key={visit.id || index}><div className="medsec-form-grid">
-              <Field label="Visit date" value={visit.date} onChange={(value) => updateVisit(index, 'date', value)} />
+              <Field label="Visit date" type="date" required value={visit.date} onChange={(value) => updateVisit(index, 'date', value)} />
               <Field label="Doctor" value={visit.doctor} onChange={(value) => updateVisit(index, 'doctor', value)} />
-              <Field label="Visit type" value={visit.type} onChange={(value) => updateVisit(index, 'type', value)} />
+              <label className="medsec-field"><span>Visit type *</span><select required value={visit.type || ''} onChange={e => updateVisit(index, 'type', e.target.value)}><option value="">Select visit type</option>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></label>
               <Field label="Record ID" value={visit.id} onChange={() => {}} readOnly />
               <Field label="Saved summary" value={visit.summary} onChange={(value) => updateVisit(index, 'summary', value)} wide multiline />
               <Field label="Diagnosis" value={visit.diagnosis} onChange={(value) => updateVisit(index, 'diagnosis', value)} wide multiline />
@@ -219,7 +217,7 @@ export default function MedSecPatientRecords({
             </div></div>)}
             {!draft.visits.length && <p className="medsec-muted">No completed visits recorded.</p>}
             <button type="button" className="medsec-btn secondary" onClick={() => { setDirty(true); setDraft((current) => ({ ...current,
-              visits: [{ id: `visit-${Date.now()}`, date: '', doctor: '', type: '', summary: '', diagnosis: '',
+              visits: [{ id: `visit-${Date.now()}`, date: todayISO(), doctor: '', type: 'New Consultation', summary: '', diagnosis: '',
                 treatment: '', followUp: '', vitalsSummary: '', notes: '' }, ...current.visits],
             })); }}>+ Add Visit Record</button>
           </>}
@@ -243,7 +241,7 @@ export default function MedSecPatientRecords({
             <button type="button" className="medsec-btn secondary" onClick={() => { setDraft(preparePatient(patient)); setBasePatient(patient); setNoteText(''); setDirty(false); setMessage('Changes reset.'); setError(''); }}>Reset Changes</button>
             <button type="button" className="medsec-btn" onClick={save}>Save Changes</button>
           </div>
-          {dirty && <p className="medsec-muted" role="status">You have unsaved changes.</p>}
+          {dirty && <p className="medsec-muted" role="status">Draft saved on this device. Use Save Changes to submit it.</p>}
           {draft.lastUpdatedAt && <p className="medsec-muted">Last saved by {draft.lastUpdatedBy || 'staff'} on {new Date(draft.lastUpdatedAt).toLocaleString()}.</p>}
         </>}
       </section>
