@@ -709,6 +709,12 @@
   gap: 4px;
 }
 
+.pm-contact-heading {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .pm-info-lbl {
   font-size: 0.85rem;
   font-weight: 400;
@@ -1152,6 +1158,12 @@
   background: #009ad6;
   transform: translateY(-1px);
   box-shadow: none;
+}
+
+.pm-btn-save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ==========================================================================

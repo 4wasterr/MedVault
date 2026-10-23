@@ -1,6 +1,7 @@
 **/node_modules
 **/dist
 .git
+.tools
 .env*
 **/.env*
 frontend/server/data

@@ -1,11 +1,12 @@
 import { isPersonName, NAME_GUIDANCE, passwordProblem, isPublicEmail, PHONE_PATTERN } from '../../shared/formRules.mjs';
 
 const controls = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea';
+const fieldGroups = '.form-field-group, .ap-form-field, .form-group, .form-field, .pm-form-group, .pm-form-field, .ap-inline-field, .ap-dropdown-section';
 let sequence = 0;
 const states = new Map();
 
 function fieldLabel(field) {
-  const label = field.labels?.[0] || field.closest('label') || field.closest('.form-field-group, .ap-form-field, .form-group, .form-field, .pm-form-group, .pm-form-field')?.querySelector('label');
+  const label = field.labels?.[0] || field.closest('label') || field.closest(fieldGroups)?.querySelector('label');
   const caption = label?.cloneNode(true);
   caption?.querySelectorAll('input, select, textarea, button, small, .mv-inline-error, .required-indicator').forEach(node => node.remove());
   return { label, text: caption?.textContent?.replace(/\*/g, '').trim() || field.getAttribute('aria-label') || field.placeholder || 'This field' };
@@ -21,7 +22,7 @@ export function fieldProblem(field) {
   if (field.dataset.passwordConfirm === 'true') return value === field.closest('form')?.querySelector('[data-password-policy="true"]')?.value ? '' : 'Passwords must match.';
   if (field.dataset.personName === 'true' && !isPersonName(value)) return NAME_GUIDANCE;
   if (field.type === 'email' && !isPublicEmail(value)) return 'Use a supported public email domain, such as gmail.com, yahoo.com, or outlook.com.';
-  if (field.pattern === PHONE_PATTERN && !new RegExp(`^(?:${PHONE_PATTERN})$`).test(value)) return 'Use +639XXXXXXXXX, for example +639171234567.';
+  if (field.pattern === PHONE_PATTERN && !new RegExp(`^(?:${PHONE_PATTERN})$`).test(value)) return 'Use +63 XXX XXX XXXX, for example +63 917 123 4567.';
   const validity = field.validity;
   if (validity.badInput) return 'Enter a valid value.';
   if (validity.patternMismatch) return field.title || `Enter a valid ${text.toLowerCase()}.`;
@@ -45,6 +46,7 @@ export function firstUnresolvedField() {
 // It owns only its hint/marker nodes; React continues to own all values and field labels.
 export function installFormFeedback(root = document) {
   let scanning = false;
+  let active = true;
   const enhance = field => {
     if (!field.matches(controls)) return;
     let state = states.get(field);
@@ -68,7 +70,7 @@ export function installFormFeedback(root = document) {
       if (!state.hint?.isConnected) {
         state.hint = document.createElement('small'); state.hint.className = 'mv-inline-error'; state.hint.id = `mv-validation-${++sequence}`;
         state.hint.setAttribute('aria-live', 'polite');
-        const host = field.closest('label, .form-field-group, .ap-form-field, .form-group, .form-field, .pm-form-group, .pm-form-field') || field.parentElement;
+        const host = field.closest(`label, ${fieldGroups}`) || field.parentElement;
         host.append(state.hint);
       }
       if (state.hint.textContent !== problem) state.hint.textContent = problem;
@@ -90,6 +92,8 @@ export function installFormFeedback(root = document) {
     enhance(event.target); states.get(event.target).touched = true;
     // Re-evaluate confirmations whenever the original password changes.
     scan();
+    // React may normalize a controlled input after this capture listener runs.
+    queueMicrotask(() => { if (active) scan(); });
   };
   const submit = event => {
     const fields = [...event.target.querySelectorAll(controls)];
@@ -105,8 +109,13 @@ export function installFormFeedback(root = document) {
   root.addEventListener('focusout', touch, true); root.addEventListener('invalid', touch, true);
   root.addEventListener('submit', submit, true);
   return () => {
+    active = false;
     observer.disconnect();
-    for (const [field, state] of states) { state.hint?.remove(); state.marker?.remove(); field.removeAttribute('aria-invalid'); }
+    for (const [field, state] of states) {
+      state.hint?.remove(); state.marker?.remove(); field.removeAttribute('aria-invalid');
+      if (state.originalDescription) field.setAttribute('aria-describedby', state.originalDescription);
+      else field.removeAttribute('aria-describedby');
+    }
     states.clear();
     root.removeEventListener('input', touch, true); root.removeEventListener('change', touch, true);
     root.removeEventListener('focusout', touch, true); root.removeEventListener('invalid', touch, true);

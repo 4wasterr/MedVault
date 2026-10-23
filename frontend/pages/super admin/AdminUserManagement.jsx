@@ -1,5 +1,5 @@
 import { useDraftState } from '../../client/src/useDraftState';
-import { EMAIL_PATTERN, PHONE_PATTERN, NAME_PATTERN, NAME_GUIDANCE, USERNAME_PATTERN } from '../../shared/formRules.mjs';
+import { EMAIL_PATTERN, PHONE_PATTERN, NAME_PATTERN, NAME_GUIDANCE, USERNAME_PATTERN, formatPhone, phoneInput } from '../../shared/formRules.mjs';
 import PasswordField from '../components/PasswordField';
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
@@ -78,7 +78,7 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
     { key: 'username', label: 'Username', value: account => account.username, render: account => <>@{account.username}</> },
     { key: 'role', label: 'Role', value: account => account.role },
     { key: 'contact', label: 'Contact Details', value: account => account.email, className: 'admin-grid-contact', render: account => <>
-      <span>{account.email || 'No email'}</span>{account.phone && <small>{account.phone}</small>}{account.address && <small>{account.address}</small>}
+      <span>{account.email || 'No email'}</span>{account.phone && <small>{formatPhone(account.phone)}</small>}{account.address && <small>{account.address}</small>}
     </> },
     { key: 'status', label: 'Status', value: account => account.status, className: 'admin-grid-status', render: account => <span className={`medsec-badge admin-status ${account.status === 'approved' ? 'completed' : account.status === 'pending' ? 'consultation' : 'blocked'}`}>{account.status}</span> },
     { key: 'actions', label: 'Actions', className: 'admin-grid-actions', render: account => <div className="admin-record-actions">
@@ -112,7 +112,7 @@ export default function AdminUserManagement({ accounts, onRefresh }) {
         <label className="medsec-field"><span>Middle Name (optional)</span><input maxLength={80} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.middleName} onChange={(event) => setForm({ ...form, middleName: event.target.value })} /></label>
         <label className="medsec-field"><span>Last Name *</span><input required maxLength={80} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
         <label className="medsec-field"><span>Role *</span><select required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option>Receptionist</option><option>Medical Secretary</option><option>Super Admin</option></select></label>
-        <label className="medsec-field"><span>Phone *</span><input type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="medsec-field"><span>Phone *</span><input type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" required value={formatPhone(form.phone)} onChange={(event) => setForm({ ...form, phone: phoneInput(event.target.value) })} /></label>
         <label className="medsec-field"><span>Email *</span><input type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="medsec-field wide"><span>Address *</span><input required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label>
       </div>{error && <p className="medsec-error" role="alert">{error}</p>}<div className="medsec-actions"><button type="button" className="medsec-btn secondary" onClick={() => setOpen(false)}>Cancel</button><button type="submit" className="medsec-btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Create Account'}</button></div></form>

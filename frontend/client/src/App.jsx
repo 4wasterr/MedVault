@@ -12,6 +12,12 @@ import { DraftScope } from './useDraftState';
 import { draftKey, readDraft, writeDraft } from './draftStorage';
 import { api, applyChanges, changesBetween, emptyState } from './sharedState';
 import { isDemo } from './demoMode';
+import { installFormFeedback } from './formFeedback';
+import { dismissSession, endSession, isSessionDismissed, resumeSession } from './sessionState';
+import { recoverRejectedSave } from './saveRecovery';
+import { CurrentUserContext } from './currentUser';
+import './formFeedback.css';
+import './moduleLayout.css';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -29,6 +35,7 @@ class ErrorBoundary extends Component {
       <h2>Unable to display this page</h2>
       <p>{this.state.error.message}</p>
       <button type="button" onClick={() => window.location.reload()}>Reload MedVault</button>
+      {this.props.onLogout && <button type="button" onClick={this.props.onLogout}>Sign Out</button>}
     </div>;
   }
 }
@@ -41,6 +48,7 @@ const initialView = () => {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentUsername, setCurrentUsername] = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(null);
   const userRef = useRef(null);
   const [booting, setBooting] = useState(true);
   const [startupError, setStartupError] = useState('');
@@ -58,11 +66,11 @@ export default function App() {
   const recordsRef = useRef(records);
   const syncedRef = useRef(records);
   const savingRef = useRef(false);
-  const saveBlockedRef = useRef(false);
+  const saveControllerRef = useRef(null);
   const flushRef = useRef(null);
   const retryRef = useRef(null);
-  const [saveBlocked, setSaveBlocked] = useState(false);
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  useEffect(() => installFormFeedback(document), []);
   useEffect(() => {
     const failed = () => setDraftStorageFailed(true);
     window.addEventListener('medvault-draft-storage-failed', failed);
@@ -96,24 +104,17 @@ export default function App() {
     recordsRef.current = merged;
     setRecords(merged);
     if (conflict) {
-      markSaveBlocked(true);
-      setSyncMessage('Recovered changes conflict with newer server records. Review your changes before retrying save.');
+      setSyncMessage('Recovered changes conflict with newer server records. Review and correct the affected form before saving.');
     } else {
       setSyncMessage('Recovered pending changes from this device.');
       queueMicrotask(() => flushRef.current?.());
     }
   };
 
-  const markSaveBlocked = (value) => {
-    saveBlockedRef.current = value;
-    setSaveBlocked(value);
-  };
-
   const installState = (state) => {
     syncedRef.current = state;
     recordsRef.current = state;
     setRecords(state);
-    markSaveBlocked(false);
   };
 
   const flush = async () => {
@@ -123,12 +124,15 @@ export default function App() {
     const changes = changesBetween(base, submitted);
     if (!changes.length) return;
     const session = userRef.current;
+    const controller = new AbortController();
+    saveControllerRef.current = controller;
     savingRef.current = true;
     setSaveStatus('Saving changes...');
     let retry = false;
     let blocked = false;
+    let newerEditsAfterRejection = false;
     try {
-      const serverState = await api('changes', { method: 'POST', body: JSON.stringify({ changes }) });
+      const serverState = await api('changes', { method: 'POST', body: JSON.stringify({ changes }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
       if (userRef.current !== session) return;
       const newerChanges = changesBetween(submitted, recordsRef.current);
       syncedRef.current = serverState;
@@ -136,11 +140,12 @@ export default function App() {
       recordsRef.current = merged;
       setRecords(merged);
       persistPending(serverState, merged);
-      markSaveBlocked(false);
       setSyncMessage('');
       setSaveStatus(isDemo ? 'Changes saved for this preview. Refresh to reset.' : 'Changes saved to the shared server.');
     } catch (error) {
       if (userRef.current !== session) return;
+      const recovery = recoverRejectedSave(base, submitted, recordsRef.current, error.status === 409 ? error.state : null);
+      newerEditsAfterRejection = recovery.hasNewerEdits;
       setSaveStatus('');
       if (error.status === 401) {
         userRef.current = null;
@@ -149,18 +154,15 @@ export default function App() {
         installState(emptyState());
         setSyncMessage('Your session expired. Sign in again.');
       } else if (error.status === 409 && error.state) {
-        const pendingChanges = changesBetween(base, recordsRef.current);
         syncedRef.current = error.state;
-        const merged = applyChanges(error.state, pendingChanges);
+        const merged = recovery.state;
         recordsRef.current = merged;
         setRecords(merged);
         blocked = true;
-        markSaveBlocked(true);
         setSaveStatus('Changes need review.');
         setSyncMessage('Another staff member changed a record. Your draft is preserved; review it before saving again.');
-      } else if (error.status) {
+      } else if (error.status && error.status < 500) {
         blocked = true;
-        markSaveBlocked(true);
         setSaveStatus('Changes need attention.');
         setSyncMessage(`${error.message} Your unsaved changes are still shown.`);
       } else {
@@ -168,12 +170,15 @@ export default function App() {
         retry = true;
       }
     } finally {
-      savingRef.current = false;
-      if (retry && userRef.current === session) {
-        clearTimeout(retryRef.current);
-        retryRef.current = setTimeout(() => flushRef.current?.(), 4000);
-      } else if (!blocked && changesBetween(syncedRef.current, recordsRef.current).length) {
-        queueMicrotask(() => flushRef.current?.());
+      if (saveControllerRef.current === controller) {
+        saveControllerRef.current = null;
+        savingRef.current = false;
+        if (retry && userRef.current === session) {
+          clearTimeout(retryRef.current);
+          retryRef.current = setTimeout(() => flushRef.current?.(), 4000);
+        } else if ((!blocked || newerEditsAfterRejection) && userRef.current === session && changesBetween(syncedRef.current, recordsRef.current).length) {
+          queueMicrotask(() => flushRef.current?.());
+        }
       }
     }
   };
@@ -197,7 +202,6 @@ export default function App() {
     recordsRef.current = next;
     setRecords(next);
     persistPending(syncedRef.current, next);
-    markSaveBlocked(false);
     setSaveStatus('Saving changes...');
     queueMicrotask(() => flushRef.current?.());
   };
@@ -206,12 +210,14 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
+        if (isSessionDismissed()) return;
         const session = await api('session');
         const state = session.role === 'Super Admin' ? emptyState() : await api('state');
         if (cancelled) return;
         userRef.current = { role: session.role, username: session.username };
         setCurrentUser(session.role);
         setCurrentUsername(session.username);
+        setCurrentProfile(session);
         installState(state);
         restorePending(state, session);
         setStartupError('');
@@ -278,7 +284,10 @@ export default function App() {
     const session = userRef.current;
     let lastTouch = Date.now();
     const checkSession = async (background) => {
-      try { await api('session', { headers: background ? { 'X-MedVault-Background': '1' } : {} }); }
+      try {
+        const profile = await api('session', { headers: background ? { 'X-MedVault-Background': '1' } : {} });
+        if (active && userRef.current === session) setCurrentProfile(profile);
+      }
       catch (error) {
         if (active && userRef.current === session && error.status === 401) {
           userRef.current = null;
@@ -335,10 +344,13 @@ export default function App() {
   const handleLogin = async (role, username) => {
     setBooting(true);
     try {
-      const state = role === 'Super Admin' ? emptyState() : await api('state');
+      resumeSession();
+      const [profile, state] = await Promise.all([api('session'), role === 'Super Admin' ? emptyState() : api('state')]);
       userRef.current = { role, username };
       setCurrentUser(role);
       setCurrentUsername(username);
+      setCurrentProfile(profile);
+      setStartupError('');
       installState(state);
       setSyncMessage('');
       setSaveStatus('');
@@ -352,33 +364,30 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    if (saveBlockedRef.current && changesBetween(syncedRef.current, recordsRef.current).length) {
-      setSyncMessage('Review or correct the pending changes, then retry saving before signing out.');
-      return;
-    }
-    const deadline = Date.now() + 10_000;
-    while ((savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) && Date.now() < deadline) {
-      if (!savingRef.current) await flushRef.current?.();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    if (savingRef.current || changesBetween(syncedRef.current, recordsRef.current).length) {
-      setSyncMessage('Changes are still pending. Stay signed in until they finish saving.');
-      return;
-    }
-    try {
-      await api('logout', { method: 'POST' });
-    } catch (error) {
-      if (error.status !== 401) { setSyncMessage('Unable to sign out while the server is unavailable.'); return; }
-    }
+    // Preserve pending work for this account, but never make form or network errors trap a user.
+    persistPending(syncedRef.current, recordsRef.current);
+    dismissSession();
     userRef.current = null;
+    saveControllerRef.current?.abort();
+    saveControllerRef.current = null;
+    savingRef.current = false;
+    clearTimeout(retryRef.current);
     setCurrentUser(null);
     setCurrentUsername(null);
+    setStartupError('');
+    setSyncMessage('');
     setSaveStatus('');
+    setDraftStorageFailed(false);
     installState(emptyState());
     setCurrentView('dashboard');
     const url = new URL(window.location.href);
     url.searchParams.set('view', 'login');
     window.history.replaceState({}, '', url);
+    try {
+      await endSession(() => api('logout', { method: 'POST', signal: AbortSignal.timeout(5000) }));
+    } catch (error) {
+      if (error.status !== 401 && isSessionDismissed()) setSyncMessage('Signed out on this device. Server sign-out could not be confirmed while the connection is unavailable.');
+    }
   };
 
   const importBrowserRecords = async () => {
@@ -423,9 +432,10 @@ export default function App() {
   if (booting) return <div className="medvault-loading" role="status">Loading MedVault…</div>;
   if (startupError) return <div className="medvault-loading" role="alert">
     <p>{startupError}</p><button type="button" onClick={() => window.location.reload()}>Retry</button>
+    <button type="button" onClick={handleLogout}>Sign Out</button>
   </div>;
 
-  return <DraftScope.Provider key={currentUsername || 'signup'} value={currentUser + ':' + (currentUsername || 'signup')}><ErrorBoundary>
+  return <CurrentUserContext.Provider value={currentUser ? currentProfile : null}><DraftScope.Provider key={currentUsername || 'signup'} value={currentUser + ':' + (currentUsername || 'signup')}><ErrorBoundary onLogout={currentUser ? handleLogout : undefined}>
     {isDemo && <aside className="medvault-demo-banner" aria-label="Frontend demo information">
       <div><strong>Frontend demo</strong><span>Fictional data only. Changes reset when you refresh.</span>
         {!currentUser && <p>Logins: <code>demo.receptionist</code>, <code>demo.secretary</code>, <code>demo.admin</code> &middot; Password: <code>DemoPass123!</code></p>}
@@ -441,11 +451,7 @@ export default function App() {
       <button type="button" onClick={() => setLegacyAvailable(false)} aria-label="Dismiss import option">×</button>
     </div>}
     {syncMessage && <div className="medvault-sync-alert" role="alert">{syncMessage}
-      {saveBlocked && <button type="button" onClick={() => {
-        markSaveBlocked(false);
-        setSaveStatus('Saving changes...');
-        queueMicrotask(() => flushRef.current?.());
-      }}>Retry save</button>}
+      {currentUser && <button type="button" onClick={() => flushRef.current?.()}>Retry Save</button>}
       <button type="button" onClick={() => setSyncMessage('')} aria-label="Dismiss message">×</button>
     </div>}
     {currentUser && saveStatus && <div className="medvault-save-status" role="status">{saveStatus}</div>}
@@ -457,5 +463,5 @@ export default function App() {
           selectedPatientId={patientTarget.id} initialTab={patientTarget.tab} />
           : effectiveView === 'appointments' ? <Appointments {...sharedProps} />
             : <Dashboard {...sharedProps} receptionistName={currentUser} />}
-  </ErrorBoundary></DraftScope.Provider>;
+  </ErrorBoundary></DraftScope.Provider></CurrentUserContext.Provider>;
 }

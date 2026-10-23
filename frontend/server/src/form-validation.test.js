@@ -60,7 +60,7 @@ test('API enforces required demographics, clinical ranges, precise times, and st
     assert.equal((await saveBooking({ ...booking, id: 'APPT-after-block', time: '11:16' })).status, 200)
     const stored = created.body.patients.find(item => item.id === patient.id)
     assert.equal((await send('changes', secretary.cookie, { changes: [{ collection: 'patients', id: patient.id, before: stored, after: { ...stored, emergencyRelationship: '' } }] })).status, 400)
-    const signup = { username: 'validation.staff', password: 'SecurePass123', confirmPassword: 'SecurePass123', firstName: 'Test', lastName: 'Staff', address: 'Clinic', phone: patient.contact, email: 'staff@gnail.com', role: 'Receptionist' }
+    const signup = { username: 'validation.staff', password: 'SecurePass123!', confirmPassword: 'SecurePass123!', firstName: 'Test', lastName: 'Staff', address: 'Clinic', phone: patient.contact, email: 'staff@gnail.com', role: 'Receptionist' }
     assert.equal((await send('register', '', signup)).status, 400)
     assert.equal((await send('register', '', { ...signup, email: 'staff@outlook.com' })).status, 201)
   } finally {

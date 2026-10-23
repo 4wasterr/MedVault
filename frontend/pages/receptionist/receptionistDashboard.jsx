@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
+import PatientRegistrationFields from '../components/PatientRegistrationFields';
+import { emptyRegistrationForm } from '../../client/src/patientRegistration';
+import { duplicatePatientMessage, findDuplicatePatient, registrationIdentity } from '../../shared/patientIdentity.mjs';
+import AppointmentBookingFields from '../components/AppointmentBookingFields';
 import { useDraftState } from '../../client/src/useDraftState';
-import { PHONE_PATTERN, RELATIONSHIPS, VISIT_TYPES, demographicsProblem } from '../../shared/formRules.mjs';
+import { useCurrentUser } from '../../client/src/currentUser';
+import { dashboardData } from '../../client/src/dashboardData';
+import { appointmentStage } from '../../shared/appointmentWorkflow.mjs';
+import { SPECIALTIES, demographicsProblem, personName, normalizeRoom } from '../../shared/formRules.mjs';
+import { appointmentSpecialty, bookingPatient, doctorSpecialty, duplicateBookingPatient, selectBookingPatient, updatePatientBooking } from '../../client/src/appointmentBooking';
 import { createRecordId, dateKey, displayTime, isBookingUnavailable, todayISO, validateBooking, validateRegisterForm } from '../medical secretary/medsecData';
 
 export default function ReceptionistDashboard({
@@ -18,20 +26,41 @@ export default function ReceptionistDashboard({
   onRecordView,
   role = 'Receptionist',
 }) {
-  const nurseName = receptionistName || role;
+  const profile = useCurrentUser(receptionistName || role);
+  const nurseName = profile.displayName;
   const isMedicalSecretary = role === 'Medical Secretary';
   const [activeNav, setActiveNav] = useState('home'); // 'home' | 'patients' | 'records'
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('All');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [activeModal, setActiveModal] = useDraftState('dashboard:activeModal', null); // 'register' | 'appointment' | 'patientList' | 'patientDetail' | null
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const dashboardDate = new Date();
+  const dashboardDate = new Date(`${todayISO()}T12:00:00`);
   const [appointmentError, setAppointmentError] = useState('');
   const [registrationError, setRegistrationError] = useState('');
-  const [appointmentForm, setAppointmentForm] = useDraftState('dashboard:appointmentForm', { patientId: '', doctor: doctors.find(doctor => doctor.active)?.name || '', date: todayISO(), time: '14:00', type: 'New Consultation' });
+  const emptyAppointment = () => ({ patientId: '', patientName: '', age: '', contact: '', emergencyName: '', emergencyContact: '', emergencyRelationship: '',
+    doctor: doctors.find(doctor => doctor.active)?.name || '', specialty: doctorSpecialty(doctors.find(doctor => doctor.active)),
+    date: todayISO(), time: '', type: 'New Consultation', room: 'Room 1', notes: '' });
+  const [appointmentForm, setAppointmentForm] = useDraftState('dashboard:appointmentForm', emptyAppointment);
+  // Complete drafts created before patient intake fields were added to this dialog.
+  const dashboardBookingForm = appointmentForm.patientId && !appointmentForm.patientName
+    ? selectBookingPatient(appointmentForm, patients?.find(patient => patient.id === appointmentForm.patientId)) : appointmentForm;
+  const changeAppointmentForm = updater => {
+    setAppointmentError('');
+    setAppointmentForm(current => {
+      const complete = current.patientId && !current.patientName
+        ? selectBookingPatient(current, patients?.find(patient => patient.id === current.patientId)) : current;
+      return typeof updater === 'function' ? updater(complete) : updater;
+    });
+  };
+  const selectedBookingSpecialty = appointmentSpecialty(dashboardBookingForm, doctors);
+  const liveAvailabilityProblem = dashboardBookingForm.doctor && !doctors.some(doctor => doctor.active &&
+    doctor.name === dashboardBookingForm.doctor && doctorSpecialty(doctor) === selectedBookingSpecialty)
+    ? 'Choose an active doctor for the selected specialty.'
+    : dashboardBookingForm.doctor && dashboardBookingForm.date && dashboardBookingForm.time &&
+      isBookingUnavailable(schedules, appointments, dashboardBookingForm.doctor, dashboardBookingForm.date, dashboardBookingForm.time)
+      ? 'Choose a time within doctor operating hours without overlapping bookings or blocked periods.' : '';
 
   const closeModal = () => {
     setActiveModal(null);
@@ -40,42 +69,33 @@ export default function ReceptionistDashboard({
   };
 
   // Pic 3 Register Form State
-  const [registerFormData, setRegisterFormData] = useDraftState('dashboard:registerFormData', {
-    firstName: '', age: '', birthday: '', email: '', emergencyRelationship: '',
-    sex: '',
-    middleName: '',
-    contactNumber: '',
-    lastName: '',
-    address: '',
-    emergFirstName: '',
-    emergContactNumber: '',
-    emergMiddleName: '',
-    emergLastName: '',
-  });
+  const [registerFormData, setRegisterFormData] = useDraftState('dashboard:registerFormData', emptyRegistrationForm);
+  const registrationDuplicate = findDuplicatePatient(registrationIdentity(registerFormData), patients);
 
   // Range Toggle State: 'Weekly' | 'Quarterly' | 'Annually'
   const [chartRange, setChartRange] = useState('Weekly');
 
   // Activity comes from the same appointments shown in both modules.
-  const bookedAppointments = appointments.filter((item) => item.patientId && !['Open', 'Cancelled'].includes(item.status));
+  const summary = dashboardData(patients, appointments);
+  const patientActivity = summary.activity;
   const weekStart = new Date(dashboardDate.getFullYear(), dashboardDate.getMonth(), dashboardDate.getDate(), 12);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const chartDatasets = {
     Weekly: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => {
       const day = new Date(weekStart);
       day.setDate(day.getDate() + index);
-      return { label, count: bookedAppointments.filter((item) => dateKey(item.date) === dateKey(day)).length };
+      return { label, count: patientActivity.filter((item) => item.date === dateKey(day)).length };
     }),
     Quarterly: [1, 2, 3, 4].map((quarter) => ({
       label: `Q${quarter}`,
-      count: bookedAppointments.filter((item) => {
+      count: patientActivity.filter((item) => {
         const key = dateKey(item.date);
         return Number(key.slice(0, 4)) === dashboardDate.getFullYear() &&
           Math.floor((Number(key.slice(5, 7)) - 1) / 3) + 1 === quarter;
       }).length,
     })),
     Annually: Array.from({ length: 4 }, (_, index) => dashboardDate.getFullYear() - 3 + index).map((year) => ({
-      label: String(year), count: bookedAppointments.filter((item) => Number(dateKey(item.date).slice(0, 4)) === year).length,
+      label: String(year), count: patientActivity.filter((item) => Number(dateKey(item.date).slice(0, 4)) === year).length,
     })),
   };
 
@@ -85,19 +105,12 @@ export default function ReceptionistDashboard({
     Math.round(chartMaximum * fraction)
   );
 
-  const handleCardKeyDown = (event, action) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      action();
-    }
-  };
-
   const todayKey = todayISO();
   const sharedAppointments = appointments
     .filter((item) => item.patientId && !['Open', 'Cancelled'].includes(item.status))
     .map((item) => ({
       id: item.id, patientId: item.patientId, time: item.time, patient: item.patientName || 'Patient', type: item.type,
-      doctor: item.doctor, status: item.visitStatus || (item.status === 'Completed' ? 'Completed' : 'Waiting'),
+      doctor: item.doctor, status: appointmentStage(item),
       date: item.date,
     }));
   const dashboardToday = sharedAppointments.filter((item) => dateKey(item.date) === todayKey);
@@ -108,8 +121,7 @@ export default function ReceptionistDashboard({
     const matchesSearch = app.patient.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.doctor.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.type.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = activeFilter === 'All' || app.status.toLowerCase() === activeFilter.toLowerCase();
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
 
   const filteredUpcoming = dashboardUpcoming.filter((app) =>
@@ -119,21 +131,23 @@ export default function ReceptionistDashboard({
 
   const handleRegisterPatient = (e) => {
     e.preventDefault();
+    if (registrationDuplicate) return;
     const problem = validateRegisterForm(registerFormData);
     if (problem) { setRegistrationError(problem); return; }
-    const fullName = `${registerFormData.firstName} ${registerFormData.middleName ? registerFormData.middleName + ' ' : ''}${registerFormData.lastName}`.trim();
+    const fullName = personName(registerFormData.firstName, registerFormData.middleName, registerFormData.lastName);
     if (!fullName) return;
 
     if (setPatients) {
       const newPatientObj = {
         id: createRecordId('PTNT'),
         name: fullName,
+        type: registerFormData.type || 'Routine Checkup', specialty: registerFormData.specialty || 'General Health',
         age: registerFormData.age, birthday: registerFormData.birthday, email: registerFormData.email, emergencyRelationship: registerFormData.emergencyRelationship,
         status: 'Waiting',
         sex: registerFormData.sex || '',
         contact: registerFormData.contactNumber || '',
         address: registerFormData.address || '',
-        emergencyName: `${registerFormData.emergFirstName} ${registerFormData.emergMiddleName} ${registerFormData.emergLastName}`.trim(),
+        emergencyName: personName(registerFormData.emergFirstName, registerFormData.emergMiddleName, registerFormData.emergLastName),
         emergencyContact: registerFormData.emergContactNumber || '',
         doctor: '',
         date: todayKey,
@@ -145,27 +159,24 @@ export default function ReceptionistDashboard({
 
     setActiveModal(null);
     setRegistrationError('');
-    setRegisterFormData({
-      firstName: '', age: '', birthday: '', email: '', emergencyRelationship: '',
-      sex: '',
-      middleName: '',
-      contactNumber: '',
-      lastName: '',
-      address: '',
-      emergFirstName: '',
-      emergContactNumber: '',
-      emergMiddleName: '',
-      emergLastName: '',
-    });
+    setRegisterFormData(emptyRegistrationForm());
   };
 
   const handleDashboardAppointment = (event) => {
     event.preventDefault();
-    const patient = patients?.find(item => item.id === appointmentForm.patientId);
-    if (!patient || !setAppointments) { setAppointmentError('Choose a patient profile.'); return; }
-    const { date, time, doctor, type } = appointmentForm;
-    const problem = validateBooking(appointmentForm) || demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
+    if (!setAppointments || !setPatients) { setAppointmentError('Patient records are not available.'); return; }
+    const duplicate = duplicateBookingPatient(dashboardBookingForm, patients);
+    if (duplicate) { setAppointmentError(duplicatePatientMessage(duplicate)); return; }
+    const existingPatient = patients?.find(item => item.id === dashboardBookingForm.patientId);
+    if (dashboardBookingForm.patientId && !existingPatient) { setAppointmentError('This patient profile is no longer available. Select a patient again.'); return; }
+    const patient = bookingPatient(dashboardBookingForm, existingPatient, createRecordId('PTNT'));
+    const { date, time, doctor, type } = dashboardBookingForm;
+    const specialty = appointmentSpecialty(dashboardBookingForm, doctors);
+    const problem = validateBooking(dashboardBookingForm) || demographicsProblem({ ...patient, birthday: dateKey(patient.birthday) });
     if (problem) { setAppointmentError(problem); return; }
+    if (!SPECIALTIES.includes(specialty) || !doctors.some(item => item.active && item.name === doctor && doctorSpecialty(item) === specialty)) {
+      setAppointmentError('Choose an active doctor for the selected specialty.'); return;
+    }
     if (isBookingUnavailable(schedules, appointments, doctor, date, time)) {
       setAppointmentError('Choose a time within doctor operating hours without overlapping bookings or blocked periods.'); return;
     }
@@ -173,15 +184,13 @@ export default function ReceptionistDashboard({
       id: createRecordId('APPT'), patientId: patient.id, patientName: patient.name,
       age: patient.age, sex: patient.sex, contact: patient.contact, address: patient.address,
       emergencyName: patient.emergencyName, emergencyContact: patient.emergencyContact, emergencyRelationship: patient.emergencyRelationship,
-      doctor, date, time: displayTime(time), type, status: 'Confirmed', visitStatus: 'Waiting',
-      notes: 'Appointment booked by Receptionist.',
+      doctor, date, time: displayTime(time), type, specialty, room: normalizeRoom(dashboardBookingForm.room), status: 'Confirmed', visitStatus: 'Waiting',
+      notes: dashboardBookingForm.notes || 'Appointment booked by ' + role + '.',
     };
-    setAppointments((current) => [booking, ...current]);
-    setPatients?.((current) => current.map((item) => item.id === patient.id ? {
-      ...item, appointments: [{ sourceAppointmentId: booking.id, date, doctor, type: booking.type, status: 'Scheduled' }, ...(item.appointments || [])],
-    } : item));
+    setAppointments(current => [booking, ...current]);
+    setPatients(current => updatePatientBooking(current, patient, booking));
     setAppointmentError('');
-    setAppointmentForm({ patientId: '', doctor: doctors.find(item => item.active)?.name || '', date: todayISO(), time: '14:00', type: 'New Consultation' });
+    setAppointmentForm(emptyAppointment());
     closeModal();
   };
 
@@ -290,7 +299,7 @@ export default function ReceptionistDashboard({
         {/* TOP HEADER */}
         <header className="nd-header">
           <div className="header-titles">
-            <span className="welcome-receptionist-text">Welcome Back, {role}</span>
+            <span className="welcome-receptionist-text">Welcome Back, {nurseName}</span>
             <h1 className="dashboard-main-title">Dashboard</h1>
           </div>
 
@@ -349,12 +358,13 @@ export default function ReceptionistDashboard({
                 title={nurseName}
                 aria-label="Profile"
               >
-                <span>{isMedicalSecretary ? 'M' : 'A'}</span>
+                <span>{profile.initials}</span>
               </button>
 
               {showProfileMenu && (
                 <div className="avatar-dropdown animate-pop-in">
                   <div className="avatar-nurse-name">{nurseName}</div>
+                  <div>{profile.username && `@${profile.username}`} · {profile.role}</div>
                   <div className="avatar-duty-tag">● On Duty</div>
                   <button type="button" className="menu-signout-btn" onClick={() => setShowLogoutConfirm(true)}>
                     Sign Out
@@ -373,16 +383,11 @@ export default function ReceptionistDashboard({
           <div className="kpi-quad-grid">
             {/* Card 1: Waiting Patients */}
             <div
-              className={`kpi-card ${activeFilter === 'Waiting' ? 'kpi-active' : ''}`}
-              onClick={() => setActiveFilter(activeFilter === 'Waiting' ? 'All' : 'Waiting')}
-              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter(activeFilter === 'Waiting' ? 'All' : 'Waiting'))}
-              role="button"
-              tabIndex={0}
-              title="Filter Waiting Patients"
+              className="kpi-card" role="group" aria-label="Waiting Patients"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">Waiting Patients</span>
-                <span className="kpi-digit">{dashboardToday.filter((item) => item.status === 'Waiting').length}</span>
+                <span className="kpi-digit">{summary.waiting}</span>
               </div>
               <div className="kpi-symbol purple-people-icon">
                 <svg viewBox="0 0 24 24" width="30" height="30" fill="#5B67F1">
@@ -393,12 +398,7 @@ export default function ReceptionistDashboard({
 
             {/* Card 2: Completed Today */}
             <div
-              className={`kpi-card ${activeFilter === 'Completed' ? 'kpi-active' : ''}`}
-              onClick={() => setActiveFilter(activeFilter === 'Completed' ? 'All' : 'Completed')}
-              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter(activeFilter === 'Completed' ? 'All' : 'Completed'))}
-              role="button"
-              tabIndex={0}
-              title="Filter Completed Today"
+              className="kpi-card" role="group" aria-label="Completed Today"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">{isMedicalSecretary ? 'Completed Patients' : 'Completed Today'}</span>
@@ -415,12 +415,7 @@ export default function ReceptionistDashboard({
 
             {/* Card 3: Today's Appointments */}
             <div
-              className={`kpi-card ${activeFilter === 'All' ? 'kpi-active' : ''}`}
-              onClick={() => setActiveFilter('All')}
-              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveFilter('All'))}
-              role="button"
-              tabIndex={0}
-              title="Show All Appointments"
+              className="kpi-card" role="group" aria-label="Today's Appointments"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">Today's Appointments</span>
@@ -436,15 +431,11 @@ export default function ReceptionistDashboard({
             {/* Card 4: New Patients Today */}
             <div
               className="kpi-card"
-              onClick={() => setActiveModal('register')}
-              onKeyDown={(event) => handleCardKeyDown(event, () => setActiveModal('register'))}
-              role="button"
-              tabIndex={0}
-              title="Register New Patient"
+              role="group" aria-label="New Patients Today"
             >
               <div className="kpi-texts">
                 <span className="kpi-heading">New Patients Today</span>
-                <span className="kpi-digit">{(patients || []).filter((patient) => patient.createdAt && dateKey(patient.createdAt) === todayKey).length}</span>
+                <span className="kpi-digit">{summary.newPatients}</span>
               </div>
               <div className="kpi-symbol red-target-icon">
                 <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#EF4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -642,7 +633,7 @@ export default function ReceptionistDashboard({
           <button
             type="button"
             className="exact-action-card"
-            onClick={() => setActiveModal('register')}
+              onClick={() => { setShowProfileMenu(false); setShowNotifications(false); setActiveModal('register'); }}
           >
             <div className="action-label-stack">
               <span>Register a</span>
@@ -655,7 +646,7 @@ export default function ReceptionistDashboard({
           <button
             type="button"
             className="exact-action-card"
-            onClick={() => setActiveModal('appointment')}
+            onClick={() => { setShowProfileMenu(false); setShowNotifications(false); setActiveModal('appointment'); }}
           >
             <div className="action-label-stack">
               <span>Create</span>
@@ -710,165 +701,11 @@ export default function ReceptionistDashboard({
             <h2 className="pm-modal-title">Register Patient</h2>
 
             <form onSubmit={handleRegisterPatient}>
-              {/* SECTION 1: Personal Information */}
-              <h3 className="pm-form-section-title">Personal Information</h3>
-
-              <div className="pm-form-grid-2">
-                {/* Row 1: First Name * & Sex* */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    First Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.firstName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, firstName: e.target.value })}
-                    placeholder="Enter first name"
-                    className="pm-form-input"
-                    required
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Sex<span className="req">*</span>
-                  </label>
-                  <select
-                    value={registerFormData.sex}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, sex: e.target.value })}
-                    className="pm-form-select"
-                    required
-                  >
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {/* Row 2: Middle Name (Optional) & Contact Number */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Middle Name <span className="optional">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.middleName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, middleName: e.target.value })}
-                    placeholder="Enter middle name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">Contact Number</label>
-                  <input
-                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
-                    value={registerFormData.contactNumber}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, contactNumber: e.target.value })}
-                    placeholder="+639171234567"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                {/* Row 3: Last Name * */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Last Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.lastName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, lastName: e.target.value })}
-                    placeholder="Enter last name"
-                    className="pm-form-input"
-                    required
-                  />
-                </div>
-
-                {/* Row 4: Address * (Full width) */}
-                <div className="pm-form-field full-width">
-                  <label className="pm-field-label">
-                    Address <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.address}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, address: e.target.value })}
-                    placeholder="Enter Address"
-                    className="pm-form-input"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="pm-form-grid-2">
-                <label className="pm-form-field"><span className="pm-field-label">Age *</span><input className="pm-form-input" type="number" min="0" max="130" step="1" required value={registerFormData.age} onChange={e => setRegisterFormData({ ...registerFormData, age: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Birthday</span><input className="pm-form-input" type="date" min="1900-01-01" max={todayISO()} value={registerFormData.birthday} onChange={e => setRegisterFormData({ ...registerFormData, birthday: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Email</span><input className="pm-form-input" type="email" placeholder="name@gmail.com" value={registerFormData.email} onChange={e => setRegisterFormData({ ...registerFormData, email: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Emergency contact relationship *</span><select className="pm-form-select" required value={registerFormData.emergencyRelationship} onChange={e => setRegisterFormData({ ...registerFormData, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
-              </div>
+              <PatientRegistrationFields value={registerFormData} patients={patients} onUseExisting={patient => {
+                setRegisterFormData(emptyRegistrationForm()); setRegistrationError(''); closeModal();
+                onNavigate?.('patients', { patientId: patient.id, tab: 'personal' });
+              }} onChange={(key, value) => { setRegistrationError(''); setRegisterFormData(current => ({ ...current, [key]: value })); }} />
               {registrationError && <p role="alert" className="medsec-error">{registrationError}</p>}
-              <p className="medsec-muted">Drafts are saved on this device as you type.</p>
-              {/* SECTION 2: Emergency Contact Information */}
-              <h3 className="pm-form-section-title">Emergency Contact Information</h3>
-
-              <div className="pm-form-grid-2">
-                {/* Row 1: First Name * & Contact Number */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    First Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.emergFirstName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergFirstName: e.target.value })}
-                    placeholder="Enter first name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">Contact Number</label>
-                  <input
-                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
-                    value={registerFormData.emergContactNumber}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergContactNumber: e.target.value })}
-                    placeholder="+639171234567"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                {/* Row 2: Middle Name (Optional) */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Middle Name <span className="optional">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.emergMiddleName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergMiddleName: e.target.value })}
-                    placeholder="Enter middle name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div></div>
-
-                {/* Row 3: Last Name * */}
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Last Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerFormData.emergLastName}
-                    onChange={(e) => setRegisterFormData({ ...registerFormData, emergLastName: e.target.value })}
-                    placeholder="Enter last name"
-                    className="pm-form-input"
-                  />
-                </div>
-              </div>
 
               {/* Modal Footer Actions */}
               <div className="pm-modal-footer">
@@ -879,7 +716,7 @@ export default function ReceptionistDashboard({
                 >
                   Cancel
                 </button>
-                <button type="submit" className="pm-btn-save">
+                <button type="submit" className="pm-btn-save" disabled={Boolean(registrationDuplicate)}>
                   Save
                 </button>
               </div>
@@ -890,43 +727,16 @@ export default function ReceptionistDashboard({
 
       {/* 2. Create Appointment Modal */}
       {activeModal === 'appointment' && (
-        <div className="modal-backdrop-clean animate-fade" onClick={closeModal}>
-          <div className="modal-dialog-clean animate-zoom" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <h3>Create Appointment</h3>
-              <button type="button" className="close-x" onClick={closeModal}>×</button>
-            </div>
-            <form
-              onSubmit={handleDashboardAppointment}
-              className="modal-fields-stack"
-            >
-              <div className="field-block">
-                <label>Patient</label>
-                <select name="patientId" required value={appointmentForm.patientId} onChange={e => setAppointmentForm({ ...appointmentForm, patientId: e.target.value })}><option value="">Select patient</option>
-                  {(patients || []).map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
-                </select>
-              </div>
-              <div className="field-block-row">
-                <div className="field-block"><label>Doctor</label><select name="doctor" required value={appointmentForm.doctor} onChange={e => setAppointmentForm({ ...appointmentForm, doctor: e.target.value })}>
-                  {!doctors.some((doctor) => doctor.active) && <option value="">No active doctors available</option>}
-                  {doctors.filter((doctor) => doctor.active).map((doctor) => <option key={doctor.id}>{doctor.name}</option>)}
-                </select></div>
-                <div className="field-block"><label>Visit type</label><select name="type" required value={appointmentForm.type} onChange={e => setAppointmentForm({ ...appointmentForm, type: e.target.value })}>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></div>
-              </div>
-              <div className="field-block-row">
-                <div className="field-block">
-                  <label>Date</label>
-                  <input name="date" type="date" min={todayISO()} value={appointmentForm.date} onChange={e => setAppointmentForm({ ...appointmentForm, date: e.target.value })} required />
-                </div>
-                <div className="field-block">
-                  <label>Time</label>
-                  <input name="time" type="time" step="60" value={appointmentForm.time} onChange={e => setAppointmentForm({ ...appointmentForm, time: e.target.value })} required />
-                </div>
-              </div>
-              {appointmentError && <p role="alert" style={{ color: '#b91c1c', margin: 0 }}>{appointmentError}</p>}
-              <div className="modal-btn-row">
-                <button type="button" className="modal-btn-ghost" onClick={closeModal}>Cancel</button>
-                <button type="submit" className="modal-btn-primary">Create Appointment</button>
+        <div className="ap-modal-backdrop animate-fade" onClick={closeModal}>
+          <div className="ap-modal-card animate-zoom" role="dialog" aria-modal="true" aria-labelledby="dashboard-booking-title" onClick={e => e.stopPropagation()}>
+            <button type="button" className="ap-modal-close-btn" onClick={closeModal} aria-label="Close appointment">×</button>
+            <h2 className="ap-modal-title" id="dashboard-booking-title">New Appointment</h2>
+            <form onSubmit={handleDashboardAppointment}>
+              <AppointmentBookingFields form={dashboardBookingForm} setForm={changeAppointmentForm} patients={patients || []} doctors={doctors} />
+              {(appointmentError || liveAvailabilityProblem) && <p role="alert" className="medsec-error">{appointmentError || liveAvailabilityProblem}</p>}
+              <div className="ap-modal-footer">
+                <button type="button" className="ap-btn-cancel" onClick={closeModal}>Cancel</button>
+                <button type="submit" className="ap-btn-save">Book Appointment</button>
               </div>
             </form>
           </div>

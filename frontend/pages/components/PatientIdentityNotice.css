@@ -1,0 +1,16 @@
+.ap-duplicate-patient,
+.pm-duplicate-patient {
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.85rem;
+}
+
+.ap-duplicate-patient p,
+.pm-duplicate-patient p {
+  margin: 0 0 10px;
+}

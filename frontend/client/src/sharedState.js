@@ -1,22 +1,47 @@
+import { isSessionDismissed, waitForLogout } from './sessionState.js';
+
 export const emptyState = () => ({ patients: [], appointments: [], schedules: {}, doctors: [] });
 
 let csrfToken = '';
 let csrfRequest;
 let pendingActions = 0;
 export const hasPendingActions = () => pendingActions > 0;
-async function getCsrfToken() {
+function abortable(request, signal) {
+  if (!signal) return request;
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+    request.then(value => { signal.removeEventListener('abort', abort); resolve(value); }, error => { signal.removeEventListener('abort', abort); reject(error); });
+  });
+}
+
+async function getCsrfToken(signal) {
   if (csrfToken) return csrfToken;
-  if (!csrfRequest) csrfRequest = fetch('/api/csrf', { credentials: 'same-origin' })
+  if (!csrfRequest) {
+    const request = fetch('/api/csrf', { credentials: 'same-origin' })
     .then(async (response) => {
       const body = await response.json();
       if (!response.ok || !body.csrfToken) throw new Error('Unable to establish a protected session.');
       csrfToken = body.csrfToken;
       return csrfToken;
-    }).finally(() => { csrfRequest = undefined; });
-  return csrfRequest;
+    }).finally(() => { if (csrfRequest === request) csrfRequest = undefined; });
+    csrfRequest = request;
+  }
+  const request = csrfRequest;
+  try { return await abortable(request, signal); }
+  catch (error) {
+    if (signal?.aborted && csrfRequest === request) csrfRequest = undefined;
+    throw error;
+  }
 }
 
 export async function api(path, options = {}) {
+  // An old logout response must finish before a new login can issue a session cookie.
+  if (['login', 'auth/force-change-password'].includes(path)) await waitForLogout();
+  if (isSessionDismissed() && !['login', 'logout', 'register', 'auth/force-change-password'].includes(path)) {
+    throw Object.assign(new Error('Sign in to continue.'), { status: 401 });
+  }
   const changing = !['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase());
   const critical = changing && !['activity', 'logout'].includes(path);
   if (critical) pendingActions++;
@@ -26,7 +51,8 @@ export async function api(path, options = {}) {
     const { demoApi } = await import('./demoApi.js');
     return await demoApi(path, options);
   }
-  const protection = changing ? { 'X-CSRF-Token': await getCsrfToken() } : {};
+  const protection = changing ? { 'X-CSRF-Token': await getCsrfToken(options.signal) } : {};
+  options.signal?.throwIfAborted();
   const response = await fetch(`/api/${path}`, {
     credentials: 'same-origin',
     ...options,

@@ -1,0 +1,19 @@
+.ap-emergency-contact-fields {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.ap-emergency-contact-fields > legend {
+  padding: 0 10px 0 0;
+  color: #334155;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ap-emergency-contact-fields > .ap-form-grid-2 {
+  margin: 0;
+}

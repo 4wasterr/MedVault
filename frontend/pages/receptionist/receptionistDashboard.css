@@ -390,19 +390,8 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   box-shadow: var(--nd-card-shadow);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
   border: 1px solid transparent;
-}
-
-.kpi-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--nd-card-shadow-hover);
-}
-
-.kpi-card.kpi-active {
-  border-color: var(--nd-cyan);
-  box-shadow: 0 0 0 2px rgba(0, 173, 239, 0.3);
 }
 
 .kpi-texts {

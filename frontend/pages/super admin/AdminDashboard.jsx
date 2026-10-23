@@ -58,14 +58,14 @@ export default function AdminDashboard({ view = 'dashboard', onNavigate, onLogou
     {view === 'users' ? <AdminUserManagement accounts={accounts} onRefresh={refresh} /> :
       view === 'doctors' ? <AdminDoctorManagement doctors={doctors} accounts={accounts} onRefresh={refresh} /> : view === 'audit' ? <AdminAuditLogs /> : <>
         <section className="nd-row-top"><div className="kpi-quad-grid admin-kpis">{[
-          ['Staff Accounts', overview?.staff ?? '—', 'users', '#00ADEF'],
-          ['Doctors', overview?.doctors ?? '—', 'doctors', '#F97316'],
-          ['Patients', overview?.patients ?? '—', null, '#C084FC'],
-          ['Appointments', overview?.appointments ?? '—', null, '#EF4444'],
-        ].map(([label, count, target, color]) => <div className="kpi-card" key={label} role="group" aria-label={label}>
+          ['Staff Accounts', overview?.staff ?? '—', '#00ADEF'],
+          ['Doctors', overview?.doctors ?? '—', '#F97316'],
+          ['Patients', overview?.patients ?? '—', '#C084FC'],
+          ['Appointments', overview?.appointments ?? '—', '#EF4444'],
+        ].map(([label, count, color]) => <div className="kpi-card" key={label} role="group" aria-label={label}>
           <div className="kpi-texts"><span className="kpi-heading">{label}</span><strong className="kpi-digit">{count}</strong></div>
           <KpiIcon label={label} color={color} />
-          {target && <button type="button" className="admin-card-link" onClick={() => onNavigate(target)}>Manage →</button>}</div>)}</div>
+          </div>)}</div>
           <div className="nd-chart-card"><div className="chart-card-top-bar"><div className="chart-range-pill" role="tablist" aria-label="Appointment chart period">
             {periods.map((item) => <button key={item} type="button" role="tab" aria-selected={period === item}
               className={`range-tab-btn ${period === item ? 'active' : ''}`} onClick={() => setPeriod(item)}>{item}</button>)}

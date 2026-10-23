@@ -1,0 +1,160 @@
+/* Shared module geometry keeps navigation and content anchored across routes. */
+#root:has(> .nd-screen-container) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#root > .medvault-demo-banner { flex-shrink: 0; }
+
+.nd-screen-container {
+  --module-padding: 24px;
+  --module-gap: 20px;
+  height: 100dvh;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: var(--module-padding);
+  overflow: hidden;
+}
+
+.nd-screen-container > .nd-dashboard-frame {
+  max-width: 1820px;
+  height: 100%;
+  min-height: 0;
+  gap: var(--module-gap);
+}
+
+.nd-dashboard-frame > .nd-sidebar {
+  position: static;
+  width: 76px;
+  min-width: 76px;
+  height: 100%;
+  margin: 0;
+}
+
+.nd-dashboard-frame > :is(.nd-workspace, .pm-workspace, .ap-workspace) {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: var(--module-gap);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.nd-dashboard-frame > main > :is(.nd-header, .pm-header, .ap-header) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex: 0 0 auto;
+  min-height: 100px;
+  margin: 0;
+  padding: 0 0 12px;
+  align-items: flex-start;
+  gap: 16px;
+  background: var(--nd-bg-1);
+}
+
+.nd-screen-container :is(.dashboard-main-title, .pm-main-title, .ap-main-title) {
+  font-size: clamp(1.7rem, 2.5vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: -.02em;
+}
+
+.nd-screen-container :is(.header-titles, .pm-header-titles, .ap-header-titles) { min-width: 0; }
+.nd-screen-container .ap-main-subtitle { flex-wrap: wrap; }
+
+.nd-dashboard-frame > main > :is(.pm-split-layout, .ap-split-layout, .medsec-grid) {
+  flex: 1 1 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--module-gap);
+}
+
+.nd-screen-container :is(.pm-left-col, .ap-left-col, .pm-right-col, .ap-right-col) {
+  position: static;
+  height: 100%;
+  min-height: 0;
+}
+
+.nd-screen-container :is(.pm-left-col, .ap-left-col) { overflow-y: auto; }
+.nd-screen-container .ap-left-col { container: appointment-list / inline-size; }
+.nd-screen-container :is(.pm-right-col, .ap-right-col) { overflow-y: auto; }
+.nd-screen-container :is(.pm-filter-card, .ap-filter-card) { flex-shrink: 0; }
+
+.nd-screen-container :is(.pm-patient-list-card, .ap-schedule-card, .ap-calendar-card) {
+  flex: 1 1 0;
+  min-height: 160px;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.nd-screen-container :is(.pm-profile-card, .ap-details-card, .pm-empty-state-panel, .ap-empty-state-panel, .medsec-panel) {
+  min-height: 100%;
+  border-radius: 20px;
+  padding: 22px;
+}
+
+.nd-screen-container .medsec-grid > .medsec-panel {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.nd-screen-container .medsec-list { max-height: none; }
+.nd-screen-container :is(.pm-patient-item, .ap-table-row, .ap-table-head-row, .ap-cal-slot-card) { flex-shrink: 0; }
+.nd-screen-container .pm-item-left { min-width: 0; }
+.nd-screen-container .pm-item-name { overflow-wrap: anywhere; }
+.nd-screen-container .nd-row-actions .exact-action-card { flex: 1 1 0; width: auto; min-width: 0; max-width: none; }
+.medvault-sync-alert > span { min-width: 0; }
+.medvault-sync-alert button { flex-shrink: 0; white-space: nowrap; font: inherit; font-weight: 600; }
+
+@container appointment-list (max-width: 650px) {
+  .ap-table-head-row { display: none; }
+  .ap-table-row { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; padding: 14px 16px; }
+  .ap-col-time { grid-column: 1; grid-row: 1; }
+  .ap-col-patient { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .ap-col-type { grid-column: 1; grid-row: 3; min-width: 0; }
+  .ap-col-status { grid-column: 2; grid-row: 3; }
+  .ap-col-actions { grid-column: 1 / -1; grid-row: 4; padding-top: 4px; }
+}
+
+@media (max-width: 1024px) {
+  .nd-screen-container { --module-padding: 16px; --module-gap: 16px; }
+  .nd-dashboard-frame > .nd-sidebar {
+    flex-direction: row;
+    width: 100%;
+    min-width: 0;
+    height: 52px;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .nd-dashboard-frame > main > :is(.nd-header, .pm-header, .ap-header) { min-height: 92px; }
+}
+
+@media (max-width: 900px) {
+  .nd-dashboard-frame > main > :is(.pm-split-layout, .ap-split-layout, .medsec-grid) {
+    flex: 0 0 auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nd-screen-container :is(.pm-left-col, .ap-left-col, .pm-right-col, .ap-right-col) { height: auto; overflow: visible; }
+  .nd-screen-container :is(.pm-patient-list-card, .ap-schedule-card, .ap-calendar-card) {
+    flex: auto;
+    max-height: 360px;
+  }
+  .nd-screen-container :is(.pm-profile-card, .ap-details-card, .pm-empty-state-panel, .ap-empty-state-panel) { min-height: 320px; }
+  .nd-screen-container .medsec-grid > .medsec-panel { height: auto; max-height: none; overflow: visible; }
+  .nd-screen-container .medsec-list { max-height: 320px; }
+}
+
+@media (max-width: 600px) {
+  .nd-screen-container { --module-padding: 12px; --module-gap: 14px; }
+  .nd-screen-container :is(.pm-profile-card, .ap-details-card, .medsec-panel) { padding: 16px; }
+  .nd-screen-container :is(.pm-header, .ap-header) { flex-direction: row; }
+  .nd-screen-container :is(.pm-header-right, .ap-header-right) { flex-shrink: 0; gap: 6px; }
+  .nd-screen-container .ap-role-tag { display: none; }
+  .nd-screen-container .nd-row-actions .exact-action-card { flex: 1 1 180px; }
+}

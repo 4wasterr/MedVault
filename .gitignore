@@ -37,6 +37,7 @@ deploy/certs/
 deploy/backups/
 tmp/
 output/security/
+.tools/
 
 # Editor & OS files
 .vscode/

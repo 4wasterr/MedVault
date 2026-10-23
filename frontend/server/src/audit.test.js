@@ -119,13 +119,13 @@ test('admin audit grid covers all users and preserves workflow integrity', async
     })
 
     await t.test('password resets and access changes revoke sessions and are visible without secrets', async () => {
-      const reset = await request('admin/accounts/user1', admin.cookie, { password: 'ChangedPass123' }, 'PATCH')
+      const reset = await request('admin/accounts/user1', admin.cookie, { password: 'ChangedPass123!', confirmPassword: 'ChangedPass123!' }, 'PATCH')
       assert.equal(reset.status, 200)
       assert.equal((await request('state', reception.cookie)).status, 401)
       const logs = await audits('?action=password-reset')
       assert.equal(logs.rows[0].username, 'user3'); assert.equal(logs.rows[0].record_id, 'user1')
       assert.equal(JSON.stringify(logs).includes('ChangedPass123'), false)
-      const next = await request('login', '', { username: 'user1', password: 'ChangedPass123' })
+      const next = await request('login', '', { username: 'user1', password: 'ChangedPass123!' })
       assert.equal(next.status, 200)
       assert.equal((await request('logout', next.cookie, {})).status, 200)
       assert.ok((await audits('?username=user1&action=logout')).total > 0)

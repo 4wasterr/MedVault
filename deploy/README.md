@@ -1,5 +1,8 @@
 # MedVault deployment with SQLite
 
+To share the current Windows/PostgreSQL system using a free public HTTPS URL,
+follow [the Cloudflare Tunnel guide](../docs/CLOUDFLARE_TUNNEL.md).
+
 For the current Windows application connected to PostgreSQL in Linux Mint, use
 [the PostgreSQL guide](../docs/POSTGRESQL.md). This document covers the older SQLite
 Docker deployment, including its SQLite-specific backups.

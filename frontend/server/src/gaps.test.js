@@ -119,10 +119,14 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       })
       assert.equal(createRes.status, 200)
 
-      // Transition to Completed
+      const checkedIn = { ...appt, status: 'Checked-In' }
+      assert.equal((await request('/api/changes', recCookie, {
+        changes: [{ collection: 'appointments', id: appt.id, before: appt, after: checkedIn }]
+      })).status, 200)
+      // Complete a visit after arrival.
       const completed = { ...appt, status: 'Completed', visitStatus: 'Completed' }
       const completeRes = await request('/api/changes', secCookie, {
-        changes: [{ collection: 'appointments', id: appt.id, before: appt, after: completed }]
+        changes: [{ collection: 'appointments', id: appt.id, before: checkedIn, after: completed }]
       })
       assert.equal(completeRes.status, 200)
 
@@ -210,14 +214,14 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
       const mismatchRes = await request('/api/auth/force-change-password', '', {
         username: 'user1',
         currentPassword: tempPassword,
-        newPassword: 'NewSecurePassword123',
-        confirmPassword: 'MismatchPassword999',
+        newPassword: 'NewSecurePassword123!',
+        confirmPassword: 'MismatchPassword999!',
       })
       assert.equal(mismatchRes.status, 400)
       assert.match(mismatchRes.body.error, /do not match/i)
 
       // F) Forced password change: Successful update
-      const newPassword = 'NewSecurePassword123'
+      const newPassword = 'NewSecurePassword123!'
       const forceChangeRes = await request('/api/auth/force-change-password', '', {
         username: 'user1',
         currentPassword: tempPassword,
@@ -238,7 +242,7 @@ test('gap fixes: booking rules, MFA, password recovery, deduplication, relationa
     })
 
     await t.test('5. Duplicate patient detection and merge API', async () => {
-      const recLoginUpdated = await request('/api/login', '', { username: 'user1', password: 'NewSecurePassword123' })
+      const recLoginUpdated = await request('/api/login', '', { username: 'user1', password: 'NewSecurePassword123!' })
       currentRecCookie = recLoginUpdated.cookie
       const patientA = {
         id: 'PTNT-dup-1',

@@ -8,7 +8,10 @@ const { openStorage } = require('./storage')
 const { createSecurity, hashPassword, verifyPassword, installProtection, production } = require('./security')
 const { listAudit, AuditQueryError } = require('./audit')
 const mfa = require('./mfa')
-const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProblem: sharedVitalProblem, VISIT_TYPES, RELATIONSHIPS, passwordProblem, nameProblem, SPECIALTIES } = require('../../shared/formRules.mjs')
+const { clinicToday, demographicsProblem, isPHMobile, isPublicEmail, vitalProblem: sharedVitalProblem, VISIT_TYPES, RELATIONSHIPS, passwordProblem, nameProblem, SPECIALTIES, normalizeSpecialty, personName } = require('../../shared/formRules.mjs')
+const { normalizePatientPhone } = require('../../shared/patientIdentity.mjs')
+const { hasPreviousVisit } = require('../../shared/patientHistory.mjs')
+const { canTransitionAppointment } = require('../../shared/appointmentWorkflow.mjs')
 // ===== VALIDATIONS (added) =====
 function todayDateString() {
   return process.env.MEDVAULT_TODAY || clinicToday()
@@ -19,7 +22,7 @@ function normalizeName(name) {
 }
 
 function normalizePhone(phone) {
-  return text(phone).replace(/\D/g, '')
+  return normalizePatientPhone(phone)
 }
 
 function findDuplicatePatient(patient, existingPatients) {
@@ -48,13 +51,14 @@ function findDuplicatePatient(patient, existingPatients) {
 
 const ALLOWED_PATIENT_FIELDS = new Set([
   'id', 'name', 'age', 'sex', 'birthday', 'contact', 'address',
-  'email', 'emergencyRelationship', 'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
+  'email', 'specialty', 'type', 'emergencyRelationship', 'emergencyName', 'emergencyContact', 'status', 'allowDuplicate', '_visitsInitialized',
   'vitals', 'medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes', 'appointments',
-  'isRestricted', 'consentStatus', 'encounters', 'documents'
+  'isRestricted', 'consentStatus', 'encounters', 'documents',
+  'date', 'createdAt', 'lastUpdatedAt', 'lastUpdatedBy'
 ])
 const ALLOWED_APPOINTMENT_FIELDS = new Set([
   'id', 'patientId', 'patientName', 'doctor', 'doctorId', 'room', 'date', 'time',
-  'type', 'status', 'contact', 'email', 'age', 'sex', 'address', 'emergencyName', 'emergencyRelationship', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
+  'type', 'specialty', 'status', 'contact', 'email', 'age', 'sex', 'address', 'emergencyName', 'emergencyRelationship', 'emergencyContact', 'notes', 'visitStatus', 'cancelledAt'
 ])
 const ALLOWED_SCHEDULE_FIELDS = new Set([
   'doctor', 'date', 'start', 'end', 'blocked', 'blockedPeriods'
@@ -84,15 +88,6 @@ function stripUnknownFields(collection, data) {
   return data
 }
 
-const VALID_TRANSITIONS = {
-  Open: ['Open', 'Confirmed', 'Checked-In', 'Waiting', 'Cancelled'],
-  Confirmed: ['Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
-  'Checked-In': ['Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
-  Waiting: ['Waiting', 'Checked-In', 'In Consultation', 'Completed', 'Cancelled'],
-  'In Consultation': ['In Consultation', 'Completed', 'Cancelled'],
-  Completed: ['Completed'],
-  Cancelled: ['Cancelled'],
-}
 const VALID_VISIT_TRANSITIONS = {
   Waiting: ['Waiting', 'In Consultation', 'Completed'],
   'In Consultation': ['In Consultation', 'Completed'],
@@ -107,6 +102,8 @@ function filterPatientForRole(patient, user, doctors = []) {
       name: patient.name,
       age: patient.age ?? '',
       email: patient.email || '',
+      specialty: patient.specialty || '',
+      type: patient.type || '',
       emergencyRelationship: patient.emergencyRelationship || '',
       sex: patient.sex || '',
       birthday: patient.birthday || '',
@@ -115,7 +112,12 @@ function filterPatientForRole(patient, user, doctors = []) {
       emergencyName: patient.emergencyName || '',
       emergencyContact: patient.emergencyContact || '',
       status: patient.status || 'Waiting',
+      date: patient.date || '',
+      createdAt: patient.createdAt || '',
+      lastUpdatedAt: patient.lastUpdatedAt || '',
+      lastUpdatedBy: patient.lastUpdatedBy || '',
       appointments: patient.appointments || [],
+      hasPreviousVisit: hasPreviousVisit({ ...patient, hasPreviousVisit: undefined }),
       vitals: {},
       medical: {},
       medicalHistory: {},
@@ -136,6 +138,7 @@ function filterPatientForRole(patient, user, doctors = []) {
       if (!hasCare) {
         return {
           ...patient,
+          hasPreviousVisit: hasPreviousVisit({ ...patient, hasPreviousVisit: undefined }),
           vitals: {},
           medical: {},
           medicalHistory: {},
@@ -186,6 +189,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const text = (value) => (value === undefined || value === null ? '' : String(value)).trim()
 const validPatientPhone = isPHMobile
 
+function patientAppointmentHistory(appointments, patientId) {
+  return appointments.filter((appointment) => appointment.patientId === patientId)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''))
+}
+
 // Accepts 2026-10-15, "Jan 10, 1991", etc. Returns a Date or null.
 function parseDate(value) {
   const raw = text(value)
@@ -231,6 +239,8 @@ function tooLong(value) {
 function validatePatient(after, before = null, { legacyImport = false } = {}) {
   if (!after) return null
   const was = before || {}
+  if (!same(was.specialty, after.specialty) && text(after.specialty) && !SPECIALTIES.includes(after.specialty)) return 'Choose a valid visit specialty.'
+  if (!legacyImport && after.type !== undefined && !same(was.type, after.type) && !VISIT_TYPES.includes(after.type)) return 'Choose a standard visit type.'
   if (before === null && !legacyImport) {
     const problem = demographicsProblem(after, todayDateString())
     if (problem) return problem
@@ -283,6 +293,7 @@ function validatePatient(after, before = null, { legacyImport = false } = {}) {
 function validateAppointment(after, before = null) {
   if (!after) return null
   const was = before || {}
+  if (!same(was.specialty, after.specialty) && text(after.specialty) && !SPECIALTIES.includes(after.specialty)) return 'Choose a valid visit specialty.'
   const todayStr = todayDateString()
   const apptDate = parseDate(after.date)?.toISOString().slice(0, 10)
   const isDateChanging = was.date !== after.date || was.time !== after.time || was.doctor !== after.doctor
@@ -305,7 +316,7 @@ function validateAppointment(after, before = null) {
     return null
   }
 
-  if ((before === null || was.status === 'Open' || !same(was.contact, after.contact)) && !isPHMobile(after.contact)) return 'Contact number is required and must use +639XXXXXXXXX.'
+  if ((before === null || was.status === 'Open' || !same(was.contact, after.contact)) && !isPHMobile(after.contact)) return 'Contact number is required and must use +63 XXX XXX XXXX.'
   if ((!before || !same(was.type, after.type)) && !VISIT_TYPES.includes(after.type)) return 'Choose a standard visit type.'
   if (!same(was.patientName, after.patientName) && nameProblem(after.patientName, { max: 160 })) return nameProblem(after.patientName, { max: 160 })
   if (!same(was.emergencyName, after.emergencyName) && nameProblem(after.emergencyName, { max: 160, optional: true })) return nameProblem(after.emergencyName, { max: 160, optional: true })
@@ -807,9 +818,7 @@ async function createApp({ seedDemo = false } = {}) {
 
         for (const rawPatient of rawPatients) {
           const hydrated = await hydratePatient(rawPatient)
-          const patientAppointments = allAppointments
-            .filter((a) => a.patientId === rawPatient.id)
-            .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''))
+          const patientAppointments = patientAppointmentHistory(allAppointments, rawPatient.id)
           const fullPatient = { ...hydrated, appointments: patientAppointments }
           const filtered = user ? filterPatientForRole(fullPatient, userContext, doctors) : fullPatient
           if (filtered !== null) {
@@ -834,6 +843,10 @@ async function createApp({ seedDemo = false } = {}) {
       }
 
       async function hydratePatient(patient) {
+        if (!patient.createdAt) {
+          const metadata = await db.prepare('SELECT created_at FROM patients_rel WHERE id = ?').get(patient.id)
+          if (metadata?.created_at) patient = { ...patient, createdAt: metadata.created_at }
+        }
         if (!patient._visitsInitialized && !Array.isArray(patient.visits)) return patient
         const visits = (await db.prepare('SELECT data FROM visit_records WHERE patient_id = ? ORDER BY sort_order, id')
           .all(patient.id)).map((row) => JSON.parse(row.data))
@@ -870,7 +883,7 @@ async function createApp({ seedDemo = false } = {}) {
 
       async function readDoctors() {
         return (await db.prepare('SELECT id, name, specialty, phone, email, secretary_username AS secretaryUsername, doctor_username AS doctorUsername, active, created_at AS createdAt FROM doctors ORDER BY name').all())
-          .map((doctor) => ({ ...doctor, active: Boolean(doctor.active) }))
+          .map((doctor) => ({ ...doctor, specialty: normalizeSpecialty(doctor.specialty), active: Boolean(doctor.active) }))
       }
 
       function appointmentMinutes(value) {
@@ -1522,7 +1535,15 @@ async function createApp({ seedDemo = false } = {}) {
         }
       })
 
-      app.get('/api/session', authenticate, async (request, response) => response.json({ role: request.user.role, username: request.user.username }))
+      app.get('/api/session', authenticate, async (request, response) => {
+        const { role, username } = request.user
+        const staff = await db.prepare('SELECT first_name, middle_name, last_name FROM staff_accounts WHERE username = ?').get(username)
+        const firstName = staff?.first_name || ''
+        const middleName = staff?.middle_name || ''
+        const lastName = staff?.last_name || ''
+        response.setHeader('Cache-Control', 'no-store')
+        response.json({ role, username, firstName, middleName, lastName, displayName: personName(firstName, middleName, lastName) || username })
+      })
 
       app.post('/api/activity', authenticate, async (request, response) => {
         const { collection, recordId, section = '' } = request.body || {}
@@ -1876,8 +1897,12 @@ async function createApp({ seedDemo = false } = {}) {
             }
           }
           if (collection === 'appointments' && after && text(after.doctor)) {
-            const doctor = await db.prepare('SELECT name FROM doctors WHERE name = ?').get(after.doctor)
+            const doctor = await db.prepare('SELECT name, specialty FROM doctors WHERE name = ?').get(after.doctor)
             if (doctor) after.doctor = doctor.name
+            if (doctor && after.specialty && normalizeSpecialty(doctor.specialty) !== after.specialty &&
+              (!before || before.specialty !== after.specialty || before.doctor !== after.doctor || before.date !== after.date || before.time !== after.time)) {
+              return reject(request, response, 400, 'Choose a doctor in the selected visit specialty.')
+            }
           }
           if (collection === 'appointments' && after) {
             const problem = validateAppointment(after, before)
@@ -1890,9 +1915,12 @@ async function createApp({ seedDemo = false } = {}) {
               return reject(request, response, 400, 'Choose a valid booking status and visit progress.')
             }
             if (before && before.status && after.status && before.status !== after.status) {
-              if (!VALID_TRANSITIONS[before.status]?.includes(after.status)) {
+              if (!canTransitionAppointment(before, after)) {
                 return reject(request, response, 400, `Invalid appointment status transition from ${before.status} to ${after.status}.`)
               }
+            }
+            if (after.visitStatus === 'In Consultation' && !['In Consultation', 'Cancelled'].includes(after.status)) {
+              return reject(request, response, 400, 'Check in the patient before starting consultation, and keep visit progress consistent with the appointment status.')
             }
             if (before && before.visitStatus && after.visitStatus && before.visitStatus !== after.visitStatus) {
               if (!VALID_VISIT_TRANSITIONS[before.visitStatus]?.includes(after.visitStatus)) {
@@ -2006,17 +2034,46 @@ async function createApp({ seedDemo = false } = {}) {
           const update = db.prepare('UPDATE records SET data = ? WHERE collection = ? AND id = ?')
           const remove = db.prepare('DELETE FROM records WHERE collection = ? AND id = ?')
           const audit = db.prepare('INSERT INTO audit_events (occurred_at, username, role, collection, record_id, action, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          for (const { collection, id, before } of changes) {
+          const currentAppointments = (await db.prepare("SELECT data FROM records WHERE collection = 'appointments'").all()).map(row => JSON.parse(row.data))
+          const managedDoctors = await readDoctors()
+          for (const change of changes) {
+            const { collection, id, before, after } = change
             const row = (await find.get(collection, id))
-            if (!isDeepStrictEqual(row ? collection === 'patients' ? (await hydratePatient(JSON.parse(row.data))) : JSON.parse(row.data) : null, before)) {
+            const current = row ? collection === 'patients' ? (await hydratePatient(JSON.parse(row.data))) : JSON.parse(row.data) : null
+            const snapshots = [current]
+            if (collection === 'patients' && current) {
+              // /state derives this history from bookings. Compare against the same view the client received.
+              const visible = { ...current, appointments: patientAppointmentHistory(currentAppointments, id) }
+              snapshots.push(visible)
+              if (['Receptionist', 'Medical Secretary'].includes(request.user.role)) {
+                snapshots.push(filterPatientForRole(visible, request.user, managedDoctors))
+              }
+            }
+            if (!snapshots.some(snapshot => isDeepStrictEqual(snapshot, before))) {
               ;(await db.exec('ROLLBACK'))
               return reject(request, response, 409, 'A record changed in another session. Review the latest data.', { state: await readState() })
+            }
+            if (collection === 'patients' && current && after && ['Receptionist', 'Medical Secretary'].includes(request.user.role)) {
+              const scoped = filterPatientForRole({ ...current, appointments: patientAppointmentHistory(currentAppointments, id) }, request.user, managedDoctors)
+              for (const field of ['vitals', 'medical', 'medicalHistory', 'consultation', 'visits', 'recordNotes']) {
+                // A filtered polling snapshot must never overwrite the clinical data hidden from that user.
+                if (request.user.role === 'Receptionist' || (!isDeepStrictEqual(scoped[field], current[field]) && isDeepStrictEqual(after[field], before[field]))) {
+                  after[field] = current[field]
+                }
+              }
             }
           }
           for (const { collection, id, before, after } of changes) {
             if (collection === 'appointments' && after === null && before?.status !== 'Open') {
               ;(await db.exec('ROLLBACK'))
               return reject(request, response, 400, 'Cancel a booking to retain its history; booked appointments cannot be deleted.')
+            }
+            if (collection === 'patients' && after) {
+              after.name = personName(after.name)
+              if (after.emergencyName !== undefined) after.emergencyName = personName(after.emergencyName)
+              after.createdAt = before?.createdAt || after.createdAt || new Date().toISOString()
+              after.lastUpdatedAt = new Date().toISOString()
+              after.lastUpdatedBy = request.user.username
             }
             const cleanAfter = after ? stripUnknownFields(collection, after, request.user.role) : null
             if (after === null) {
@@ -2031,16 +2088,22 @@ async function createApp({ seedDemo = false } = {}) {
             } else {
               ;(await update.run(JSON.stringify(collection === 'patients' ? storePatient(cleanAfter) : cleanAfter), collection, id))
               if (collection === 'patients') {
-                // Synchronize appointment patient name & contact if changed
-                if (before.name !== cleanAfter.name || before.contact !== cleanAfter.contact) {
+                const demographics = { name: 'patientName', age: 'age', sex: 'sex', contact: 'contact', address: 'address', email: 'email',
+                  emergencyName: 'emergencyName', emergencyContact: 'emergencyContact', emergencyRelationship: 'emergencyRelationship' }
+                if (Object.keys(demographics).some(field => !same(before[field], cleanAfter[field]))) {
                   const apptRows = await db.prepare("SELECT id, data FROM records WHERE collection = 'appointments'").all()
                   const updateAppt = db.prepare("UPDATE records SET data = ? WHERE collection = 'appointments' AND id = ?")
                   for (const row of apptRows) {
                     const appt = JSON.parse(row.data)
-                    if (appt.patientId === id) {
-                      appt.patientName = cleanAfter.name
-                      if (cleanAfter.contact) appt.contact = cleanAfter.contact
+                    if (appt.patientId === id && !seen.has(`appointments|${appt.id}`)) {
+                      const previous = JSON.stringify(appt)
+                      for (const [field, target] of Object.entries(demographics)) {
+                        if (field in cleanAfter) appt[target] = cleanAfter[field]
+                      }
                       await updateAppt.run(JSON.stringify(appt), appt.id)
+                      await syncRelationalAppointment(appt)
+                      await audit.run(new Date().toISOString(), request.user.username, request.user.role, 'appointments', appt.id,
+                        'update', previous, JSON.stringify(appt))
                     }
                   }
                 }

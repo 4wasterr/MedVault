@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useCurrentUser } from '../../client/src/currentUser';
 import '../receptionist/receptionistDashboard.css';
 import '../medical secretary/MedSecModules.css';
 import './AdminDashboard.css';
@@ -13,6 +14,7 @@ function Icon({ view }) {
 }
 
 export default function AdminShell({ active, title, subtitle, onNavigate, onLogout, children }) {
+  const profile = useCurrentUser('Super Admin');
   const [profileOpen, setProfileOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const profileRef = useRef(null);
@@ -41,8 +43,9 @@ export default function AdminShell({ active, title, subtitle, onNavigate, onLogo
         <header className="nd-header medsec-header"><div className="header-titles"><span className="welcome-receptionist-text">Super Admin</span>
           <h1 className="dashboard-main-title">{title}</h1>{subtitle && <p className="medsec-subtitle">{subtitle}</p>}</div>
           <div className="medsec-role-wrapper" ref={profileRef}><button type="button" className="medsec-role-pill" onClick={() => setProfileOpen((open) => !open)}
-            aria-expanded={profileOpen} aria-label="Super Admin profile"><span className="medsec-role-avatar">A</span><span className="medsec-role-label">On Duty</span></button>
-            {profileOpen && <div className="avatar-dropdown medsec-profile-menu animate-pop-in"><div className="avatar-nurse-name">Super Admin</div>
+            aria-expanded={profileOpen} aria-label="Super Admin profile"><span className="medsec-role-avatar">{profile.initials}</span><span className="medsec-role-label">On Duty</span></button>
+            {profileOpen && <div className="avatar-dropdown medsec-profile-menu animate-pop-in"><div className="avatar-nurse-name">{profile.displayName}</div>
+              <div>{profile.username && `@${profile.username}`} · {profile.role}</div>
               <div className="avatar-duty-tag">● On Duty</div><button type="button" className="menu-signout-btn" onClick={() => { setProfileOpen(false); setConfirmLogout(true); }}>Sign Out</button></div>}</div>
         </header>{children}
       </main>

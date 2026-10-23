@@ -80,6 +80,49 @@ test('sample appointments follow the Manila date instead of becoming stale', () 
   assert.equal(state.appointments[2].date, '2030-01-01');
 });
 
+test('demo shares arrival and completed-visit history between reception and the secretary', async () => {
+  const api = createDemoApi();
+  await login(api, 'receptionist');
+  let state = await api('state');
+  let appointment = state.appointments.find(item => item.status === 'Confirmed');
+  const patientId = appointment.patientId;
+  assert.equal(state.patients.find(item => item.id === patientId).hasPreviousVisit, false);
+  const update = async (status, visitStatus = 'Waiting') => {
+    const after = { ...appointment, status, visitStatus };
+    state = await api('changes', post({ changes: [{ collection: 'appointments', id: appointment.id, before: appointment, after }] }));
+    appointment = state.appointments.find(item => item.id === appointment.id);
+  };
+  await update('Checked-In');
+  await update('Confirmed');
+  await api('logout', post({}));
+  await login(api, 'secretary');
+  await assert.rejects(update('In Consultation', 'In Consultation'), { status: 400 });
+  await update('Checked-In');
+  await update('In Consultation', 'In Consultation');
+  await assert.rejects(update('Confirmed'), { status: 400 });
+  await update('Completed', 'Completed');
+  await api('logout', post({}));
+  await login(api, 'receptionist');
+  const patient = (await api('state')).patients.find(item => item.id === patientId);
+  assert.equal(patient.hasPreviousVisit, true);
+  assert.deepEqual(patient.visits, []);
+});
+
+test('demo bookings update existing patient histories and retain the selected specialty', async () => {
+  const api = createDemoApi();
+  await login(api, 'receptionist');
+  const before = await api('state');
+  const patient = before.patients[0];
+  const doctor = before.doctors.find(item => item.specialty === 'General Health');
+  const booking = { ...before.appointments[0], id: 'DEMO-APPT-added', patientId: patient.id,
+    doctor: doctor.name, specialty: 'General Health', time: '14:00' };
+  const saved = await api('changes', post({ changes: [{ collection: 'appointments', id: booking.id, before: null, after: booking }] }));
+  assert.equal(saved.appointments.find(item => item.id === booking.id).specialty, 'General Health');
+  assert.ok(saved.patients.find(item => item.id === patient.id).appointments.some(item => item.id === booking.id));
+  await assert.rejects(api('changes', post({ changes: [{ collection: 'appointments', id: 'DEMO-APPT-mismatch', before: null,
+    after: { ...booking, id: 'DEMO-APPT-mismatch', specialty: 'Cardiologist' } }] })), { status: 400 });
+});
+
 test('Vite demo mode routes the real UI API helper without any network requests', async () => {
   const server = await createServer({ mode: 'demo', server: { middlewareMode: true, hmr: false, watch: null }, logLevel: 'silent' });
   const previousFetch = globalThis.fetch;

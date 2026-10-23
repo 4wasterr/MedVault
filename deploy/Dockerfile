@@ -4,6 +4,7 @@ COPY frontend/client/package*.json ./
 RUN npm ci
 COPY frontend/client ./
 COPY frontend/pages /app/frontend/pages
+COPY frontend/shared /app/frontend/shared
 RUN npm run build
 
 FROM node:24-alpine AS api
@@ -13,6 +14,7 @@ COPY frontend/server/package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node frontend/server/src ./src
 COPY --chown=node:node frontend/server/scripts ./scripts
+COPY --chown=node:node frontend/shared /app/frontend/shared
 COPY --from=frontend /app/frontend/client/dist /app/frontend/client/dist
 RUN mkdir -p data && chown node:node data && chmod 700 data
 USER node

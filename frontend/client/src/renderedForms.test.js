@@ -10,7 +10,7 @@ import { clinicToday } from '../../shared/formRules.mjs';
 
 test('actual forms render restored drafts, constrained date/time inputs, vital controls, and unique visits', async () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const server = await createServer({ root, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const server = await createServer({ root, server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' });
   const values = new Map();
   const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
   globalThis.window = { localStorage: storage, location: { search: '' } };
@@ -58,7 +58,7 @@ test('actual forms render restored drafts, constrained date/time inputs, vital c
     save('dashboard:activeModal', 'appointment');
     save('dashboard:appointmentForm', { patientId: 'P1', doctor: 'Dr. Cruz', date: '2050-01-01', time: '09:17', type: 'Follow-up' });
     html = render(Dashboard, props);
-    assert.match(html, /type="date" min="[0-9-]+"/);
+    assert.match(html, /<input(?=[^>]*type="date")(?=[^>]*min="[0-9-]+")[^>]*>/);
     assert.match(html, /type="time" step="60"[^>]*value="09:17"/);
     assert.match(html, /<option[^>]*>Emergency<\/option>/);
 

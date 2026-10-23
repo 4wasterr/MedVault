@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import './receptionistDashboard.css';
 import './patientsModuleReceptionist.css';
+import PatientRegistrationFields from '../components/PatientRegistrationFields';
+import { emptyRegistrationForm } from '../../client/src/patientRegistration';
+import { findDuplicatePatient, registrationIdentity } from '../../shared/patientIdentity.mjs';
 import { useDraftState } from '../../client/src/useDraftState';
-import { PHONE_PATTERN, RELATIONSHIPS, VISIT_TYPES } from '../../shared/formRules.mjs';
+import { useCurrentUser } from '../../client/src/currentUser';
+import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VISIT_TYPES, formatPhone, phoneInput, specialtyLabel, personName } from '../../shared/formRules.mjs';
 import { createRecordId, dateKey, todayISO, validateRegisterForm } from '../medical secretary/medsecData';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
 import { validatePatientEdit } from '../medical secretary/medsecData';
@@ -20,6 +24,7 @@ export default function PatientsModuleReceptionist({
   initialTab = 'personal',
   role = 'Receptionist',
 }) {
+  const profile = useCurrentUser(role);
   const [localPatients, setLocalPatients] = useState([]);
   const patients = propPatients || localPatients;
   const setPatients = propSetPatients || setLocalPatients;
@@ -85,19 +90,8 @@ export default function PatientsModuleReceptionist({
   };
 
   // Pic 3 Register Patient Form State
-  const [registerForm, setRegisterForm] = useDraftState('patients:registerForm', {
-    firstName: '',
-    sex: '',
-    middleName: '',
-    contactNumber: '',
-    lastName: '',
-    address: '',
-    type: 'Routine Checkup', age: '', birthday: '', email: '', emergencyRelationship: '',
-    emergFirstName: '',
-    emergContactNumber: '',
-    emergMiddleName: '',
-    emergLastName: '',
-  });
+  const [registerForm, setRegisterForm] = useDraftState('patients:registerForm', emptyRegistrationForm);
+  const registrationDuplicate = findDuplicatePatient(registrationIdentity(registerForm), patients);
 
   const [registerErrors, setRegisterErrors] = useState({});
 
@@ -122,7 +116,7 @@ export default function PatientsModuleReceptionist({
     if (JSON.stringify(patients.find((patient) => patient.id === selectedPatient.id) || null) !== JSON.stringify(selectedPatient)) {
       showToast('This patient changed in another session. Reopen the record before saving.'); return;
     }
-        const problem = validatePatientEdit({ ...selectedPatient, ...editFormData });
+    const problem = validatePatientEdit({ ...selectedPatient, ...editFormData });
     if (problem) { showToast(problem); return; }
     const updated = {
       ...selectedPatient,
@@ -134,7 +128,7 @@ export default function PatientsModuleReceptionist({
       patientName: updated.name, age: updated.age, sex: updated.sex, contact: updated.contact, address: updated.address,
       email: updated.email, emergencyRelationship: updated.emergencyRelationship, emergencyName: updated.emergencyName, emergencyContact: updated.emergencyContact } : item));
     setIsEditing(false);
-    showToast(`Profile update submitted for ${updated.name}. Check the save status.`);
+    showToast(`Profile updated for ${updated.name}.`);
   };
 
   // Handle registering a new patient
@@ -152,12 +146,13 @@ export default function PatientsModuleReceptionist({
       return;
     }
 
+    if (registrationDuplicate) return;
     const problem = validateRegisterForm(registerForm);
     if (problem) { setRegisterErrors({ form: problem }); return; }
 
     const formattedId = createRecordId('PTNT');
-    const fullName = `${registerForm.firstName} ${registerForm.middleName ? registerForm.middleName + ' ' : ''}${registerForm.lastName}`.trim();
-    const emergFullName = `${registerForm.emergFirstName} ${registerForm.emergMiddleName} ${registerForm.emergLastName}`.trim();
+    const fullName = personName(registerForm.firstName, registerForm.middleName, registerForm.lastName);
+    const emergFullName = personName(registerForm.emergFirstName, registerForm.emergMiddleName, registerForm.emergLastName);
 
     const newPatientObj = {
       id: formattedId,
@@ -172,7 +167,7 @@ export default function PatientsModuleReceptionist({
       emergencyName: emergFullName || '',
       emergencyContact: registerForm.emergContactNumber || '',
       doctor: '',
-      type: registerForm.type || 'Routine Checkup',
+      type: registerForm.type || 'Routine Checkup', specialty: registerForm.specialty || 'General Health',
       status: 'Waiting',
       date: todayISO(),
       createdAt: new Date().toISOString(),
@@ -187,19 +182,7 @@ export default function PatientsModuleReceptionist({
     setRegisterErrors({});
     showToast(`Patient ${fullName} (${formattedId}) registered!`);
 
-    setRegisterForm({
-      firstName: '',
-      sex: '',
-      middleName: '',
-      contactNumber: '',
-      lastName: '',
-      address: '',
-      type: 'Routine Checkup', age: '', birthday: '', email: '', emergencyRelationship: '',
-      emergFirstName: '',
-      emergContactNumber: '',
-      emergMiddleName: '',
-      emergLastName: '',
-    });
+    setRegisterForm(emptyRegistrationForm());
   };
 
   // Filter patients by search text, status filter, doctor filter, and sorting
@@ -369,15 +352,16 @@ export default function PatientsModuleReceptionist({
                     setShowProfileMenu(!showProfileMenu);
                     setShowNotifications(false);
                   }}
-                  title={role}
+                  title={profile.displayName}
                   aria-label="Profile"
                 >
-                  <span>{role === 'Medical Secretary' ? 'M' : 'A'}</span>
+                  <span>{profile.initials}</span>
                 </button>
 
                 {showProfileMenu && (
                   <div className="avatar-dropdown animate-pop-in">
-                    <div className="avatar-nurse-name">{role}</div>
+                    <div className="avatar-nurse-name">{profile.displayName}</div>
+                    <div>{profile.username && `@${profile.username}`} · {profile.role}</div>
                     <div className="avatar-duty-tag">● On Duty</div>
                     <button
                       type="button"
@@ -647,9 +631,9 @@ export default function PatientsModuleReceptionist({
                       <h3 className="pm-summary-name">{selectedPatient.name}</h3>
                       <PatientHistoryBadge patient={selectedPatient} appointments={appointments} />
                       <div className="pm-summary-meta">
-                        {selectedPatient.age} years old | {selectedPatient.sex || 'Male'}
+                        {selectedPatient.age} years old | {selectedPatient.sex || 'Not recorded'}
                       </div>
-                      <div className="pm-summary-phone">{selectedPatient.contact}</div>
+                      <div className="pm-summary-phone">{formatPhone(selectedPatient.contact)}</div>
                     </div>
                   </div>
 
@@ -683,125 +667,42 @@ export default function PatientsModuleReceptionist({
                     <div className="pm-tab-content animate-fade">
                       <h4 className="pm-tab-heading">Personal Information</h4>
 
-                      {!isEditing ? (
+                      {!isEditing ? <>
                         <div className="pm-info-grid-2col">
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Full Name</span>
-                            <span className="pm-info-val">{selectedPatient.name}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Birthday</span>
-                            <span className="pm-info-val">{selectedPatient.birthday || 'Not recorded'}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Age</span>
-                            <span className="pm-info-val">{selectedPatient.age || 'Not recorded'}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Sex</span>
-                            <span className="pm-info-val">{selectedPatient.sex || 'Not recorded'}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Contact Number</span>
-                            <span className="pm-info-val">{selectedPatient.contact || 'Not recorded'}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Address</span>
-                            <span className="pm-info-val">{selectedPatient.address || 'Not recorded'}</span>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Emergency Contact</span>
-                            <span className="pm-info-val">
-                              {selectedPatient.emergencyName
-                                ? `${selectedPatient.emergencyName}${selectedPatient.emergencyContact ? ` (${selectedPatient.emergencyContact})` : ''}`
-                                : 'Not recorded'}
-                            </span>
-                          </div>
+                          {[
+                            ['Full Name', selectedPatient.name], ['Birthday', selectedPatient.birthday],
+                            ['Age', selectedPatient.age], ['Sex', selectedPatient.sex],
+                            ['Contact Number', formatPhone(selectedPatient.contact)], ['Email', selectedPatient.email],
+                            ['Address', selectedPatient.address], ['Visit type', selectedPatient.type],
+                            ['Specialty / service', specialtyLabel(selectedPatient.specialty)],
+                          ].map(([label, value]) => <div key={label} className="pm-info-item"><span className="pm-info-lbl">{label}</span><span className="pm-info-val">{value !== '' && value != null ? value : 'Not recorded'}</span></div>)}
                         </div>
-                      ) : (
-                        <form onSubmit={handleSaveEdit} className="pm-info-grid-2col">
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Full Name</span>
-                            <input
-                              type="text"
-                              className="pm-input-pill"
-                              value={editFormData.name || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                            />
+                        <h4 className="pm-tab-heading pm-contact-heading">Emergency Contact Information</h4>
+                        <div className="pm-info-grid-2col">
+                          {[
+                            ['Name', selectedPatient.emergencyName], ['Contact Number', formatPhone(selectedPatient.emergencyContact)],
+                            ['Relationship', selectedPatient.emergencyRelationship],
+                          ].map(([label, value]) => <div key={label} className="pm-info-item"><span className="pm-info-lbl">{label}</span><span className="pm-info-val">{value || 'Not recorded'}</span></div>)}
+                        </div>
+                      </> : (
+                        <form id="patient-profile-edit" onSubmit={handleSaveEdit}>
+                          <div className="pm-info-grid-2col">
+                            <label className="pm-info-item"><span className="pm-info-lbl">Full Name *</span><input type="text" required data-person-name="true" maxLength="160" className="pm-input-pill" value={editFormData.name || ''} onChange={e => setEditFormData({ ...editFormData, name: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Birthday</span><input type="date" className="pm-input-pill" min="1900-01-01" max={todayISO()} value={dateKey(editFormData.birthday)} onChange={e => setEditFormData({ ...editFormData, birthday: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Age *</span><input type="number" required min="0" max="130" step="1" className="pm-input-pill" value={editFormData.age ?? ''} onChange={e => setEditFormData({ ...editFormData, age: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Sex</span><select className="pm-input-pill" value={editFormData.sex || ''} onChange={e => setEditFormData({ ...editFormData, sex: e.target.value })}><option value="">Not recorded</option><option>Male</option><option>Female</option><option>Other</option></select></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Contact Number *</span><input className="pm-input-pill" type="tel" required pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={formatPhone(editFormData.contact)} onChange={e => setEditFormData({ ...editFormData, contact: phoneInput(e.target.value) })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Email</span><input className="pm-input-pill" type="email" placeholder="name@gmail.com" value={editFormData.email || ''} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Address</span><input type="text" className="pm-input-pill" maxLength="300" value={editFormData.address || ''} onChange={e => setEditFormData({ ...editFormData, address: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Visit type</span><select className="pm-input-pill" value={editFormData.type || 'Routine Checkup'} onChange={e => setEditFormData({ ...editFormData, type: e.target.value })}>{VISIT_TYPES.map(item => <option key={item}>{item}</option>)}</select></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Specialty / service</span><select className="pm-input-pill" value={editFormData.specialty || 'General Health'} onChange={e => setEditFormData({ ...editFormData, specialty: e.target.value })}>{SPECIALTIES.map(item => <option key={item} value={item}>{specialtyLabel(item)}</option>)}</select></label>
                           </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Birthday</span>
-                            <input
-                              type="date"
-                              className="pm-input-pill"
-                              value={dateKey(editFormData.birthday)} min="1900-01-01" max={todayISO()}
-                              onChange={(e) => setEditFormData({ ...editFormData, birthday: e.target.value })}
-                            />
+                          <h4 className="pm-tab-heading pm-contact-heading">Emergency Contact Information</h4>
+                          <div className="pm-info-grid-2col">
+                            <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact name</span><input type="text" data-person-name="true" maxLength="160" className="pm-input-pill" value={editFormData.emergencyName || ''} onChange={e => setEditFormData({ ...editFormData, emergencyName: e.target.value })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact number *</span><input className="pm-input-pill" type="tel" required pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={formatPhone(editFormData.emergencyContact)} onChange={e => setEditFormData({ ...editFormData, emergencyContact: phoneInput(e.target.value) })} /></label>
+                            <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact relationship *</span><select className="pm-input-pill" required value={editFormData.emergencyRelationship || ''} onChange={e => setEditFormData({ ...editFormData, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
                           </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Age</span>
-                            <input
-                              type="number"
-                              className="pm-input-pill"
-                              value={editFormData.age ?? ''} required min="0" max="130" step="1"
-                              onChange={(e) => setEditFormData({ ...editFormData, age: e.target.value })}
-                            />
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Sex</span>
-                            <select
-                              className="pm-input-pill"
-                              value={editFormData.sex || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, sex: e.target.value })}
-                            >
-                              <option value="">Not recorded</option>
-                              <option value="Male">Male</option>
-                              <option value="Female">Female</option>
-                              <option value="Other">Other</option>
-                            </select>
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Contact Number</span>
-                            <input
-                              type="tel" required pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567"
-                              className="pm-input-pill"
-                              value={editFormData.contact || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, contact: e.target.value })}
-                            />
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Address</span>
-                            <input
-                              type="text"
-                              className="pm-input-pill"
-                              value={editFormData.address || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                            />
-                          </div>
-
-                          <div className="pm-info-item">
-                            <span className="pm-info-lbl">Emergency Contact</span>
-                            <input
-                              type="text"
-                              className="pm-input-pill"
-                              value={editFormData.emergencyName || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, emergencyName: e.target.value })}
-                            />
-                          </div>
-                          <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact number *</span><input className="pm-input-pill" type="tel" required pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={editFormData.emergencyContact || ''} onChange={e => setEditFormData({ ...editFormData, emergencyContact: e.target.value })} /></label>
-                          <label className="pm-info-item"><span className="pm-info-lbl">Emergency contact relationship *</span><select className="pm-input-pill" required value={editFormData.emergencyRelationship || ''} onChange={e => setEditFormData({ ...editFormData, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
-                          <label className="pm-info-item"><span className="pm-info-lbl">Email</span><input className="pm-input-pill" type="email" placeholder="name@gmail.com" value={editFormData.email || ''} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} /></label>
                         </form>
                       )}
 
@@ -823,15 +724,10 @@ export default function PatientsModuleReceptionist({
                         </button>
 
                         <button
-                          type="button"
+                          type={isEditing ? 'submit' : 'button'}
+                          form={isEditing ? 'patient-profile-edit' : undefined}
                           className="pm-btn-pill-cyan"
-                          onClick={(e) => {
-                            if (isEditing) {
-                              handleSaveEdit(e);
-                            } else {
-                              setIsEditing(true);
-                            }
-                          }}
+                          onClick={() => { if (!isEditing) setIsEditing(true); }}
                         >
                           {isEditing ? 'Save Changes' : 'Edit'}
                         </button>
@@ -978,183 +874,11 @@ export default function PatientsModuleReceptionist({
             <h2 className="pm-modal-title">Register Patient</h2>
 
             <form onSubmit={handleRegisterSubmit}>
-              {/* SECTION 1: Personal Information */}
-              <h3 className="pm-form-section-title">Personal Information</h3>
-
-              <div className="pm-form-grid-2">
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    First Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.firstName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, firstName: e.target.value })}
-                    placeholder="Enter first name"
-                    className="pm-form-input"
-                    required
-                  />
-                  {registerErrors.firstName && (
-                    <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>{registerErrors.firstName}</span>
-                  )}
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Sex<span className="req">*</span>
-                  </label>
-                  <select
-                    value={registerForm.sex}
-                    onChange={(e) => setRegisterForm({ ...registerForm, sex: e.target.value })}
-                    className="pm-form-select"
-                    required
-                  >
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                  {registerErrors.sex && (
-                    <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>{registerErrors.sex}</span>
-                  )}
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Middle Name <span className="optional">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.middleName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, middleName: e.target.value })}
-                    placeholder="Enter middle name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">Contact Number</label>
-                  <input
-                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
-                    value={registerForm.contactNumber}
-                    onChange={(e) => setRegisterForm({ ...registerForm, contactNumber: e.target.value })}
-                    placeholder="+639171234567"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Last Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.lastName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, lastName: e.target.value })}
-                    placeholder="Enter last name"
-                    className="pm-form-input"
-                    required
-                  />
-                  {registerErrors.lastName && (
-                    <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>{registerErrors.lastName}</span>
-                  )}
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Status (Visit Type) <span className="req">*</span>
-                  </label>
-                  <select
-                    value={registerForm.type || 'Routine Checkup'}
-                    onChange={(e) => setRegisterForm({ ...registerForm, type: e.target.value })}
-                    className="pm-form-select"
-                  >
-                    {VISIT_TYPES.map(item => <option key={item}>{item}</option>)}
-                  </select>
-                </div>
-
-                <div className="pm-form-field full-width">
-                  <label className="pm-field-label">
-                    Address <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.address}
-                    onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })}
-                    placeholder="Enter Address"
-                    className="pm-form-input"
-                    required
-                  />
-                  {registerErrors.address && (
-                    <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>{registerErrors.address}</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="pm-form-grid-2">
-                <label className="pm-form-field"><span className="pm-field-label">Age *</span><input className="pm-form-input" type="number" min="0" max="130" step="1" required value={registerForm.age} onChange={e => setRegisterForm({ ...registerForm, age: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Birthday</span><input className="pm-form-input" type="date" min="1900-01-01" max={todayISO()} value={registerForm.birthday} onChange={e => setRegisterForm({ ...registerForm, birthday: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Email</span><input className="pm-form-input" type="email" placeholder="name@gmail.com" value={registerForm.email} onChange={e => setRegisterForm({ ...registerForm, email: e.target.value })} /></label>
-                <label className="pm-form-field"><span className="pm-field-label">Emergency contact relationship *</span><select className="pm-form-select" required value={registerForm.emergencyRelationship} onChange={e => setRegisterForm({ ...registerForm, emergencyRelationship: e.target.value })}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
-              </div>
+              <PatientRegistrationFields value={registerForm} patients={patients} onUseExisting={patient => {
+                setRegisterForm(emptyRegistrationForm()); setRegisterErrors({}); setShowRegisterModal(false);
+                setSearchQuery(''); setActiveFilter('All'); setSelectedDoctor('All'); setActiveTab('personal'); handleSelectPatient(patient);
+              }} onChange={(key, value) => { setRegisterErrors({}); setRegisterForm(current => ({ ...current, [key]: value })); }} />
               {registerErrors.form && <p role="alert" className="medsec-error">{registerErrors.form}</p>}
-              <p className="medsec-muted">Drafts are saved on this device as you type.</p>
-              {/* SECTION 2: Emergency Contact Information */}
-              <h3 className="pm-form-section-title">Emergency Contact Information</h3>
-
-              <div className="pm-form-grid-2">
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    First Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.emergFirstName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, emergFirstName: e.target.value })}
-                    placeholder="Enter first name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">Contact Number</label>
-                  <input
-                    type="tel" required pattern={PHONE_PATTERN} maxLength="13"
-                    value={registerForm.emergContactNumber}
-                    onChange={(e) => setRegisterForm({ ...registerForm, emergContactNumber: e.target.value })}
-                    placeholder="+639171234567"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Middle Name <span className="optional">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.emergMiddleName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, emergMiddleName: e.target.value })}
-                    placeholder="Enter middle name"
-                    className="pm-form-input"
-                  />
-                </div>
-
-                <div></div>
-
-                <div className="pm-form-field">
-                  <label className="pm-field-label">
-                    Last Name <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={registerForm.emergLastName}
-                    onChange={(e) => setRegisterForm({ ...registerForm, emergLastName: e.target.value })}
-                    placeholder="Enter last name"
-                    className="pm-form-input"
-                  />
-                </div>
-              </div>
 
               {/* Modal Footer Actions */}
               <div className="pm-modal-footer">
@@ -1165,7 +889,7 @@ export default function PatientsModuleReceptionist({
                 >
                   Cancel
                 </button>
-                <button type="submit" className="pm-btn-save">
+                <button type="submit" className="pm-btn-save" disabled={Boolean(registrationDuplicate)}>
                   Save
                 </button>
               </div>

@@ -36,7 +36,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.match(receptionist.cookie, /^medvault_session=/)
 
     const registration = {
-      username: 'new.staff', password: 'SecurePass123', confirmPassword: 'SecurePass123',
+      username: 'new.staff', password: 'SecurePass123!', confirmPassword: 'SecurePass123!',
       firstName: 'Alex', middleName: '', lastName: 'Rivera', address: '123 Clinic Street',
       phone: '+639123456789', email: 'alex@gmail.com', role: 'Medical Secretary',
     }
@@ -63,7 +63,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     const newStaff = await request('/api/login', '', { username: registration.username, password: registration.password })
     assert.equal(newStaff.body.role, 'Medical Secretary')
     assert.equal((await request('/api/state', newStaff.cookie)).status, 200)
-    const managed = { username: 'admin.created', password: 'SecurePass456', firstName: 'Mae', middleName: '',
+    const managed = { username: 'admin.created', password: 'SecurePass456!', confirmPassword: 'SecurePass456!', firstName: 'Mae', middleName: '',
       lastName: 'Lopez', address: 'Clinic Street', phone: '+639123456790', email: 'mae@gmail.com', role: 'Receptionist' }
     assert.equal((await request('/api/admin/accounts', receptionist.cookie, managed)).status, 403)
     assert.equal((await request('/api/admin/accounts', admin.cookie, managed)).status, 201)
@@ -78,7 +78,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request(`/api/admin/accounts/${managed.username}`, admin.cookie, { status: 'deactivated' }, 'PATCH')).status, 200)
     assert.equal((await request('/api/admin/overview', promoted.cookie)).status, 401)
     assert.equal((await request('/api/login', '', { username: managed.username, password: managed.password })).status, 403)
-    const doctorCreated = await request('/api/admin/doctors', admin.cookie, { name: 'Dr. New', specialty: 'Family Medicine', secretaryUsername: registration.username })
+    const doctorCreated = await request('/api/admin/doctors', admin.cookie, { name: 'Dr. New', specialty: 'General Health', secretaryUsername: registration.username })
     assert.equal(doctorCreated.status, 201)
     assert.equal((await request('/api/admin/doctors', receptionist.cookie)).status, 403)
     assert.equal((await request(`/api/admin/accounts/${registration.username}`, admin.cookie, { status: 'deactivated' }, 'PATCH')).status, 409)
@@ -112,7 +112,7 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     assert.equal((await request('/api/changes', newStaff.cookie, { changes: [
       { collection: 'schedules', id: 'Dr. Newname|2026-10-02', before: null, after: assignedSchedule },
     ] })).status, 200)
-    const patient = { id: 'PTNT-test', name: 'Test Patient' , age: '35', contact: '+639171234567', emergencyContact: '+639181234567', emergencyRelationship: 'Parent', vitals: {}, medical: {}, appointments: [] }
+    let patient = { id: 'PTNT-test', name: 'Test Patient' , age: '35', contact: '+639171234567', emergencyContact: '+639181234567', emergencyRelationship: 'Parent', vitals: {}, medical: {}, appointments: [] }
     const appointment = { id: 'APPT-test', patientId: patient.id, patientName: patient.name,
       doctor: 'Dr. Cruz', date: '2026-10-01', time: '09:00 AM', type: 'New Consultation', status: 'Confirmed', contact: '+639911231245' }
     const created = await request('/api/changes', receptionist.cookie, { changes: [
@@ -157,8 +157,12 @@ test('shared records, role authorization, conflicts, and persistence', async () 
       { collection: 'appointments', id: terminalAppointment.id, before: null, after: terminalAppointment },
     ] })).status, 200)
     const completedAppointment = { ...terminalAppointment, status: 'Completed', visitStatus: 'Completed' }
+    const arrivedAppointment = { ...terminalAppointment, status: 'Checked-In' }
+    assert.equal((await request('/api/changes', receptionist.cookie, { changes: [
+      { collection: 'appointments', id: terminalAppointment.id, before: terminalAppointment, after: arrivedAppointment },
+    ] })).status, 200)
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
-      { collection: 'appointments', id: terminalAppointment.id, before: terminalAppointment, after: completedAppointment },
+      { collection: 'appointments', id: terminalAppointment.id, before: arrivedAppointment, after: completedAppointment },
     ] })).status, 200)
     assert.equal((await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'appointments', id: terminalAppointment.id, before: completedAppointment,
@@ -173,10 +177,13 @@ test('shared records, role authorization, conflicts, and persistence', async () 
     ] })
     assert.equal(rejectedClinicalEdit.status, 403)
 
-    const updatedPatient = { ...patient, vitals: { bp: '120/80' } }
-    assert.equal((await request('/api/changes', secretary.cookie, { changes: [
+    patient = (await request('/api/state', secretary.cookie)).body.patients.find(item => item.id === patient.id)
+    let updatedPatient = { ...patient, vitals: { bp: '120/80' } }
+    const clinicalSave = await request('/api/changes', secretary.cookie, { changes: [
       { collection: 'patients', id: patient.id, before: patient, after: updatedPatient },
-    ] })).status, 200)
+    ] })
+    assert.equal(clinicalSave.status, 200)
+    updatedPatient = clinicalSave.body.patients.find(item => item.id === patient.id)
     const auditRow = await db.prepare("SELECT username, role, before_data, after_data FROM audit_events WHERE collection = 'patients' AND record_id = ? AND action = 'update' ORDER BY id DESC LIMIT 1").get(patient.id)
     assert.equal(auditRow.username, 'user2')
     assert.equal(JSON.parse(auditRow.before_data).id, patient.id)

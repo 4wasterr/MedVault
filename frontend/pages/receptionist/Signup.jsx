@@ -1,5 +1,5 @@
 import { useDraftState } from '../../client/src/useDraftState';
-import { EMAIL_PATTERN, PHONE_PATTERN, USERNAME_PATTERN, NAME_PATTERN, NAME_GUIDANCE, staffProblems } from '../../shared/formRules.mjs';
+import { EMAIL_PATTERN, PHONE_PATTERN, USERNAME_PATTERN, NAME_PATTERN, NAME_GUIDANCE, staffProblems, formatPhone, phoneInput } from '../../shared/formRules.mjs';
 import PasswordField from '../components/PasswordField';
 import React, { useState } from 'react';
 import { api } from '../../client/src/sharedState';
@@ -71,8 +71,8 @@ export default function Signup({ onBack }) {
               value={form.middleName} onChange={(event) => update('middleName', event.target.value)} placeholder="Middle name" /></label>
             <label className="signup-field"><span>Last name *</span><input required pattern={NAME_PATTERN} title={NAME_GUIDANCE} maxLength={80} autoComplete="family-name"
               value={form.lastName} onChange={(event) => update('lastName', event.target.value)} placeholder="Last name" /></label>
-            <label className="signup-field"><span>Phone number *</span><input required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" autoComplete="tel"
-              value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
+            <label className="signup-field"><span>Phone number *</span><input required type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" autoComplete="tel"
+              value={formatPhone(form.phone)} onChange={(event) => update('phone', phoneInput(event.target.value))} /></label>
             <label className="signup-field signup-wide"><span>Email *</span><input required type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" maxLength={254} autoComplete="email"
               value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="name@gmail.com" /></label>
             <label className="signup-field signup-wide"><span>Address *</span><textarea required maxLength={300} autoComplete="street-address"

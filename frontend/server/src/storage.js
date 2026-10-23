@@ -119,6 +119,9 @@ function getPostgresConfig() {
 
 async function createPostgresStorage(pgConfig, security) {
   const pool = new Pool(pgConfig)
+  // The pool discards idle connections when the VM restarts. Handle its error
+  // event so the API stays alive and subsequent requests can reconnect.
+  pool.on('error', error => console.error('[MedVault Database] PostgreSQL connection interrupted:', error.code || 'connection error'))
   const context = new AsyncLocalStorage()
   let closed = false
 

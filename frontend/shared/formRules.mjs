@@ -1,8 +1,13 @@
 export const VISIT_TYPES = ['New Consultation', 'Follow-up', 'Routine Checkup', 'Emergency'];
+export const ROOMS = ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5'];
+export const normalizeRoom = value => ({ 'General Intake A': 'Room 1', 'Consultation Room 1': 'Room 2', 'Consultation Room 2': 'Room 3' }[value] || (ROOMS.includes(value) ? value : 'Room 1'));
 export const SPECIALTIES = ['Cardiologist', 'Gastroenterologist', 'General Health', 'Pulmonology', 'Neurology', 'Gynecology', 'Pediatrics'];
+export const normalizeSpecialty = value => ({ 'General Medicine': 'General Health', Cardiology: 'Cardiologist', Gastroenterology: 'Gastroenterologist' }[value] || value || 'General Health');
+export const specialtyLabel = value => ({ Cardiologist: 'Cardiology', Gastroenterologist: 'Gastroenterology' }[normalizeSpecialty(value)] || normalizeSpecialty(value));
 export const USERNAME_PATTERN = '[A-Za-z][A-Za-z0-9._\\-]{2,31}';
 // Allow real names, including accents, apostrophes, initials, and hyphenated names.
-export const NAME_PATTERN = "[\\p{L}\\p{M}]+\\.?(?:[ ’'\\-][\\p{L}\\p{M}]+\\.?)*";
+export const NAME_PATTERN = "[\\p{L}\\p{M}]+\\.?(?:(?:\\s+|[’'\\-])[\\p{L}\\p{M}]+\\.?)*";
+export const personName = (...parts) => parts.map(part => String(part ?? '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ');
 export const NAME_GUIDANCE = 'Use letters, spaces, apostrophes, hyphens, or periods for initials; numbers and other symbols are not allowed.';
 export const PASSWORD_GUIDANCE = 'Use at least 8 characters with an uppercase letter, a lowercase letter, a number, and a special character.';
 export const isPersonName = value => new RegExp(`^(?:${NAME_PATTERN})$`, 'u').test(String(value ?? '').trim());
@@ -38,13 +43,28 @@ export function staffProblems(staff, { editing = false, signup = false } = {}) {
     if (problem) problems[field] = problem;
   }
   if (!String(staff.address ?? '').trim() || staff.address.trim().length > 300) problems.address = 'Enter an address of at most 300 characters.';
-  if (!isPHMobile(staff.phone)) problems.phone = 'Use +639XXXXXXXXX, for example +639171234567.';
+  if (!isPHMobile(staff.phone)) problems.phone = 'Use +63 XXX XXX XXXX, for example +63 917 123 4567.';
   if (!isPublicEmail(staff.email)) problems.email = 'Use a supported public email domain, such as gmail.com, yahoo.com, or outlook.com.';
   if (!(signup ? ['Receptionist', 'Medical Secretary'] : ['Receptionist', 'Medical Secretary', 'Super Admin']).includes(staff.role)) problems.role = 'Choose a valid role.';
   return problems;
 }
 export const RELATIONSHIPS = ['Parent', 'Spouse', 'Sibling', 'Guardian', 'Child', 'Relative', 'Friend', 'Other'];
-export const PHONE_PATTERN = '\\+639[0-9]{9}';
+// Accept existing compact records while all forms and displays use grouped numbers.
+export const PHONE_PATTERN = '\\+63(?:9[0-9]{9}| 9[0-9]{2} [0-9]{3} [0-9]{4})';
+export function phoneInput(value) {
+  const raw = String(value ?? '').replace(/[^+0-9]/g, '');
+  if (!raw) return '';
+  let digits = raw.replace(/\+/g, '');
+  if (digits.startsWith('0')) digits = `63${digits.slice(1)}`;
+  else if (digits.startsWith('9')) digits = `63${digits}`;
+  if (!digits.startsWith('63')) return raw;
+  const mobile = digits.slice(2, 12);
+  return ['+63', mobile.slice(0, 3), mobile.slice(3, 6), mobile.slice(6)].filter(Boolean).join(' ');
+}
+export function formatPhone(value) {
+  const raw = String(value ?? '');
+  return /^(?:\+?63|0)?9\d{9}$/.test(raw.replace(/\s/g, '')) ? phoneInput(raw) : raw;
+}
 export const EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'yahoo.com.ph', 'ymail.com', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'mail.com', 'gmx.com'];
 export const EMAIL_PATTERN = `[^\\s@]+@(${EMAIL_DOMAINS.map(domain => [...domain].map(char => char === '.' ? '\\.' : /[a-z]/.test(char) ? `[${char}${char.toUpperCase()}]` : char).join('')).join('|')})`;
 export const VITAL_RULES = {
@@ -55,7 +75,7 @@ export const VITAL_RULES = {
   height: { label: 'Height (cm)', min: 30, max: 250, step: 0.1 },
   weight: { label: 'Weight (kg)', min: 1, max: 350, step: 0.1 },
 };
-export const isPHMobile = value => /^\+639[0-9]{9}$/.test(String(value ?? ''));
+export const isPHMobile = value => new RegExp(`^(?:${PHONE_PATTERN})$`).test(String(value ?? ''));
 export const isPublicEmail = value => {
   const email = String(value ?? '');
   const [local, domain, extra] = email.split('@');
@@ -82,9 +102,9 @@ export function normalizeVisitType(value) {
 }
 export function contactProblem(record, { required = true } = {}) {
   if (required && !record.contact) return 'Contact number is required.';
-  if (record.contact && !isPHMobile(record.contact)) return 'Contact number must use +639XXXXXXXXX (for example, +639171234567).';
+  if (record.contact && !isPHMobile(record.contact)) return 'Contact number must use +63 XXX XXX XXXX (for example, +63 917 123 4567).';
   if (required && !record.emergencyContact) return 'Emergency contact number is required.';
-  if (record.emergencyContact && !isPHMobile(record.emergencyContact)) return 'Emergency contact number must use +639XXXXXXXXX.';
+  if (record.emergencyContact && !isPHMobile(record.emergencyContact)) return 'Emergency contact number must use +63 XXX XXX XXXX.';
   if (required && !String(record.emergencyRelationship || '').trim()) return 'Emergency contact relationship is required.';
   if (record.emergencyRelationship && !RELATIONSHIPS.includes(record.emergencyRelationship)) return 'Choose a valid emergency contact relationship.';
   if (record.email && !isPublicEmail(record.email)) return 'Use a supported public email domain, such as gmail.com, yahoo.com, or outlook.com.';

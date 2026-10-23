@@ -1,5 +1,8 @@
 import { createDemoData, demoPassword } from './demoData.js';
 import { applyChanges } from './sharedState.js';
+import { SPECIALTIES, VISIT_TYPES, normalizeSpecialty } from '../../shared/formRules.mjs';
+import { hasPreviousVisit } from '../../shared/patientHistory.mjs';
+import { canTransitionAppointment } from '../../shared/appointmentWorkflow.mjs';
 
 const clone = value => structuredClone(value);
 function fail(status, message) { throw Object.assign(new Error(message), { status }); }
@@ -18,10 +21,15 @@ export function createDemoApi() {
   });
   const visibleState = () => {
     const result = clone(state);
+    for (const patient of result.patients) {
+      patient.appointments = result.appointments.filter(appointment => appointment.patientId === patient.id)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
+      patient.hasPreviousVisit = hasPreviousVisit({ ...patient, hasPreviousVisit: undefined });
+    }
     if (session.role === 'Receptionist') for (const patient of result.patients) {
       Object.assign(patient, { vitals: {}, medical: {}, medicalHistory: {}, consultation: {}, visits: [], recordNotes: [] });
     }
-    result.doctors = result.doctors.filter(doctor => doctor.active);
+    result.doctors = result.doctors.filter(doctor => doctor.active).map(doctor => ({ ...doctor, specialty: normalizeSpecialty(doctor.specialty) }));
     return result;
   };
   const publicAccount = account => {
@@ -63,7 +71,11 @@ export function createDemoApi() {
       return clone(session);
     }
     if (!session) fail(401, 'Sign in to the frontend demo.');
-    if (route === 'session' && method === 'GET') return clone(session);
+    if (route === 'session' && method === 'GET') {
+      const account = accounts.find(item => item.username === session.username);
+      return clone({ ...session, firstName: account.firstName, middleName: account.middleName, lastName: account.lastName,
+        displayName: [account.firstName, account.middleName, account.lastName].filter(Boolean).join(' ') || session.username });
+    }
     if (route === 'logout' && method === 'POST') {
       log('logout', 'security', session.username);
       session = null;
@@ -78,6 +90,22 @@ export function createDemoApi() {
       if (!['Receptionist', 'Medical Secretary'].includes(session.role)) fail(403, 'Use a staff demo account to edit these records.');
       if (!Array.isArray(body.changes) || body.changes.some(change => !['patients', 'appointments', 'schedules'].includes(change.collection))) fail(400, 'Invalid demo changes.');
       const changes = body.changes.map(change => {
+        if (change.collection === 'appointments' && change.after && change.before && !canTransitionAppointment(change.before, change.after)) fail(400, `Invalid appointment status transition from ${change.before.status} to ${change.after.status}.`);
+        if (change.collection === 'appointments' && change.after) {
+          const { before, after } = change;
+          if (after.visitStatus === 'In Consultation' && !['In Consultation', 'Cancelled'].includes(after.status)) fail(400, 'Check in the patient before starting consultation.');
+          if (session.role === 'Receptionist' && ((before?.visitStatus !== after.visitStatus && ['In Consultation', 'Completed'].includes(after.visitStatus)) ||
+            (before?.status !== after.status && ['In Consultation', 'Completed'].includes(after.status)))) fail(403, 'Only a medical secretary may update visit progress.');
+        }
+        if (change.after?.specialty && !SPECIALTIES.includes(change.after.specialty)) fail(400, 'Choose a valid visit specialty.');
+        if (change.collection === 'patients' && change.after?.type !== undefined && change.before?.type !== change.after.type && !VISIT_TYPES.includes(change.after.type)) fail(400, 'Choose a standard visit type.');
+        if (change.collection === 'appointments' && change.after?.specialty) {
+          const doctor = state.doctors.find(item => item.name === change.after.doctor);
+          const before = change.before;
+          const after = change.after;
+          if (doctor && normalizeSpecialty(doctor.specialty) !== after.specialty &&
+            (!before || before.specialty !== after.specialty || before.doctor !== after.doctor || before.date !== after.date || before.time !== after.time)) fail(400, 'Choose a doctor in the selected visit specialty.');
+        }
         const previous = state.patients.find(patient => patient.id === change.id);
         if (session.role === 'Receptionist' && change.collection === 'patients' && change.after && previous) {
           const after = { ...change.after };

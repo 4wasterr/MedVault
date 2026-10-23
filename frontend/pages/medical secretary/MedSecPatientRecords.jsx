@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import MedSecShell from './MedSecShell';
 import PatientHistoryBadge from '../components/PatientHistoryBadge';
 import { useDraftState } from '../../client/src/useDraftState';
-import { PHONE_PATTERN, RELATIONSHIPS, VITAL_RULES, VISIT_TYPES } from '../../shared/formRules.mjs';
+import { PHONE_PATTERN, RELATIONSHIPS, SPECIALTIES, VITAL_RULES, VISIT_TYPES, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
 import { dateKey, patientVisits, todayISO, validatePatientRecord } from './medsecData';
 
 const tabs = [
@@ -36,7 +36,7 @@ function preparePatient(patient) {
 function Field({ label, value, onChange, type = 'text', wide = false, multiline = false, placeholder = '', readOnly = false, ...inputProps }) {
   return <label className={`medsec-field ${wide ? 'wide' : ''}`}><span>{label}</span>
     {multiline ? <textarea value={value ?? ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
-      : <input {...inputProps} step={type === 'datetime-local' ? 1 : inputProps.step} type={type} value={value ?? ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} readOnly={readOnly} />}
+      : <input {...inputProps} step={type === 'datetime-local' ? 1 : inputProps.step} type={type} value={type === 'tel' ? formatPhone(value) : value ?? ''} onChange={(event) => onChange(type === 'tel' ? phoneInput(event.target.value) : event.target.value)} placeholder={placeholder} readOnly={readOnly} />}
   </label>;
 }
 
@@ -138,7 +138,7 @@ export default function MedSecPatientRecords({
         <div className="medsec-list">
           {filtered.map((item) => <button key={item.id} type="button" className={`medsec-list-item ${selectedId === item.id ? 'active' : ''}`}
             onClick={() => selectPatient(item)}>
-            <span><strong>{item.name}</strong><small>{item.id} · {item.contact || 'No contact'}</small>
+            <span><strong>{item.name}</strong><small>{item.id} · {formatPhone(item.contact) || 'No contact'}</small>
               <PatientHistoryBadge patient={item} appointments={appointments} /></span>
             <span className={`medsec-badge ${['Done', 'Completed'].includes(item.status) ? 'completed' : ''}`}>{item.status || 'Active'}</span>
           </button>)}
@@ -150,7 +150,7 @@ export default function MedSecPatientRecords({
         {!draft ? <div><h2>Select a patient</h2><p className="medsec-muted">Choose a shared profile to review or edit its records.</p></div> : <>
           <div className="medsec-profile-heading"><div><span className="medsec-muted">{draft.id}</span><h2>{draft.name}</h2>
             <PatientHistoryBadge patient={patient} appointments={appointments} /><br />
-            <span className="medsec-muted">{draft.age || '—'} years · {draft.sex || 'Not specified'} · {linkedCount} linked booking(s)</span></div>
+            <span className="medsec-muted">{draft.age ?? '—'} years · {draft.sex || 'Not specified'} · {linkedCount} linked booking(s)</span></div>
             <button type="button" className="medsec-btn secondary" onClick={() => navigate('appointments')}>View Appointments</button>
           </div>
           <div className="medsec-tabs" role="tablist" aria-label="Patient record sections">
@@ -158,18 +158,22 @@ export default function MedSecPatientRecords({
               className={`medsec-tab ${activeTab === key ? 'active' : ''}`} onClick={() => { setActiveTab(key); setMessage(''); }}>{label}</button>)}
           </div>
 
-          {activeTab === 'personal' && <div className="medsec-form-grid">
+          {activeTab === 'personal' && <><div className="medsec-form-grid">
             <Field label="Full name" value={draft.name} onChange={(value) => update('name', value)} />
             <Field label="Birthday" type="date" min="1900-01-01" max={todayISO()} value={draft.birthday} onChange={(value) => update('birthday', value)} />
             <Field label="Age (years) *" required type="number" min="0" max="130" step="1" value={draft.age} onChange={(value) => update('age', value)} />
             <label className="medsec-field"><span>Sex</span><select value={draft.sex || ''} onChange={(event) => update('sex', event.target.value)}><option value="">Select</option><option>Female</option><option>Male</option><option>Other</option></select></label>
-            <Field label="Contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={draft.contact} onChange={(value) => update('contact', value)} />
-            <Field label="Emergency contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={draft.emergencyContact} onChange={(value) => update('emergencyContact', value)} />
-            <label className="medsec-field"><span>Emergency contact relationship *</span><select required value={draft.emergencyRelationship || ''} onChange={e => update('emergencyRelationship', e.target.value)}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+            <Field label="Contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={draft.contact} onChange={(value) => update('contact', value)} />
             <Field label="Email" type="email" value={draft.email} onChange={value => update('email', value)} placeholder="name@gmail.com" />
             <Field label="Address" value={draft.address} onChange={(value) => update('address', value)} wide multiline />
+            <label className="medsec-field"><span>Specialty / service</span><select value={draft.specialty || 'General Health'} onChange={e => update('specialty', e.target.value)}>{SPECIALTIES.map(item => <option key={item} value={item}>{specialtyLabel(item)}</option>)}</select></label>
+          </div>
+          <h3 className="pm-form-section-title">Emergency Contact Information</h3>
+          <div className="medsec-form-grid">
             <Field label="Emergency contact name" value={draft.emergencyName} onChange={(value) => update('emergencyName', value)} wide />
-          </div>}
+            <Field label="Emergency contact number *" required type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={draft.emergencyContact} onChange={(value) => update('emergencyContact', value)} />
+            <label className="medsec-field"><span>Emergency contact relationship *</span><select required value={draft.emergencyRelationship || ''} onChange={e => update('emergencyRelationship', e.target.value)}><option value="">Select relationship</option>{RELATIONSHIPS.map(item => <option key={item}>{item}</option>)}</select></label>
+          </div></>}
 
           {activeTab === 'vitals' && <><p className="medsec-muted">Record measured values, units, time, and the person who measured or supplied them.</p>
             <div className="medsec-form-grid">

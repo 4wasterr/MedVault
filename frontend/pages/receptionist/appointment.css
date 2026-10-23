@@ -666,6 +666,11 @@
   border: 1px solid #FECACA;
 }
 
+.ap-badge.waiting { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+.ap-badge.consultation { background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE; }
+.ap-badge.completed { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+.ap-badge.pending { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; }
+
 /* Action Buttons inside Table Row */
 .ap-col-actions {
   display: flex;
@@ -1156,8 +1161,71 @@
 
 .ap-form-grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
+}
+
+.ap-booking-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.ap-booking-section {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+
+.ap-booking-section > legend {
+  padding: 0;
+  margin-bottom: 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.ap-booking-form .ap-form-grid-2 > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.ap-booking-form input,
+.ap-booking-form select,
+.ap-booking-form textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ap-booking-form input[readonly] {
+  background: #F8FAFC;
+  color: #475569;
+}
+
+.ap-field-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #64748B;
+}
+
+.ap-form-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: #B91C1C;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  font-size: 0.84rem;
 }
 
 .ap-form-field {
@@ -1735,4 +1803,3 @@
   .ap-cal-slot-right { width: 100%; justify-content: flex-end; }
   .ap-modal-footer, .ap-card-actions { flex-wrap: wrap; }
 }
-

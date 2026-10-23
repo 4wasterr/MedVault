@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { canTransitionAppointment, canUndoCheckIn, appointmentStage } from '../../shared/appointmentWorkflow.mjs';
 
 
 test('booking: 30-minute slot increments and time parsing', () => {
@@ -27,21 +28,13 @@ test('booking: 30-minute slot increments and time parsing', () => {
 });
 
 test('booking: status lifecycle transitions', () => {
-  const VALID_TRANSITIONS = {
-    Open: ['Open', 'Confirmed', 'Checked-In', 'Waiting', 'Cancelled'],
-    Confirmed: ['Confirmed', 'Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
-    'Checked-In': ['Checked-In', 'Waiting', 'In Consultation', 'Completed', 'Cancelled'],
-    Waiting: ['Waiting', 'Checked-In', 'In Consultation', 'Completed', 'Cancelled'],
-    'In Consultation': ['In Consultation', 'Completed', 'Cancelled'],
-    Completed: ['Completed'],
-    Cancelled: ['Cancelled'],
-  };
-
-  const canTransition = (from, to) => Boolean(VALID_TRANSITIONS[from]?.includes(to));
+  const canTransition = (from, to) => canTransitionAppointment({ status: from }, { status: to });
 
   assert.ok(canTransition('Open', 'Confirmed'));
   assert.ok(canTransition('Confirmed', 'Checked-In'));
-  assert.ok(canTransition('Confirmed', 'Completed'));
+  assert.equal(canTransition('Confirmed', 'Completed'), false);
+  assert.equal(canTransition('Confirmed', 'In Consultation'), false);
+  assert.ok(canTransition('Checked-In', 'Confirmed'));
   assert.ok(canTransition('Checked-In', 'In Consultation'));
   assert.ok(canTransition('In Consultation', 'Completed'));
   assert.ok(canTransition('Confirmed', 'Cancelled'));
@@ -51,6 +44,10 @@ test('booking: status lifecycle transitions', () => {
   assert.equal(canTransition('Completed', 'Open'), false);
   assert.equal(canTransition('Cancelled', 'Confirmed'), false);
   assert.equal(canTransition('Cancelled', 'Open'), false);
+  assert.equal(appointmentStage({ status: 'Confirmed', visitStatus: 'Waiting' }), 'Confirmed');
+  assert.equal(canUndoCheckIn({ status: 'Checked-In', visitStatus: 'Waiting' }), true);
+  assert.equal(canUndoCheckIn({ status: 'Checked-In', visitStatus: 'In Consultation' }), false);
+  assert.equal(canTransitionAppointment({ status: 'Checked-In', visitStatus: 'In Consultation' }, { status: 'Confirmed' }), false);
 });
 
 test('booking: conflict detection between simultaneous appointments', () => {

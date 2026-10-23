@@ -1,11 +1,11 @@
 # MedVault frontend
 
-For a database-free preview, run `npm run setup:demo` and `npm run dev` from the
+For a database-free preview, run `npm run setup:demo` and `npm run demo` from the
 repository root, then open the Local link printed in the terminal (usually
-`http://localhost:5174/`). `npm run demo` is an alias for the same preview. See the [demo logins and
+`http://localhost:5174/`). See the [demo logins and
 instructions](../../README.md). No API server or PostgreSQL database is needed.
 
-For the full system, run `npm run dev:full` from the repository root, then open `http://localhost:5173/`. In PowerShell, use `npm.cmd run dev:full` if Windows blocks `npm.ps1` under its execution policy. This command starts the React frontend and API and requires the configured PostgreSQL database. Use Node.js 24 or newer.
+For the full system, run `npm run dev` or `npm run dev:full` from the repository root, then open `http://localhost:5173/`. In PowerShell, use `npm.cmd` if Windows blocks `npm.ps1` under its execution policy. This command starts the React frontend and API and requires the configured PostgreSQL database. Use Node.js 24 or newer.
 
 The visible pages are React JSX files, not standalone HTML pages. Edit these source files for changes to appear in the browser:
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useCurrentUser } from '../../client/src/currentUser';
 import '../receptionist/receptionistDashboard.css';
 import './MedSecModules.css';
 
@@ -34,6 +35,7 @@ const navigation = [
 ];
 
 export default function MedSecShell({ active, title, subtitle, onNavigate, onLogout, children }) {
+  const profile = useCurrentUser('Medical Secretary');
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileRef = useRef(null);
@@ -94,12 +96,13 @@ export default function MedSecShell({ active, title, subtitle, onNavigate, onLog
                 onClick={() => setShowProfileMenu((open) => !open)}
                 aria-label="Medical Secretary profile" aria-expanded={showProfileMenu}
                 aria-controls="medsec-profile-menu" title="Medical Secretary profile">
-                <span className="medsec-role-avatar" aria-hidden="true">M</span>
+                <span className="medsec-role-avatar" aria-hidden="true">{profile.initials}</span>
                 <span className="medsec-role-label">On Duty</span>
               </button>
               {showProfileMenu && (
                 <div className="avatar-dropdown medsec-profile-menu animate-pop-in" id="medsec-profile-menu">
-                  <div className="avatar-nurse-name">Medical Secretary</div>
+                  <div className="avatar-nurse-name">{profile.displayName}</div>
+                  <div>{profile.username && `@${profile.username}`} · {profile.role}</div>
                   <div className="avatar-duty-tag">● On Duty</div>
                   <button type="button" className="menu-signout-btn" onClick={() => {
                     setShowProfileMenu(false);

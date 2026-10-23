@@ -1,5 +1,22 @@
 # MedVault
 
+## Run the system with saved data
+
+Start the Linux Mint PostgreSQL VM, then run `npm.cmd run dev` (or
+`npm.cmd run dev:full`) from this folder. Open **http://localhost:5173/**.
+The API runs on port 5000 and saves shared records in PostgreSQL.
+`npm.cmd run db:verify` checks connectivity and read/write permissions.
+Keep the VM and API running while entering data.
+
+Port **5174** is the separate frontend demo. It uses fictional records in memory
+and resets on refresh; use port **5173** for persistent patient records.
+
+## Share through Cloudflare
+
+For a temporary public HTTPS URL for the full system, run `npm run tunnel:setup`
+once, start the Linux Mint PostgreSQL VM, then run `npm run tunnel`. In
+PowerShell, use `npm.cmd`. See [setup, login, and troubleshooting](docs/CLOUDFLARE_TUNNEL.md).
+
 ## Frontend demo for groupmates
 
 Use **Node.js 24 or newer**. After cloning or pulling this repository, run these
@@ -7,17 +24,17 @@ commands from the repository root:
 
 ```sh
 npm run setup:demo
-npm run dev
+npm run demo
 ```
 
 Open the **Local** link printed in the terminal, usually **http://localhost:5174/**.
 If that port is busy, Vite picks the next available port and prints its link.
-`npm run demo` also starts this preview. Only the frontend dependencies are installed and
+`npm run demo` starts this preview. Only the frontend dependencies are installed and
 only Vite starts. PostgreSQL, the Linux Mint VM, the API server, Docker, and a
 server `.env` file are unnecessary for this preview.
 
 If PowerShell blocks `npm.ps1`, use `npm.cmd run setup:demo` and
-`npm.cmd run dev` instead. On macOS/Linux or in Command Prompt, use `npm`.
+`npm.cmd run demo` instead. On macOS/Linux or in Command Prompt, use `npm`.
 
 | Demo username | Role | Password |
 | --- | --- | --- |

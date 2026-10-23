@@ -1,5 +1,5 @@
 import { useDraftState } from '../../client/src/useDraftState';
-import { EMAIL_PATTERN, PHONE_PATTERN, SPECIALTIES, NAME_PATTERN, NAME_GUIDANCE } from '../../shared/formRules.mjs';
+import { EMAIL_PATTERN, PHONE_PATTERN, SPECIALTIES, NAME_PATTERN, NAME_GUIDANCE, formatPhone, phoneInput, specialtyLabel } from '../../shared/formRules.mjs';
 import React, { useMemo, useState } from 'react';
 import { api } from '../../client/src/sharedState';
 import AdminDataGrid from './AdminDataGrid';
@@ -50,8 +50,8 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
   };
   const columns = [
     { key: 'name', label: 'Doctor Name', value: doctor => doctor.name, className: 'admin-grid-name', render: doctor => <strong>{doctor.name}</strong> },
-    { key: 'specialty', label: 'Specialty', value: doctor => doctor.specialty, render: doctor => doctor.specialty || 'Not set' },
-    { key: 'contact', label: 'Contact Details', value: doctor => doctor.email, className: 'admin-grid-contact', render: doctor => <><span>{doctor.email || 'No email'}</span><small>{doctor.phone || 'No phone'}</small></> },
+    { key: 'specialty', label: 'Specialty', value: doctor => specialtyLabel(doctor.specialty), render: doctor => doctor.specialty ? specialtyLabel(doctor.specialty) : 'Not set' },
+    { key: 'contact', label: 'Contact Details', value: doctor => doctor.email, className: 'admin-grid-contact', render: doctor => <><span>{doctor.email || 'No email'}</span><small>{formatPhone(doctor.phone) || 'No phone'}</small></> },
     { key: 'secretary', label: 'Medical Secretary', value: doctor => secretaryLabel(doctor.secretaryUsername), className: 'admin-grid-secretary' },
     { key: 'status', label: 'Status', value: doctor => doctor.active ? 'Active' : 'Inactive', className: 'admin-grid-status', render: doctor => <span className={`medsec-badge ${doctor.active ? 'completed' : 'blocked'}`}>{doctor.active ? 'Active' : 'Inactive'}</span> },
     { key: 'actions', label: 'Actions', className: 'admin-grid-actions', render: doctor => <div className="admin-record-actions">
@@ -71,8 +71,8 @@ export default function AdminDoctorManagement({ doctors, accounts, onRefresh }) 
       <h2 id="admin-doctor-title">{editing ? 'Edit Doctor Profile' : 'Add Doctor'}</h2><p>Changing a doctor's name updates linked appointments, patient visits, and schedules.</p>
       <form onSubmit={save}><div className="medsec-form-grid">
         <label className="medsec-field"><span>Doctor Name *</span><input required maxLength={100} pattern={NAME_PATTERN} title={NAME_GUIDANCE} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Dr. Maria Santos" /></label>
-        <label className="medsec-field"><span>Specialty *</span><select required value={form.specialty} onChange={(event) => setForm({ ...form, specialty: event.target.value })}><option value="">Choose a specialty</option>{!SPECIALTIES.includes(form.specialty) && form.specialty && <option value={form.specialty} disabled>{form.specialty} (choose a current specialty)</option>}{SPECIALTIES.map(specialty => <option key={specialty}>{specialty}</option>)}</select></label>
-        <label className="medsec-field"><span>Phone</span><input type="tel" pattern={PHONE_PATTERN} maxLength="13" placeholder="+639171234567" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="medsec-field"><span>Specialty *</span><select required value={form.specialty} onChange={(event) => setForm({ ...form, specialty: event.target.value })}><option value="">Choose a specialty</option>{!SPECIALTIES.includes(form.specialty) && form.specialty && <option value={form.specialty} disabled>{form.specialty} (choose a current specialty)</option>}{SPECIALTIES.map(specialty => <option key={specialty} value={specialty}>{specialtyLabel(specialty)}</option>)}</select></label>
+        <label className="medsec-field"><span>Phone</span><input type="tel" pattern={PHONE_PATTERN} maxLength="16" placeholder="+63 917 123 4567" value={formatPhone(form.phone)} onChange={(event) => setForm({ ...form, phone: phoneInput(event.target.value) })} /></label>
         <label className="medsec-field"><span>Email</span><input type="email" pattern={EMAIL_PATTERN} title="Use a public email domain such as gmail.com, yahoo.com, or outlook.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="medsec-field wide"><span>Assigned Medical Secretary</span><select value={form.secretaryUsername} onChange={(event) => setForm({ ...form, secretaryUsername: event.target.value })}><option value="">Unassigned</option>
           {secretaries.map((item) => <option key={item.username} value={item.username}>{item.firstName} {item.lastName} (@{item.username})</option>)}</select></label>
